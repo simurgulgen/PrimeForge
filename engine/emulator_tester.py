@@ -457,11 +457,54 @@ class EmulatorTester:
             self.stop_crash_watcher()
             self._adb_shell(f"am force-stop {self.package_name}")
 
-        # Evaluate Overall Status
+        # Evaluate Overall Status & Dynamic Device Compatibility
         elapsed = round(time.time() - start_time, 1)
         self.report["duration_seconds"] = elapsed
 
-        if self.report["crash_analysis"]["crashed"]:
+        crashed = bool(self.report["crash_analysis"].get("crashed"))
+        tv_compat = bool(self.report["tv_test"].get("dpad_compatibility") in ["COMPATIBLE", "PARTIAL"]) and not crashed
+        mobile_compat = bool(self.report["mobile_test"].get("touch_responsive", True)) and not crashed
+        tablet_compat = bool(self.report["tablet_test"].get("adaptive_layout", True)) and not crashed
+
+        self.report["device_compatibility"] = {
+            "tv": tv_compat,
+            "mobile": mobile_compat,
+            "tablet": tablet_compat,
+            "verified_by_emulator": True,
+            "tested_at": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        # Save individual compatibility.json for fast UI consumption
+        compat_path = os.path.join(self.output_dir, "compatibility.json")
+        try:
+            with open(compat_path, "w", encoding="utf-8") as f:
+                json.dump(self.report["device_compatibility"], f, indent=2)
+        except Exception:
+            pass
+
+        # Update local YAML profile with verified compatibility
+        try:
+            import yaml
+            prof_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "profiles")
+            prof_path = os.path.join(prof_dir, f"{self.package_name}.yml")
+            if os.path.exists(prof_path):
+                with open(prof_path, "r", encoding="utf-8") as f:
+                    pdata = yaml.safe_load(f) or {}
+                pdata["compatibility"] = self.report["device_compatibility"]
+                with open(prof_path, "w", encoding="utf-8") as f:
+                    yaml.dump(pdata, f, sort_keys=False, allow_unicode=True)
+                print(f"  💾 Updated {self.package_name}.yml with verified compatibility (TV: {tv_compat})")
+        except Exception as e:
+            print(f"  ⚠️ Error updating profile compatibility: {e}")
+
+        # Sync compatibility with Supabase listings & profiles
+        try:
+            from engine.supabase_client import update_listing_compatibility
+            update_listing_compatibility(self.package_name, self.report["device_compatibility"])
+        except Exception:
+            pass
+
+        if crashed:
             self.report["status"] = "CRASHED"
             print(f"\n❌ TEST BAŞARISIZ: Uygulama test esnasında çöktü! ({len(self.crashes_detected)} hata)")
         elif self.report["tv_test"].get("dpad_compatibility") == "INCOMPATIBLE":

@@ -174,6 +174,17 @@ def generate_and_record_guide(pipeline_result: dict, output_dir: str = "output")
         if update_mech.get("suggested_update_strategy"):
             profile_data["update_check"] = update_mech["suggested_update_strategy"]
 
+    # Record device compatibility if present
+    compat_file = os.path.join(output_dir, "compatibility.json")
+    if os.path.exists(compat_file):
+        try:
+            with open(compat_file, "r", encoding="utf-8") as f:
+                profile_data["compatibility"] = json.load(f)
+        except Exception:
+            pass
+    elif "compatibility" in pipeline_result:
+        profile_data["compatibility"] = pipeline_result["compatibility"]
+
     # Update history in profile
     history = profile_data.get("version_history", [])
     history.append({

@@ -99,3 +99,28 @@ def get_all_listings(limit=100):
     """Fetch active listings from PrimeStore catalog."""
     result = _request(f'listings?status=eq.published&select=id,title,"packageName",version,"fileUrl",icon_url&order=created_at.desc&limit={limit}')
     return result if isinstance(result, list) else []
+
+
+def update_listing_compatibility(package_name: str, compatibility: dict):
+    """Update listing platforms/variants in Supabase when emulator test proves TV compatibility."""
+    try:
+        res = _request(f'listings?"packageName"=eq.{package_name}&select=id,title,variants')
+        if not res or not isinstance(res, list):
+            return
+        listing = res[0]
+        listing_id = listing.get("id")
+        variants = listing.get("variants") or []
+
+        # If TV is verified compatible, ensure TV variant exists
+        if compatibility.get("tv"):
+            has_tv = any(isinstance(v, dict) and v.get("platform") == "TV" for v in variants)
+            if not has_tv and variants:
+                # Clone first variant with platform TV
+                tv_var = dict(variants[0])
+                tv_var["platform"] = "TV"
+                tv_var["name"] = f"{tv_var.get('name', 'Sürüm')} (TV Uyumlu)"
+                variants.append(tv_var)
+                update_listing(listing_id, {"variants": variants})
+                print(f"  📺 Supabase: {package_name} için TV platform uyumluluğu eklendi!")
+    except Exception as e:
+        print(f"⚠️ Failed to update listing compatibility: {e}")
