@@ -134,7 +134,7 @@ export async function POST(req: Request) {
           `• <code>/analyze &lt;APK_URL&gt;</code> — Statik analiz yap\n` +
           `• <code>/sanitize &lt;APK_URL&gt;</code> — Sadece izin temizle\n` +
           `• <code>/status</code> — Son durumlar\n\n` +
-          `Web Dashboard: <a href="https://prime-forge.vercel.app">Vercel Dashboard</a>`;
+          `Web Dashboard: <a href="https://prime-forge-8iec.vercel.app">Vercel Dashboard</a>`;
         await sendTelegramMessage(chatId, help);
         return NextResponse.json({ ok: true });
       }

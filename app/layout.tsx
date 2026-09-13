@@ -63,13 +63,13 @@ export default function RootLayout({
                 Bot & Pipeline Aktif
               </div>
               <a
-                href="https://t.me/PrimeStoreBot"
+                href="https://t.me/primeappstorebot"
                 target="_blank"
                 rel="noreferrer"
                 className="px-3 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/30 text-blue-300 text-xs font-medium flex items-center gap-1.5 transition-all"
               >
                 <Send className="w-3.5 h-3.5" />
-                Telegram
+                @primeappstorebot
               </a>
             </div>
           </div>
