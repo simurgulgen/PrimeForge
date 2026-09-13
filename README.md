@@ -105,15 +105,14 @@ PrimeForge/
 ├── telegram/
 │   ├── bot.py                      # Bildirim ve inline buton yönetimi
 │   └── webhook_handler.py          # Telegram webhook callback handler
-├── web/                            # Vercel Next.js 14 Dashboard
-│   ├── app/
-│   │   ├── layout.tsx              # Glassmorphism tema & navbar
-│   │   ├── page.tsx                # Ana kontrol paneli & hızlı form
-│   │   ├── jobs/page.tsx           # Tüm işlerin kuyruk listesi
-│   │   ├── profiles/page.tsx       # Mod profilleri ve rehber inceleyici
-│   │   └── api/                    # trigger-job, webhook-telegram, job-status, profiles
-│   └── lib/supabase.ts
-├── vercel.json                     # Vercel yapılandırması
+├── app/                            # Vercel Next.js 14 Dashboard (App Router)
+│   ├── layout.tsx                  # Glassmorphism tema & navbar
+│   ├── page.tsx                    # Ana kontrol paneli & hızlı form
+│   ├── jobs/page.tsx               # Tüm işlerin kuyruk listesi
+│   ├── profiles/page.tsx           # Mod profilleri ve rehber inceleyici
+│   └── api/                        # trigger-job, webhook-telegram, job-status, profiles
+├── lib/                            # Supabase client
+├── package.json                    # Next.js bağımlılıkları (Zero-config Vercel)
 └── requirements.txt                # Python bağımlılıkları (pyyaml, requests)
 ```
 
@@ -132,15 +131,15 @@ Repo: `simurgulgen/PrimeForge`
 
 ---
 
-## ☁️ Vercel Kurulumu
+## ☁️ Vercel Kurulumu (Zero-Config)
 
 1. [Vercel](https://vercel.com) paneline GitHub (`simurgulgen`) ile giriş yap.
 2. **Add New Project** → `PrimeForge` reposunu seç.
-3. Framework Preset: **Next.js** (Root directory: boş bırakılır, `vercel.json` otomatik algılar).
+3. Framework Preset: **Next.js** (Root Directory: varsayılan `.` olarak kalır, hiçbir ayar gerekmez).
 4. Environment Variables ekle:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `TELEGRAM_BOT_TOKEN`
    - `TELEGRAM_CHAT_ID`
    - `GITHUB_TOKEN` (Repo dispatch yetkili Personal Access Token)
-5. **Deploy** butonuna tıkla.
+5. **Deploy** butonuna tıkla. Otomatik derlenecek ve canlıya alınacaktır.
