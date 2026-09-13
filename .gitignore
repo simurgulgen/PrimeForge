@@ -12,6 +12,7 @@ decompiled/
 output/
 input.apk
 crash_log.txt
+*.log
 
 # Node & Next.js
 node_modules/

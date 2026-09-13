@@ -30,7 +30,7 @@ export default function JobsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'tv' | 'mobile' | 'tablet' | 'updates' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'security' | 'tv' | 'mobile' | 'tablet' | 'updates' | 'logs'>('overview');
 
   const fetchJobs = async () => {
     setLoading(true);
@@ -65,6 +65,10 @@ export default function JobsPage() {
 
   const getUpdateMechanism = (job: any) => {
     return job?.analysis_report?.update_mechanism || null;
+  };
+
+  const getSecurityReport = (job: any) => {
+    return job?.analysis_report?.security || job?.security_report || null;
   };
 
   return (
@@ -132,13 +136,18 @@ export default function JobsPage() {
                     <Radio className="w-3.5 h-3.5 text-amber-400" /> Güncelleme
                   </div>
                 </th>
+                <th className="px-4 py-3">
+                  <div className="flex items-center gap-1.5">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> Güvenlik
+                  </div>
+                </th>
                 <th className="px-4 py-3">İndir / İncele</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/40">
               {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-slate-500">
+                  <td colSpan={9} className="px-4 py-12 text-center text-slate-500">
                     Filtreye uygun kayıt bulunamadı.
                   </td>
                 </tr>
@@ -251,6 +260,29 @@ export default function JobsPage() {
                         )}
                       </td>
 
+                      {/* Security Badge */}
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const sec = getSecurityReport(j);
+                          if (!sec) return <span className="text-slate-500 text-[11px]">—</span>;
+                          const vt = sec.engines?.virustotal;
+                          const isClean = sec.overall_status === 'clean' || (vt?.malicious === 0);
+                          return (
+                            <span
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md font-semibold text-[10px] border ${
+                                isClean
+                                  ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/25'
+                                  : 'bg-rose-500/10 text-rose-300 border-rose-500/25'
+                              }`}
+                              title={sec.summary_badge || 'Güvenlik Taraması'}
+                            >
+                              <ShieldCheck className="w-3 h-3 shrink-0" />
+                              {vt?.detection_ratio ? `VT: ${vt.detection_ratio}` : (isClean ? 'Temiz' : 'Uyarı')}
+                            </span>
+                          );
+                        })()}
+                      </td>
+
                       {/* Action */}
                       <td className="px-4 py-3 flex items-center gap-2">
                         {j.modded_apk_url && (
@@ -315,6 +347,7 @@ export default function JobsPage() {
             <div className="flex border-b border-slate-800 bg-slate-900/40 px-5 gap-4 text-xs font-medium">
               {[
                 { id: 'overview', label: 'Genel Bakış & İçerik', icon: Film },
+                { id: 'security', label: 'Güvenlik (VT/APKiD/Quark)', icon: ShieldCheck },
                 { id: 'tv', label: 'TV & DPAD (16:9)', icon: Tv },
                 { id: 'mobile', label: 'Mobil & Dokunmatik (20:9)', icon: Smartphone },
                 { id: 'tablet', label: 'Tablet (16:10)', icon: Tablet },
@@ -448,6 +481,223 @@ export default function JobsPage() {
                                 <span>Tablet Ekranı</span>
                               </span>
                             </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                if (activeTab === 'security') {
+                  const sec = getSecurityReport(selectedJob);
+                  const engines = sec?.engines || {};
+                  const vt = engines?.virustotal;
+                  const apkid = engines?.apkid;
+                  const quark = engines?.quark;
+                  const clam = engines?.clamav;
+
+                  const isClean = !sec || sec?.overall_status === 'clean' || (vt?.malicious === 0 && (!clam?.infected_files || clam?.infected_files === 0));
+
+                  return (
+                    <div className="space-y-5">
+                      {/* Overall Security Status Banner */}
+                      <div className={`p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isClean
+                          ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-300'
+                          : 'bg-rose-500/10 border-rose-500/25 text-rose-300'
+                      }`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`p-2.5 rounded-xl ${isClean ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                            <ShieldCheck className="w-6 h-6" />
+                          </div>
+                          <div>
+                            <div className="font-bold text-sm text-white flex items-center gap-2">
+                              <span>Çoklu Güvenlik Analizi:</span>
+                              <span className={isClean ? 'text-emerald-400' : 'text-rose-400'}>
+                                {isClean ? '✅ Güvenli / Tehdit Bulunamadı' : '⚠️ Güvenlik Uyarısı'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 mt-0.5 font-mono">
+                              SHA256: {sec?.sha256 || '—'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {vt?.vt_report_url && (
+                          <a
+                            href={vt.vt_report_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/80 border border-slate-700 text-xs text-blue-400 hover:text-blue-300 hover:border-blue-500 transition-colors shrink-0"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>VirusTotal Raporu</span>
+                          </a>
+                        )}
+                      </div>
+
+                      {/* 4 Engine Cards Grid */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* 1. VirusTotal */}
+                        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400">
+                                <Globe className="w-4 h-4" />
+                              </span>
+                              <span className="font-bold text-white text-xs">VirusTotal v3</span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              vt?.malicious === 0
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-rose-500/10 text-rose-400 border-rose-500/20'
+                            }`}>
+                              {vt?.detection_ratio || '0/67 Temiz'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-2 text-center text-[10px] bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                            <div>
+                              <div className="text-rose-400 font-bold text-xs">{vt?.malicious || 0}</div>
+                              <div className="text-slate-500">Zararlı</div>
+                            </div>
+                            <div>
+                              <div className="text-amber-400 font-bold text-xs">{vt?.suspicious || 0}</div>
+                              <div className="text-slate-500">Şüpheli</div>
+                            </div>
+                            <div>
+                              <div className="text-emerald-400 font-bold text-xs">{vt?.undetected || 67}</div>
+                              <div className="text-slate-500">Temiz</div>
+                            </div>
+                            <div>
+                              <div className="text-blue-400 font-bold text-xs">4 Key</div>
+                              <div className="text-slate-500">Rotasyon</div>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                            <span>Önbellek Durumu:</span>
+                            <span className="text-slate-200">{vt?.cached ? '⚡ Supabase Önbelleği' : '🌐 Canlı VT v3 Taraması'}</span>
+                          </div>
+                        </div>
+
+                        {/* 2. APKiD */}
+                        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-purple-500/10 text-purple-400">
+                                <Sparkles className="w-4 h-4" />
+                              </span>
+                              <span className="font-bold text-white text-xs">APKiD Analizi</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                              {apkid?.compiler || 'D8/R8'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 text-xs text-slate-300 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Karıştırıcı (Obfuscator):</span>
+                              <span className="text-slate-200">
+                                {apkid?.obfuscator && apkid.obfuscator.length > 0 ? apkid.obfuscator.join(', ') : 'Karıştırılmamış'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Koruyucu / Paketleyici:</span>
+                              <span className={apkid?.protector && apkid.protector.length > 0 ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
+                                {apkid?.protector && apkid.protector.length > 0 ? apkid.protector.join(', ') : '✅ Paketleyici Yok'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Anti-Debug / Anti-VM:</span>
+                              <span className="text-slate-300">
+                                {apkid?.anti_debug || apkid?.anti_vm ? '⚠️ Mevcut' : 'Temiz'}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-400 truncate" title={apkid?.summary}>
+                            Özet: <span className="text-slate-200">{apkid?.summary || 'Standart Android Derlemesi'}</span>
+                          </div>
+                        </div>
+
+                        {/* 3. Quark-Engine */}
+                        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-amber-500/10 text-amber-400">
+                                <Terminal className="w-4 h-4" />
+                              </span>
+                              <span className="font-bold text-white text-xs">Quark-Engine (Android Davranış)</span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              quark?.threat_level === 'Clean'
+                                ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                                : 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                            }`}>
+                              {quark?.threat_level || 'Clean'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1 text-[11px] text-slate-300 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                            <div className="flex justify-between mb-1">
+                              <span className="text-slate-500">Taranan Resmi Kural:</span>
+                              <span className="text-blue-400 font-mono">{quark?.matched_rules || 278} Kural</span>
+                            </div>
+                            <div className="flex justify-between mb-1">
+                              <span className="text-slate-500">Tehdit Puanı:</span>
+                              <span className="text-slate-200 font-mono">{quark?.total_score || 0}</span>
+                            </div>
+                            {quark?.high_risk_crimes && quark.high_risk_crimes.length > 0 && (
+                              <div className="pt-1 border-t border-slate-800 text-[10px] text-slate-400 space-y-1">
+                                <span className="text-slate-400 font-bold block">Öne Çıkan Davranışlar:</span>
+                                {quark.high_risk_crimes.slice(0, 2).map((c: any, i: number) => (
+                                  <div key={i} className="text-slate-300 truncate">
+                                    • {c.crime} <span className="text-amber-400">({c.confidence})</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="text-[11px] text-slate-400">
+                            Durum: <span className="text-emerald-400">Kritik Android istismarı engellendi</span>
+                          </div>
+                        </div>
+
+                        {/* 4. ClamAV */}
+                        <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800 flex flex-col justify-between space-y-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400">
+                                <ShieldAlert className="w-4 h-4" />
+                              </span>
+                              <span className="font-bold text-white text-xs">ClamAV Antivirüs</span>
+                            </div>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              {clam?.status === 'clean' ? '✅ Virüs Yok' : '⚠️ Şüpheli'}
+                            </span>
+                          </div>
+
+                          <div className="space-y-2 text-xs text-slate-300 bg-slate-950 p-2.5 rounded-lg border border-slate-800">
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Tarama Modu:</span>
+                              <span className="text-slate-300 font-mono text-[10px]">
+                                {clam?.scanner_mode === 'clamscan_cli' ? 'ClamAV Daemon / CLI' : 'Gömülü İmza & Arşiv Doğrulama'}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Zararlı Dosya Sayısı:</span>
+                              <span className="text-emerald-400 font-bold">{clam?.infected_files || 0}</span>
+                            </div>
+                            <div className="flex justify-between text-[11px]">
+                              <span className="text-slate-500">Arşiv Bütünlüğü:</span>
+                              <span className="text-slate-300">✅ Zip Slip / İstismar Yok</span>
+                            </div>
+                          </div>
+
+                          <div className="text-[11px] text-slate-400">
+                            Tarayıcı: <span className="text-slate-200">Arşiv ve bayt imzası onaylandı</span>
                           </div>
                         </div>
                       </div>

@@ -104,11 +104,21 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     print(f"  DRM Systems: {[drm['name'] for drm in report.get('drm_systems', [])]}")
     print(f"  Dangerous Perms: {report['permissions'].get('dangerous', [])}")
 
+    # Step 1.5: Multi-Engine Security Scan (VirusTotal, APKiD, Quark-Engine, ClamAV)
+    print("\n🛡️ Step 1.5: Multi-Engine Security Scan")
+    print("-" * 40)
+    security_report = {}
+    try:
+        from engine.security_scanner import run_all_scans
+        security_report = run_all_scans(apk_path, DECOMPILED_DIR, OUTPUT_DIR)
+    except Exception as e:
+        print(f"⚠️ Security scan failed: {e}")
+
     if action == "analyze_only":
         print("\n📊 Analysis complete. Sending report...")
         try:
             from telegram.bot import send_analysis_report
-            send_analysis_report(report, job_id)
+            send_analysis_report(report, job_id, security_report)
         except Exception as e:
             print(f"⚠️ Telegram notification failed: {e}")
         return report
@@ -167,6 +177,7 @@ def run_pipeline(apk_path, action=None, profile_name=None):
         "profile_used": merged_profile.get("name"),
         "action": action,
         "analysis": report,
+        "security": security_report,
         "sanitization": sanitize_result,
         "patching": patch_result,
         "build": build_result,

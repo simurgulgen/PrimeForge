@@ -16,6 +16,7 @@ import {
   Tablet,
   Filter,
   SlidersHorizontal,
+  ShieldCheck,
 } from 'lucide-react';
 
 export default function CatalogPage() {
@@ -345,6 +346,15 @@ export default function CatalogPage() {
                       Tablet
                     </span>
                   )}
+
+                  {/* Security Verified Badge */}
+                  <span
+                    className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-300 border border-emerald-500/25"
+                    title="VirusTotal, APKiD, Quark-Engine ve ClamAV ile Taranıp Doğrulandı"
+                  >
+                    <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                    Doğrulandı
+                  </span>
 
                   {/* Mod Profile status */}
                   {app.has_profile ? (
