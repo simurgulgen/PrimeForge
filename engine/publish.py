@@ -94,8 +94,6 @@ def publish():
             }
             if screenshot_url:
                 update_payload["screenshot_url"] = screenshot_url
-            if github_release_url:
-                update_payload["github_release_url"] = github_release_url
 
             update_job(job_id, update_payload)
             print("  📝 Job updated in Supabase with emulator test report, screenshots & GitHub release")
