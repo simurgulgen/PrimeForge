@@ -41,10 +41,30 @@ class UpdateAnalyzer:
         )
 
         seen_urls = set()
+        vendor_excludes = (
+            "androidx" + os.sep,
+            "kotlin" + os.sep,
+            "kotlinx" + os.sep,
+            "okhttp3" + os.sep,
+            "retrofit2" + os.sep,
+            "com" + os.sep + "google" + os.sep + "gson" + os.sep,
+            "com" + os.sep + "facebook" + os.sep,
+            "io" + os.sep + "reactivex" + os.sep,
+        )
+
+        generic_github_excludes = [
+            "github.com/google/gson", "github.com/square", "github.com/bumptech",
+            "github.com/airbnb", "github.com/protocolbuffers", "github.com/ReactiveX"
+        ]
 
         for sdir in self.smali_dirs:
             sdir_path = os.path.join(self.decompiled_dir, sdir)
             for path in Path(sdir_path).rglob("*.smali"):
+                # Skip massive vendor libraries
+                str_path = str(path)
+                if any(v in str_path for v in vendor_excludes):
+                    continue
+
                 try:
                     with open(path, "r", encoding="utf-8", errors="ignore") as f:
                         content = f.read()
@@ -63,7 +83,7 @@ class UpdateAnalyzer:
                     # Match GitHub release URLs
                     for m in github_pattern.finditer(content):
                         url = m.group(1)
-                        if url not in seen_urls:
+                        if url not in seen_urls and not any(gen in url for gen in generic_github_excludes):
                             seen_urls.add(url)
                             endpoints.append({
                                 "type": "github_release",
