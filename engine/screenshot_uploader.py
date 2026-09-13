@@ -15,14 +15,14 @@ from typing import Dict, Optional, Any
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from engine.uploader import upload_to_catbox
+from engine.uploader import upload_to_catbox, upload_image_smart
 from engine.supabase_client import update_job
 
 
 def collect_and_upload_screenshots(job_id: str = None, package_name: str = None, output_dir: str = "output") -> Dict[str, str]:
     """
-    Finds all screenshot images in output/, uploads each to Catbox,
-    and returns a mapping of device/screen type -> public Catbox URL.
+    Finds all screenshot images in output/, uploads each via ImgBB (with Catbox fallback),
+    and returns a mapping of device/screen type -> public image URL.
     """
     job_id = job_id or os.environ.get("JOB_ID", "")
     os.makedirs(output_dir, exist_ok=True)
@@ -39,13 +39,12 @@ def collect_and_upload_screenshots(job_id: str = None, package_name: str = None,
     }
 
     uploaded_urls: Dict[str, str] = {}
-    print("\n📸 [Screenshot Uploader] Scanning output/ for device and content screenshots...")
+    print("\n📸 [Screenshot Uploader] Scanning output/ for device and content screenshots (ImgBB / Catbox)...")
 
     for key, path in screenshot_files.items():
         if os.path.exists(path) and os.path.getsize(path) > 100:
             try:
-                print(f"  ☁️ Uploading {os.path.basename(path)} ({os.path.getsize(path) // 1024} KB) to Catbox...")
-                url = upload_to_catbox(path)
+                url = upload_image_smart(path)
                 if url and url.startswith("http"):
                     uploaded_urls[key] = url
                     print(f"    ✅ Uploaded ({key}): {url}")
@@ -59,7 +58,7 @@ def collect_and_upload_screenshots(job_id: str = None, package_name: str = None,
         base_name = os.path.splitext(os.path.basename(extra_png))[0]
         if base_name not in uploaded_urls:
             try:
-                url = upload_to_catbox(extra_png)
+                url = upload_image_smart(extra_png)
                 if url and url.startswith("http"):
                     uploaded_urls[base_name] = url
             except Exception:
