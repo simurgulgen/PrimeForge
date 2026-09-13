@@ -88,7 +88,18 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     print(f"🔧 PrimeForge Pipeline v1.0")
     print(f"📦 APK: {apk_path}")
     print(f"🎯 Action: {action}")
+    print(f"🆔 Job ID: {job_id}")
     print("=" * 60)
+
+    if job_id and job_id != "local":
+        try:
+            update_job(job_id, {
+                "status": "analyzing",
+                "github_run_id": str(os.environ.get("GITHUB_RUN_ID", ""))
+            })
+            print(f"📡 Supabase işi #{job_id} 'analyzing' durumuna güncellendi.")
+        except Exception as e:
+            print(f"⚠️ Job status update failed: {e}")
 
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -114,8 +125,27 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     except Exception as e:
         print(f"⚠️ Security scan failed: {e}")
 
+    # Include security report inside analysis report for frontend inspection
+    report["security"] = security_report
+
     if action == "analyze_only":
-        print("\n📊 Analysis complete. Sending report...")
+        print("\n📊 Analysis complete. Updating Supabase and sending report...")
+        if job_id and job_id != "local":
+            try:
+                v_code = report.get("version_code")
+                update_job(job_id, {
+                    "status": "completed",
+                    "app_name": report.get("app_label") or report.get("package_name"),
+                    "package_name": package_name,
+                    "version_name": report.get("version_name"),
+                    "version_code": int(v_code) if str(v_code).isdigit() else None,
+                    "analysis_report": report,
+                    "github_run_id": str(os.environ.get("GITHUB_RUN_ID", ""))
+                })
+                print(f"✅ Supabase işi #{job_id} 'completed' olarak kaydedildi.")
+            except Exception as e:
+                print(f"⚠️ Supabase job update failed: {e}")
+
         try:
             from telegram.bot import send_analysis_report
             send_analysis_report(report, job_id, security_report)
@@ -130,6 +160,19 @@ def run_pipeline(apk_path, action=None, profile_name=None):
 
     if profile is None or not profile.get("auto_apply", False):
         print("🚫 No auto-apply profile. Requesting decision via Telegram...")
+        if job_id and job_id != "local":
+            try:
+                v_code = report.get("version_code")
+                update_job(job_id, {
+                    "status": "waiting_decision",
+                    "app_name": report.get("app_label") or report.get("package_name"),
+                    "package_name": package_name,
+                    "version_name": report.get("version_name"),
+                    "version_code": int(v_code) if str(v_code).isdigit() else None,
+                    "analysis_report": report,
+                })
+            except Exception as e:
+                print(f"⚠️ Supabase job update failed: {e}")
         try:
             from telegram.bot import request_decision
             request_decision(report, job_id)
@@ -155,6 +198,11 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     if action != "sanitize_only":
         print("\n🔧 Step 4: Smali Patching")
         print("-" * 40)
+        if job_id and job_id != "local":
+            try:
+                update_job(job_id, {"status": "patching"})
+            except Exception:
+                pass
         patch_result = apply_profile_patches(DECOMPILED_DIR, merged_profile)
 
     # Step 5: Bump version
@@ -165,6 +213,11 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     # Step 6: Build & Sign
     print("\n🔐 Step 6: Build & Sign")
     print("-" * 40)
+    if job_id and job_id != "local":
+        try:
+            update_job(job_id, {"status": "building"})
+        except Exception:
+            pass
     ks_pass = os.environ.get("KEYSTORE_PASSWORD", "primestore123")
     ks_alias = os.environ.get("KEYSTORE_ALIAS", "primestore")
     build_result = build_and_sign(DECOMPILED_DIR, OUTPUT_DIR, "primestore_release.jks", ks_alias, ks_pass)
@@ -182,6 +235,19 @@ def run_pipeline(apk_path, action=None, profile_name=None):
         "patching": patch_result,
         "build": build_result,
     }
+
+    if job_id and job_id != "local":
+        try:
+            update_job(job_id, {
+                "status": "testing",
+                "app_name": report.get("app_label") or package_name,
+                "package_name": package_name,
+                "version_name": report.get("version_name"),
+                "version_code": int(report.get("version_code")) if str(report.get("version_code", "")).isdigit() else None,
+                "analysis_report": report,
+            })
+        except Exception:
+            pass
 
     # Step 7: Generate Modding Guide & Record Profile for Future Updates
     print("\n📖 Step 7: Generating Modding Guide & Recording Profile")

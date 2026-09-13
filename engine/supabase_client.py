@@ -7,7 +7,8 @@ import urllib.request
 from datetime import datetime, timezone
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://mdorxlwvitfixbzajksw.supabase.co")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+DEFAULT_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kb3J4bHd2aXRmaXhiemFqa3N3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU4NzE2NTcsImV4cCI6MjEwMTQ0NzY1N30.HXoHD3JGXmq_kIkcJ0XJJaMX_BCyukwG7EawZb738mw"
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY", "") or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "") or DEFAULT_ANON_KEY
 
 _ctx = ssl.create_default_context()
 _ctx.check_hostname = False

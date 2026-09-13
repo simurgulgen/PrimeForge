@@ -17,6 +17,8 @@ import {
   Filter,
   SlidersHorizontal,
   ShieldCheck,
+  ChevronRight,
+  Layers,
 } from 'lucide-react';
 
 export default function CatalogPage() {
@@ -32,6 +34,7 @@ export default function CatalogPage() {
   const [page, setPage] = useState(1);
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ id: string; type: string; text: string } | null>(null);
+  const [toast, setToast] = useState<{ title: string; message: string; jobId?: string } | null>(null);
 
   // Load TV-only preference from localStorage on mount
   useEffect(() => {
@@ -47,34 +50,38 @@ export default function CatalogPage() {
 
   // Fetch real categories from /api/categories
   useEffect(() => {
-    fetch('/api/categories')
-      .then((res) => res.json())
-      .then((data) => {
+    const fetchCategories = async () => {
+      try {
+        const res = await fetch('/api/categories');
+        const data = await res.json();
         if (data.categories && Array.isArray(data.categories)) {
-          setCategories([{ id: 'all', name: 'Tüm Kategoriler' }, ...data.categories]);
+          setCategories(data.categories);
         }
-      })
-      .catch((err) => console.error('Error fetching categories:', err));
+      } catch (err) {
+        console.error('Failed to load categories:', err);
+      }
+    };
+    fetchCategories();
   }, []);
 
   const fetchApps = async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams({
-        search,
-        category,
-        tv_only: tvOnly.toString(),
-        page: page.toString(),
-        limit: '60',
-      });
-      const res = await fetch(`/api/apps?${params.toString()}`);
+      const params = new URLSearchParams();
+      if (search) params.set('search', search);
+      if (category && category !== 'all') params.set('category', category);
+      if (tvOnly) params.set('tvOnly', 'true');
+      params.set('page', String(page));
+      params.set('limit', '60');
+
+      const res = await fetch(`/api/catalog?${params.toString()}`);
       const data = await res.json();
       if (data.apps) {
         setApps(data.apps);
-        setTotal(data.total);
+        setTotal(data.total || 0);
       }
-    } catch (e) {
-      console.error(e);
+    } catch (err) {
+      console.error('Failed to fetch apps:', err);
     } finally {
       setLoading(false);
     }
@@ -120,11 +127,19 @@ export default function CatalogPage() {
       });
       const data = await res.json();
       if (res.ok) {
+        const jobIdShort = data.job_id ? `#${data.job_id.substring(0, 8)}` : '';
+        const actionLabel = actionType === 'analyze_only' ? 'Statik Analiz' : 'Modlama';
         setActionMsg({
           id: app.id,
           type: 'success',
-          text: `İş kuyruğa alındı! Job ID: #${data.job_id?.substring(0, 8)}`,
+          text: `${actionLabel} kuyruğa alındı! (${jobIdShort})`,
         });
+        setToast({
+          title: `🚀 ${app.name || app.packageName} — ${actionLabel} Başlatıldı`,
+          message: `İş kuyruğa eklendi (${jobIdShort}). Sonuçları İş Kuyruğu sayfasından takip edebilirsiniz.`,
+          jobId: data.job_id,
+        });
+        setTimeout(() => setToast(null), 8000);
       } else {
         setActionMsg({
           id: app.id,
@@ -163,6 +178,13 @@ export default function CatalogPage() {
           </div>
 
           <div className="flex items-center gap-3">
+            <a
+              href="/jobs"
+              className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-2 shadow-lg shadow-blue-600/25 transition-all shrink-0"
+            >
+              <Layers className="w-4 h-4" />
+              İş Kuyruğu
+            </a>
             <button
               onClick={fetchApps}
               disabled={loading}
@@ -370,18 +392,28 @@ export default function CatalogPage() {
 
                 {actionMsg && actionMsg.id === app.id && (
                   <div
-                    className={`mb-3 p-2 rounded-lg text-[11px] flex items-center gap-1.5 ${
+                    className={`mb-3 p-2.5 rounded-xl text-[11px] flex items-center justify-between gap-2 border ${
                       actionMsg.type === 'success'
-                        ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-300'
-                        : 'bg-rose-500/10 border border-rose-500/30 text-rose-300'
+                        ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                        : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
                     }`}
                   >
-                    {actionMsg.type === 'success' ? (
-                      <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
-                    ) : (
-                      <XCircle className="w-3.5 h-3.5 shrink-0" />
+                    <div className="flex items-center gap-1.5 truncate">
+                      {actionMsg.type === 'success' ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                      ) : (
+                        <XCircle className="w-3.5 h-3.5 shrink-0 text-rose-400" />
+                      )}
+                      <span className="truncate font-medium">{actionMsg.text}</span>
+                    </div>
+                    {actionMsg.type === 'success' && (
+                      <a
+                        href="/jobs"
+                        className="shrink-0 px-2.5 py-1 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 hover:text-emerald-100 font-semibold text-[10px] flex items-center gap-1 transition-colors"
+                      >
+                        Kuyruğa Git <ChevronRight className="w-3 h-3" />
+                      </a>
                     )}
-                    <span className="truncate">{actionMsg.text}</span>
                   </div>
                 )}
               </div>
@@ -448,6 +480,25 @@ export default function CatalogPage() {
           >
             Sonraki
           </button>
+        </div>
+      )}
+
+      {/* Floating Toast Notification */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-md rounded-2xl bg-slate-900/95 border border-emerald-500/40 shadow-2xl p-4 backdrop-blur-md flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5">
+          <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shrink-0">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-bold text-white truncate">{toast.title}</div>
+            <div className="text-[11px] text-slate-300 truncate mt-0.5">{toast.message}</div>
+          </div>
+          <a
+            href="/jobs"
+            className="shrink-0 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs flex items-center gap-1 shadow-md shadow-blue-600/25 transition-all"
+          >
+            Kuyruğu Aç <ChevronRight className="w-3 h-3" />
+          </a>
         </div>
       )}
     </div>

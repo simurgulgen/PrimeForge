@@ -110,9 +110,9 @@ export default function DashboardPage() {
     }
   };
 
-  const completedCount = jobs.filter((j) => j.status === 'published' || j.status === 'waiting_approval').length;
-  const pendingCount = jobs.filter((j) => ['pending', 'patching', 'building', 'testing'].includes(j.status)).length;
-  const failedCount = jobs.filter((j) => ['failed', 'test_failed'].includes(j.status)).length;
+  const completedCount = jobs.filter((j) => ['published', 'waiting_approval', 'completed', 'analyzed'].includes(j.status)).length;
+  const pendingCount = jobs.filter((j) => ['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'uploading'].includes(j.status)).length;
+  const failedCount = jobs.filter((j) => ['failed', 'test_failed', 'cancelled'].includes(j.status)).length;
 
   return (
     <div className="space-y-8">
@@ -356,19 +356,70 @@ export default function DashboardPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <span
-                        className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
-                          job.status === 'published'
-                            ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : job.status === 'waiting_approval'
-                            ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20'
-                            : job.status === 'failed' || job.status === 'test_failed'
-                            ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                        }`}
-                      >
-                        {job.status}
-                      </span>
+                      {(() => {
+                        const s = job.status;
+                        if (s === 'completed' || s === 'analyzed') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Analiz Tamamlandı
+                            </span>
+                          );
+                        }
+                        if (s === 'published') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                              Yayınlandı
+                            </span>
+                          );
+                        }
+                        if (s === 'waiting_approval') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                              Onay Bekliyor
+                            </span>
+                          );
+                        }
+                        if (s === 'analyzing') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-300 border border-amber-500/30 animate-pulse">
+                              Analiz Ediliyor...
+                            </span>
+                          );
+                        }
+                        if (s === 'patching') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-500/15 text-purple-300 border border-purple-500/30 animate-pulse">
+                              Yamalanıyor...
+                            </span>
+                          );
+                        }
+                        if (s === 'building') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 animate-pulse">
+                              Derleniyor...
+                            </span>
+                          );
+                        }
+                        if (s === 'testing') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-500/15 text-blue-300 border border-blue-500/30 animate-pulse">
+                              Test Ediliyor...
+                            </span>
+                          );
+                        }
+                        if (s === 'failed' || s === 'test_failed') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                              Hata
+                            </span>
+                          );
+                        }
+                        return (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            Bekliyor
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       {job.emulator_passed ? (
