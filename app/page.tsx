@@ -16,6 +16,8 @@ import {
   Store,
   FileCode2,
   Search,
+  Ban,
+  AlertTriangle,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -26,6 +28,67 @@ export default function DashboardPage() {
   const [submitMsg, setSubmitMsg] = useState<{ type: string; text: string } | null>(null);
   const [jobs, setJobs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ title: string; message: string; type?: 'success' | 'error' } | null>(null);
+
+  const handleCancelJob = async (jobId: string) => {
+    if (!confirm('Bu görevi iptal etmek istediğinize emin misiniz?')) return;
+    setActionLoading(jobId);
+    try {
+      const res = await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', jobId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJobs((prev) =>
+          prev.map((j) => (j.id === jobId ? { ...j, status: 'cancelled' } : j))
+        );
+        setToast({
+          title: '🛑 Görev İptal Edildi',
+          message: 'İşlem durduruldu ve görev iptal edildi.',
+          type: 'success',
+        });
+      } else {
+        setToast({ title: 'Hata', message: data.error || 'İptal edilemedi.', type: 'error' });
+      }
+    } catch (e: any) {
+      setToast({ title: 'Hata', message: e.message, type: 'error' });
+    } finally {
+      setActionLoading(null);
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
+
+  const handlePublishJob = async (jobId: string) => {
+    setActionLoading(jobId);
+    try {
+      const res = await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', jobId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJobs((prev) =>
+          prev.map((j) => (j.id === jobId ? { ...j, status: 'published' } : j))
+        );
+        setToast({
+          title: '🎉 PrimeStore Kataloğunda Yayınlandı!',
+          message: 'Modlu APK mağazada kullanıcılara sunuldu.',
+          type: 'success',
+        });
+      } else {
+        setToast({ title: 'Hata', message: data.error || 'Yayınlanamadı.', type: 'error' });
+      }
+    } catch (e: any) {
+      setToast({ title: 'Hata', message: e.message, type: 'error' });
+    } finally {
+      setActionLoading(null);
+      setTimeout(() => setToast(null), 5000);
+    }
+  };
 
   // App Selector Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -401,12 +464,13 @@ export default function DashboardPage() {
                 <th className="px-4 py-3">Test</th>
                 <th className="px-4 py-3">Çıktı APK</th>
                 <th className="px-4 py-3">Tarih</th>
+                <th className="px-4 py-3 text-right">Eylemler</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/50">
               {jobs.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-8 text-center text-slate-500">
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                     Henüz kayıtlı bir iş bulunmuyor. Yukarıdaki formdan yeni bir APK gönderebilirsin.
                   </td>
                 </tr>
@@ -526,6 +590,40 @@ export default function DashboardPage() {
                         minute: '2-digit',
                       })}
                     </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1.5">
+                        {job.modded_apk_url && job.status !== 'published' && (
+                          <button
+                            type="button"
+                            onClick={() => handlePublishJob(job.id)}
+                            disabled={actionLoading === job.id}
+                            className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold flex items-center gap-1 transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                            title="PrimeStore Kataloğunda Yayına Al"
+                          >
+                            <Zap className="w-3 h-3 fill-current" />
+                            Yayınla
+                          </button>
+                        )}
+                        {['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'waiting_approval'].includes(job.status) && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelJob(job.id)}
+                            disabled={actionLoading === job.id}
+                            className="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                            title="Bu Görevi İptal Et"
+                          >
+                            <Ban className="w-3 h-3" />
+                            İptal
+                          </button>
+                        )}
+                        <Link
+                          href="/jobs"
+                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center gap-1 transition-colors"
+                        >
+                          Detay
+                        </Link>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -604,6 +702,34 @@ export default function DashboardPage() {
               )}
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating Action Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 max-w-md rounded-2xl p-4 backdrop-blur-md flex items-center gap-3 shadow-2xl border animate-in fade-in slide-in-from-bottom-5 ${
+          toast.type === 'error'
+            ? 'bg-rose-950/95 border-rose-500/40 text-rose-200'
+            : 'bg-slate-900/95 border-emerald-500/40 text-slate-100'
+        }`}>
+          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+            toast.type === 'error'
+              ? 'bg-rose-500/20 border-rose-500/30 text-rose-400'
+              : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+          }`}>
+            {toast.type === 'error' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-bold truncate">{toast.title}</div>
+            <div className="text-[11px] text-slate-300 truncate mt-0.5">{toast.message}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="w-6 h-6 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs"
+          >
+            ✕
+          </button>
         </div>
       )}
     </div>

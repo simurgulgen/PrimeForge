@@ -24,7 +24,10 @@ import {
   Sparkles,
   Globe,
   Radio,
+  Zap,
+  Ban,
 } from 'lucide-react';
+import InteractiveModModal from '@/app/components/InteractiveModModal';
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<any[]>([]);
@@ -34,6 +37,82 @@ export default function JobsPage() {
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'screenshots' | 'security' | 'tv' | 'mobile' | 'tablet' | 'updates' | 'logs'>('overview');
   const [lightboxImg, setLightboxImg] = useState<{ url: string; label: string } | null>(null);
+  const [jobActionLoading, setJobActionLoading] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ title: string; message: string; type?: 'success' | 'error' } | null>(null);
+  const [customModApp, setCustomModApp] = useState<any | null>(null);
+
+  const handleCancelJob = async (jobId: string) => {
+    if (!confirm('Bu görevi iptal etmek istediğinize emin misiniz?')) return;
+    setJobActionLoading(jobId);
+    try {
+      const res = await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel', jobId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJobs((prev) =>
+          prev.map((j) => (j.id === jobId ? { ...j, status: 'cancelled' } : j))
+        );
+        if (selectedJob?.id === jobId) {
+          setSelectedJob((prev: any) => (prev ? { ...prev, status: 'cancelled' } : null));
+        }
+        setToast({
+          title: '🛑 Görev İptal Edildi',
+          message: 'İşlem durduruldu ve görev iptal edildi olarak işaretlendi.',
+          type: 'success',
+        });
+      } else {
+        setToast({
+          title: 'Hata',
+          message: data.error || 'İptal işlemi başarısız oldu.',
+          type: 'error',
+        });
+      }
+    } catch (e: any) {
+      setToast({ title: 'Hata', message: e.message, type: 'error' });
+    } finally {
+      setJobActionLoading(null);
+      setTimeout(() => setToast(null), 6000);
+    }
+  };
+
+  const handlePublishJob = async (jobId: string) => {
+    setJobActionLoading(jobId);
+    try {
+      const res = await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', jobId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setJobs((prev) =>
+          prev.map((j) => (j.id === jobId ? { ...j, status: 'published' } : j))
+        );
+        if (selectedJob?.id === jobId) {
+          setSelectedJob((prev: any) => (prev ? { ...prev, status: 'published' } : null));
+        }
+        setToast({
+          title: '🎉 PrimeStore Kataloğunda Yayınlandı!',
+          message: 'Modlu APK mağazada kullanıcılara sunuldu ve indirme bağlantısı güncellendi.',
+          type: 'success',
+        });
+      } else {
+        setToast({
+          title: 'Yayınlama Hatası',
+          message: data.error || 'Yayınlama işlemi gerçekleştirilemedi.',
+          type: 'error',
+        });
+      }
+    } catch (e: any) {
+      setToast({ title: 'Hata', message: e.message, type: 'error' });
+    } finally {
+      setJobActionLoading(null);
+      setTimeout(() => setToast(null), 6000);
+    }
+  };
 
   const fetchJobs = async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -414,21 +493,64 @@ export default function JobsPage() {
                       </td>
 
                       {/* Action */}
-                      <td className="px-4 py-3 flex items-center gap-2">
+                      <td className="px-4 py-3 flex items-center gap-1.5">
                         {j.modded_apk_url && (
                           <a
                             href={j.modded_apk_url}
                             target="_blank"
                             rel="noreferrer"
                             onClick={(e) => e.stopPropagation()}
-                            className="text-blue-400 hover:underline flex items-center gap-1 text-[11px]"
+                            className="text-blue-400 hover:underline flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded hover:bg-blue-500/10"
+                            title="Modlanmış APK Dosyasını İndir"
                           >
                             APK <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
+
+                        {/* Publish button if waiting for approval */}
+                        {j.modded_apk_url && j.status !== 'published' && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handlePublishJob(j.id);
+                            }}
+                            disabled={jobActionLoading === j.id}
+                            className="px-2 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold flex items-center gap-1 transition-all shadow-sm shadow-emerald-600/20 cursor-pointer disabled:opacity-50"
+                            title="PrimeStore Kataloğunda Yayına Al"
+                          >
+                            {jobActionLoading === j.id ? (
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                            ) : (
+                              <Zap className="w-3 h-3 fill-current" />
+                            )}
+                            Yayınla
+                          </button>
+                        )}
+
+                        {/* Cancel button if job is active/pending */}
+                        {['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'waiting_approval'].includes(j.status) && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCancelJob(j.id);
+                            }}
+                            disabled={jobActionLoading === j.id}
+                            className="px-2 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 hover:text-rose-100 text-[10px] font-semibold flex items-center gap-1 transition-all cursor-pointer disabled:opacity-50"
+                            title="Bu Görevi İptal Et"
+                          >
+                            <Ban className="w-3 h-3" /> İptal
+                          </button>
+                        )}
+
                         <button
                           type="button"
-                          className="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center gap-1 transition-colors"
+                          onClick={() => {
+                            setSelectedJob(j);
+                            setActiveTab('overview');
+                          }}
+                          className="px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 text-[10px] flex items-center gap-1 transition-colors"
                         >
                           <Eye className="w-3 h-3" /> Detay
                         </button>
@@ -466,6 +588,24 @@ export default function JobsPage() {
               </div>
 
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomModApp({
+                      name: selectedJob.app_name || selectedJob.analysis_report?.app_label || selectedJob.package_name,
+                      title: selectedJob.app_name || selectedJob.analysis_report?.app_label || selectedJob.package_name,
+                      packageName: selectedJob.package_name,
+                      version: selectedJob.version_name,
+                      fileUrl: selectedJob.apk_url,
+                      analysis_report: selectedJob.analysis_report,
+                    });
+                  }}
+                  className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  title="Analiz sonuçlarına göre modlama seçeneklerini belirle ve yeniden başlat"
+                >
+                  <Zap className="w-3.5 h-3.5 text-indigo-400" />
+                  Mod Seçeneklerini Belirle
+                </button>
                 <Link
                   href={`/ai?job_id=${selectedJob.id}`}
                   className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
@@ -475,7 +615,7 @@ export default function JobsPage() {
                 </Link>
                 <button
                   onClick={() => setSelectedJob(null)}
-                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
+                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors cursor-pointer"
                 >
                   ✕
                 </button>
@@ -525,6 +665,60 @@ export default function JobsPage() {
                 if (activeTab === 'overview') {
                   return (
                     <div className="space-y-6">
+                      {selectedJob.status === 'waiting_approval' && (
+                        <div className="p-4 rounded-xl bg-gradient-to-r from-blue-950/70 via-indigo-950/70 to-purple-950/70 border border-blue-500/40 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-lg shadow-blue-950/40">
+                          <div className="space-y-1">
+                            <div className="text-sm font-bold text-white flex items-center gap-2">
+                              <ShieldCheck className="w-5 h-5 text-emerald-400" />
+                              Modlama & Emülatör Testi Tamamlandı — Onayınızı Bekliyor
+                            </div>
+                            <p className="text-xs text-slate-300">
+                              Bu modlanmış APK henüz PrimeStore mağaza kataloğuna aktarılmadı. Test raporunu ve ekran görüntülerini inceledikten sonra onaylayarak doğrudan yayına alabilirsiniz.
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => handlePublishJob(selectedJob.id)}
+                              disabled={jobActionLoading === selectedJob.id}
+                              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/30 transition-all cursor-pointer"
+                            >
+                              <Zap className="w-3.5 h-3.5" />
+                              PrimeStore'da Yayınla
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCancelJob(selectedJob.id)}
+                              disabled={jobActionLoading === selectedJob.id}
+                              className="px-3 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 font-semibold text-xs flex items-center gap-1 transition-all cursor-pointer"
+                            >
+                              <Ban className="w-3.5 h-3.5" />
+                              İptal Et
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedJob.status === 'cancelled' && (
+                        <div className="p-3.5 rounded-xl bg-rose-950/30 border border-rose-500/40 text-rose-300 text-xs flex items-center gap-2.5">
+                          <Ban className="w-4 h-4 text-rose-400 shrink-0" />
+                          <div>
+                            <div className="font-bold text-white">Görev İptal Edildi</div>
+                            <div className="text-slate-300 mt-0.5">Bu işlem durduruldu ve hiçbir dosya PrimeStore mağazasında yayına alınmadı.</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {selectedJob.status === 'published' && (
+                        <div className="p-3.5 rounded-xl bg-emerald-950/30 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2.5">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          <div>
+                            <div className="font-bold text-white">PrimeStore'da Başarıyla Yayınlandı</div>
+                            <div className="text-slate-300 mt-0.5">Modlu APK mağaza kataloğuna aktarıldı ve indirme bağlantısı kullanıcılara sunuldu.</div>
+                          </div>
+                        </div>
+                      )}
+
                       {selectedJob.action === 'analyze_only' && (
                         <div className="p-3.5 rounded-xl bg-blue-500/10 border border-blue-500/25 text-xs text-blue-300 flex items-start gap-2.5">
                           <Info className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
@@ -1275,7 +1469,45 @@ export default function JobsPage() {
               <div className="text-slate-400">
                 Oluşturulma: {new Date(selectedJob.created_at).toLocaleString('tr-TR')}
               </div>
-              <div className="flex gap-2">
+              <div className="flex items-center gap-2">
+                {/* Cancel Job Button */}
+                {['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'waiting_approval'].includes(selectedJob.status) && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancelJob(selectedJob.id)}
+                    disabled={jobActionLoading === selectedJob.id}
+                    className="px-3.5 py-2 rounded-xl bg-rose-600/20 hover:bg-rose-600/30 border border-rose-500/30 text-rose-300 font-semibold flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                    title="Görevi iptal et ve arka plan işlemlerini durdur"
+                  >
+                    <Ban className="w-3.5 h-3.5" />
+                    Görevi İptal Et
+                  </button>
+                )}
+
+                {/* Publish to PrimeStore (Manual Approval) Button */}
+                {selectedJob.modded_apk_url && selectedJob.status !== 'published' && (
+                  <button
+                    type="button"
+                    onClick={() => handlePublishJob(selectedJob.id)}
+                    disabled={jobActionLoading === selectedJob.id}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/25 transition-all cursor-pointer disabled:opacity-50"
+                    title="PrimeStore mağaza kataloğunda yayına al"
+                  >
+                    {jobActionLoading === selectedJob.id ? (
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <Zap className="w-3.5 h-3.5" />
+                    )}
+                    PrimeStore'da Yayınla
+                  </button>
+                )}
+
+                {selectedJob.status === 'published' && (
+                  <span className="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 font-semibold flex items-center gap-1 text-xs">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> PrimeStore'da Yayında
+                  </span>
+                )}
+
                 {selectedJob.modded_apk_url && (
                   <a
                     href={selectedJob.modded_apk_url}
@@ -1288,7 +1520,7 @@ export default function JobsPage() {
                 )}
                 <button
                   onClick={() => setSelectedJob(null)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors"
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-medium transition-colors cursor-pointer"
                 >
                   Kapat
                 </button>
@@ -1341,6 +1573,53 @@ export default function JobsPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Floating Action Toast Notification */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-50 max-w-md rounded-2xl p-4 backdrop-blur-md flex items-center gap-3 shadow-2xl border animate-in fade-in slide-in-from-bottom-5 ${
+          toast.type === 'error'
+            ? 'bg-rose-950/95 border-rose-500/40 text-rose-200'
+            : 'bg-slate-900/95 border-emerald-500/40 text-slate-100'
+        }`}>
+          <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${
+            toast.type === 'error'
+              ? 'bg-rose-500/20 border-rose-500/30 text-rose-400'
+              : 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400'
+          }`}>
+            {toast.type === 'error' ? <AlertTriangle className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-bold truncate">{toast.title}</div>
+            <div className="text-[11px] text-slate-300 truncate mt-0.5">{toast.message}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            className="w-6 h-6 rounded-md hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center text-xs"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Interactive Modding Modal */}
+      {customModApp && (
+        <InteractiveModModal
+          app={customModApp}
+          onClose={() => setCustomModApp(null)}
+          onSuccess={(result: any) => {
+            const shortId = result.jobId ? `#${result.jobId.substring(0, 8)}` : '';
+            setToast({
+              title: '🚀 Modlama Görevi Başlatıldı',
+              message: `Özelleştirilmiş modlama işlemi (${shortId}) kuyruğa eklendi.`,
+              type: 'success',
+            });
+            fetchJobs(true);
+            setCustomModApp(null);
+            setSelectedJob(null);
+          }}
+        />
       )}
     </div>
   );

@@ -1,0 +1,44 @@
+name: "TiviMate IPTV Player Premium Mod"
+package: "ar.tvplayer.tv"
+extends: "_base"
+auto_apply: true
+
+mod_features:
+  - id: "unlock_premium"
+    name: "Google Play In-App Billing / Premium Bypass"
+    description: "Çoklu oynatma listesi, TV arşivi ve kilitli özellikleri aktif eder."
+    default: true
+  - id: "remove_ads"
+    name: "Google AdServices & Takipçileri Engelle"
+    description: "Reklam dönüştürme uç noktalarını ve analytics çağrılarını nötralize eder."
+    default: true
+  - id: "strip_permissions"
+    name: "Gereksiz İzinleri Temizle"
+    description: "AD_ID ve Install Referrer izinlerini kaldırır."
+    default: true
+  - id: "bypass_update"
+    name: "Firebase Remote Config Zorunlu Güncelleme Engeli"
+    description: "Uzak sürüm kısıtlamalarını ve güncelleme popup'larını bastırır."
+    default: true
+
+smali_patches:
+  - description: "BillingResult.getResponseCode -> OK (0)"
+    target_class: "BillingResult"
+    method: "getResponseCode"
+    patch_type: "return_zero"
+
+  - description: "Purchase.getPurchaseState -> PURCHASED (1)"
+    target_class: "Purchase"
+    method: "getPurchaseState"
+    patch_type: "return_one"
+
+manifest_cleanup:
+  remove_permissions:
+    - "com.android.vending.BILLING"
+    - "com.google.android.gms.permission.AD_ID"
+    - "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
+
+test:
+  launch_timeout_seconds: 15
+  expect_no_crash: true
+  tv_dpad_verify: true

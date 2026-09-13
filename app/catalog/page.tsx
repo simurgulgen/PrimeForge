@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Layers,
 } from 'lucide-react';
+import InteractiveModModal from '@/app/components/InteractiveModModal';
 
 export default function CatalogPage() {
   const [apps, setApps] = useState<any[]>([]);
@@ -35,6 +36,7 @@ export default function CatalogPage() {
   const [triggeringId, setTriggeringId] = useState<string | null>(null);
   const [actionMsg, setActionMsg] = useState<{ id: string; type: string; text: string } | null>(null);
   const [toast, setToast] = useState<{ title: string; message: string; jobId?: string } | null>(null);
+  const [selectedModApp, setSelectedModApp] = useState<any | null>(null);
 
   // Load TV-only preference from localStorage on mount
   useEffect(() => {
@@ -424,15 +426,11 @@ export default function CatalogPage() {
               {/* Action Buttons */}
               <div className="pt-3 border-t border-slate-800/60 flex items-center gap-2">
                 <button
-                  onClick={() => handleModApp(app, 'full_mod')}
+                  onClick={() => setSelectedModApp(app)}
                   disabled={triggeringId === app.id || !app.fileUrl}
-                  className="flex-1 py-2 px-3 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors shadow-md shadow-blue-600/20"
+                  className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
                 >
-                  {triggeringId === app.id ? (
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Zap className="w-3.5 h-3.5 fill-current" />
-                  )}
+                  <Zap className="w-3.5 h-3.5 fill-current" />
                   Modla
                 </button>
 
@@ -503,6 +501,29 @@ export default function CatalogPage() {
             Kuyruğu Aç <ChevronRight className="w-3 h-3" />
           </a>
         </div>
+      )}
+
+      {/* Interactive Modding Modal */}
+      {selectedModApp && (
+        <InteractiveModModal
+          app={selectedModApp}
+          onClose={() => setSelectedModApp(null)}
+          onSuccess={(result: any) => {
+            const shortId = result.jobId ? `#${result.jobId.substring(0, 8)}` : '';
+            setActionMsg({
+              id: selectedModApp.id,
+              type: 'success',
+              text: `Özelleştirilmiş modlama başlatıldı! (${shortId})`,
+            });
+            setToast({
+              title: `🚀 ${selectedModApp.name || selectedModApp.title || selectedModApp.packageName} Modlanıyor`,
+              message: `Seçtiğiniz modlar kuyruğa alındı (${shortId}). Tamamlandığında onayınıza sunulacaktır.`,
+              jobId: result.jobId,
+            });
+            setTimeout(() => setToast(null), 8000);
+            setSelectedModApp(null);
+          }}
+        />
       )}
     </div>
   );

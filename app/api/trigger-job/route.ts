@@ -9,7 +9,7 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '761864148';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name } = body;
+    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name, mod_options, custom_notes, publish_mode = 'manual_review' } = body;
 
     // Auto-fill package_name if not provided but profile looks like a package
     if (!package_name && profile && profile.includes('.')) {
@@ -32,17 +32,24 @@ export async function POST(req: Request) {
     }
 
     // 1. Insert into forge_jobs
+    const insertPayload: any = {
+      apk_url,
+      action,
+      package_name: package_name || null,
+      app_name: app_name || null,
+      version_name: version_name || null,
+      profile_used: profile || null,
+      status: 'pending',
+      analysis_report: {
+        requested_mod_options: mod_options || {},
+        custom_notes: custom_notes || '',
+        publish_mode: publish_mode || 'manual_review',
+      },
+    };
+
     const { data: job, error: dbError } = await supabase
       .from('forge_jobs')
-      .insert({
-        apk_url,
-        action,
-        package_name: package_name || null,
-        app_name: app_name || null,
-        version_name: version_name || null,
-        profile_used: profile || null,
-        status: 'pending',
-      })
+      .insert(insertPayload)
       .select()
       .single();
 
@@ -74,6 +81,8 @@ export async function POST(req: Request) {
               version_name,
               profile,
               job_id: jobId,
+              mod_options: mod_options || {},
+              custom_notes: custom_notes || '',
             },
           }),
         });
@@ -87,6 +96,7 @@ export async function POST(req: Request) {
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
       const actionLabels: Record<string, string> = {
         full_mod: '🛠️ Tam Modlama & Emülatör Testi',
+        custom_mod: '🎯 İnteraktif Özelleştirilmiş Mod',
         sanitize_only: '🧹 İzin & Manifest Temizliği',
         analyze_only: '🔍 Yalnızca Güvenlik & Statik Analiz',
         rebuild_only: '⚡ Yeniden Derleme & İmzala',
@@ -98,11 +108,26 @@ export async function POST(req: Request) {
       const verLabel = version_name ? `v${version_name}` : '<i>Analizde çıkarılacak</i>';
       const shortId = jobId.substring(0, 8);
 
+      let optionsListText = '';
+      if (mod_options && typeof mod_options === 'object') {
+        const optNames: string[] = [];
+        if (mod_options.unlock_premium) optNames.push('🔓 Premium Kilidi Aç');
+        if (mod_options.remove_ads) optNames.push('🚫 Reklam & Takipçi Temizle');
+        if (mod_options.strip_permissions) optNames.push('🧹 İzin Temizliği');
+        if (mod_options.bypass_update) optNames.push('🔄 Zorunlu Güncelleme Bypass');
+        if (mod_options.enable_tv_compat) optNames.push('📺 Android TV Optimizasyonu');
+        if (optNames.length > 0) {
+          optionsListText = `\n⚙️ <b>Seçilen Modlar:</b>\n• ${optNames.join('\n• ')}\n`;
+        }
+      }
+
       const msg = `🚀 <b>PrimeForge — Yeni İş Kuyruğa Alındı</b>\n\n` +
         `📱 <b>Uygulama:</b> ${appTitle}\n` +
         `📦 <b>Paket:</b> ${pkgLabel}\n` +
         `🏷️ <b>Sürüm:</b> ${verLabel}\n` +
         `🎯 <b>İşlem Modu:</b> ${actionLabel}\n` +
+        `🛡️ <b>Yayınlama:</b> ${publish_mode === 'manual_review' ? '🔒 Manuel İnceleme (PrimeStore Onayı Beklenecek)' : '⚡ Otomatik Yayınla'}\n` +
+        optionsListText +
         `🆔 <b>Job ID:</b> <code>#${shortId}</code>\n` +
         `⚡ <b>GitHub Runner:</b> ${dispatchSuccess ? '✅ Tetiklendi (İşleniyor)' : '⏳ Kuyrukta Bekliyor'}\n\n` +
         `🔗 <a href="https://prime-forge-8iec.vercel.app/jobs">Canlı Takip & Emülatör Raporu ↗</a>`;
@@ -118,7 +143,8 @@ export async function POST(req: Request) {
             inline_keyboard: [
               [
                 { text: '📊 Dashboard', url: 'https://prime-forge-8iec.vercel.app/jobs' },
-                { text: '⚡ Durum Sorgula', callback_data: `forge:status:${jobId}` },
+                { text: '⚡ Durum', callback_data: `forge:status:${jobId}` },
+                { text: '🛑 İptal Et', callback_data: `forge:cancel:${jobId}` },
               ],
             ],
           },

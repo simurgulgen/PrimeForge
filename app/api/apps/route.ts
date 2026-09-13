@@ -57,6 +57,20 @@ export async function GET(req: Request) {
       .from('forge_profiles')
       .select('package_name, auto_apply, profile_yaml');
 
+    // Also get latest job and analysis for each package
+    const { data: recentJobs } = await supabase
+      .from('forge_jobs')
+      .select('id, package_name, status, action, analysis_report, created_at')
+      .order('created_at', { ascending: false })
+      .limit(150);
+
+    const jobMap = new Map<string, any>();
+    for (const j of recentJobs || []) {
+      if (j.package_name && !jobMap.has(j.package_name)) {
+        jobMap.set(j.package_name, j);
+      }
+    }
+
     const profileMap = new Map<string, any>();
     for (const p of profiles || []) {
       if (!p.package_name) continue;
@@ -83,11 +97,13 @@ export async function GET(req: Request) {
       profileMap.set(p.package_name, {
         auto_apply: p.auto_apply,
         compatibility: compat,
+        profile_yaml: p.profile_yaml,
       });
     }
 
     const enrichedApps = (apps || []).map((app: any) => {
       const prof = app.packageName ? profileMap.get(app.packageName) : null;
+      const latestJob = app.packageName ? jobMap.get(app.packageName) : null;
       const variants: any[] = Array.isArray(app.variants) ? app.variants : [];
       const platforms = variants.map((v) => (v && v.platform ? String(v.platform).toUpperCase() : '')).filter(Boolean);
 
@@ -117,6 +133,10 @@ export async function GET(req: Request) {
         ...app,
         iconUrl: app.logoUrl,
         has_profile: Boolean(prof),
+        profile_yaml: prof?.profile_yaml || null,
+        analysis_report: latestJob?.analysis_report || null,
+        latest_job_id: latestJob?.id || null,
+        latest_job_status: latestJob?.status || null,
         is_tv_compatible: isTvCompatible,
         is_mobile_compatible: isMobileCompatible,
         is_tablet_compatible: isTabletCompatible,
