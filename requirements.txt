@@ -1,0 +1,4 @@
+pyyaml>=6.0.1
+requests>=2.31.0
+quark-engine>=23.10.1
+apkid>=2.1.5
