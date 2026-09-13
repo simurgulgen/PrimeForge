@@ -98,13 +98,15 @@ def bump_version(decompiled_dir: str, profile: dict) -> dict:
     changes = []
     version_bump = profile.get("version_bump", {})
 
-    # Bump version code (must be an unquoted integer for apktool / brut.yaml parser)
+    # Bump version code (must be an unquoted 32-bit signed integer for apktool / brut.yaml parser)
     new_vc = version_bump.get("version_code", 9999)
     try:
         new_vc_int = int(str(new_vc).strip("'\""))
+        if new_vc_int > 2147483647 or new_vc_int < 0:
+            new_vc_int = 9999
     except Exception:
         new_vc_int = 9999
-    content = re.sub(r'versionCode:\s*[\'"]?\S+?[\'"]?', f"versionCode: {new_vc_int}", content)
+    content = re.sub(r'versionCode:\s*[^\r\n]+', f"versionCode: {new_vc_int}", content)
     changes.append(f"versionCode → {new_vc_int}")
 
     # Append suffix to version name (clean unquoted format)

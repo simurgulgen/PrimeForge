@@ -73,20 +73,30 @@ def clean_apktool_duplicate_resources(decompiled_dir: str):
 
 
 def sanitize_apktool_yml(decompiled_dir: str):
-    """Ensure apktool.yml has unquoted versionCode to prevent NumberFormatException in SnakeYAML/Apktool."""
+    """Ensure apktool.yml has unquoted valid 32-bit versionCode to prevent NumberFormatException in SnakeYAML/Apktool."""
     yml_path = os.path.join(decompiled_dir, "apktool.yml")
     if os.path.isfile(yml_path):
         try:
             with open(yml_path, "r", encoding="utf-8") as f:
                 content = f.read()
-            # If versionCode is quoted like versionCode: '9999' or versionCode: "9999"
-            new_content = re.sub(r"versionCode:\s*['\"](\d+)['\"]", r"versionCode: \1", content)
+
+            def clean_vc(m):
+                raw = m.group(1).strip("'\" ")
+                try:
+                    num = int(raw)
+                    if num > 2147483647 or num < 0:
+                        num = 9999
+                    return f"versionCode: {num}"
+                except Exception:
+                    return "versionCode: 9999"
+
+            new_content = re.sub(r"versionCode:\s*([^\r\n]+)", clean_vc, content)
             if new_content != content:
                 with open(yml_path, "w", encoding="utf-8") as f:
                     f.write(new_content)
-                print("🔧 Fixed quoted versionCode in apktool.yml")
-        except Exception:
-            pass
+                print("🔧 Sanitized & validated versionCode in apktool.yml")
+        except Exception as e:
+            print(f"⚠️ Error sanitizing apktool.yml: {e}")
 
 
 def recompile(decompiled_dir: str, output_apk: str) -> str:
