@@ -13,7 +13,9 @@ import {
   ExternalLink,
   RefreshCw,
   Cpu,
+  Store,
   FileCode2,
+  Search,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -24,6 +26,12 @@ export default function DashboardPage() {
   const [submitMsg, setSubmitMsg] = useState<{ type: string; text: string } | null>(null);
   const [jobs, setJobs] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+
+  // App Selector Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [catalogApps, setCatalogApps] = useState<any[]>([]);
+  const [modalSearch, setModalSearch] = useState('');
+  const [modalLoading, setModalLoading] = useState(false);
 
   const fetchJobs = async () => {
     setRefreshing(true);
@@ -38,11 +46,39 @@ export default function DashboardPage() {
     }
   };
 
+  const fetchModalApps = async (q: string = '') => {
+    setModalLoading(true);
+    try {
+      const res = await fetch(`/api/apps?search=${encodeURIComponent(q)}&limit=30`);
+      const data = await res.json();
+      if (data.apps) setCatalogApps(data.apps);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setModalLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchJobs();
     const interval = setInterval(fetchJobs, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  const openAppSelector = () => {
+    setModalOpen(true);
+    fetchModalApps(modalSearch);
+  };
+
+  const selectApp = (app: any) => {
+    if (app.fileUrl && !app.fileUrl.startsWith('market://')) {
+      setApkUrl(app.fileUrl);
+    }
+    if (app.packageName) {
+      setProfile(app.packageName);
+    }
+    setModalOpen(false);
+  };
 
   const handleTrigger = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -86,13 +122,13 @@ export default function DashboardPage() {
         <div className="relative z-10 max-w-3xl">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-blue-400 text-xs font-semibold uppercase tracking-wider mb-4">
             <Zap className="w-3.5 h-3.5" />
-            Otomatik APK Modlama Fabrikası
+            Otomatik APK Modlama & Test Fabrikası
           </div>
           <h1 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-            APK Modlama, Test & Dağıtım Motoru
+            PrimeStore APK Modlama & Dağıtım Motoru
           </h1>
           <p className="mt-2 text-slate-400 text-sm sm:text-base leading-relaxed">
-            APK dosyasını bağla; decompile, statik analiz, akıllı smali yamalama, manifest izni temizliği,
+            APK dosyasını bağla veya PrimeStore mağaza kataloğundan seç; decompile, statik analiz, akıllı smali yamalama, manifest izin temizliği,
             Android emülatör 15sn çökme testi ve Telegram inline onay döngüsünü sunucu tarafında çalıştır.
           </p>
         </div>
@@ -100,14 +136,14 @@ export default function DashboardPage() {
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="glass-card rounded-xl p-5 border border-slate-800">
+        <Link href="/catalog" className="glass-card rounded-xl p-5 border border-slate-800 hover:border-purple-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Toplam İş Sayısı</span>
-            <Play className="w-4 h-4 text-blue-400" />
+            <span>PrimeStore Kataloğu</span>
+            <Store className="w-4 h-4 text-purple-400" />
           </div>
-          <p className="text-2xl font-bold text-white mt-2">{jobs.length}</p>
-          <span className="text-xs text-slate-500">Pipeline kayıtları</span>
-        </div>
+          <p className="text-2xl font-bold text-purple-400 mt-2">481 Uygulama</p>
+          <span className="text-xs text-slate-500">Katalogdaki tüm uygulamalar →</span>
+        </Link>
 
         <div className="glass-card rounded-xl p-5 border border-slate-800">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
@@ -127,14 +163,14 @@ export default function DashboardPage() {
           <span className="text-xs text-slate-500">Aktif CI/CD kuyruğu</span>
         </div>
 
-        <div className="glass-card rounded-xl p-5 border border-slate-800">
+        <Link href="/profiles" className="glass-card rounded-xl p-5 border border-slate-800 hover:border-amber-500/40 transition-all">
           <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
-            <span>Test Başarısız</span>
-            <XCircle className="w-4 h-4 text-rose-400" />
+            <span>Kayıtlı Mod Profilleri</span>
+            <FileCode2 className="w-4 h-4 text-amber-400" />
           </div>
-          <p className="text-2xl font-bold text-rose-400 mt-2">{failedCount}</p>
-          <span className="text-xs text-slate-500">Emülatörde çökenler</span>
-        </div>
+          <p className="text-2xl font-bold text-amber-400 mt-2">Kalıcı Reçeteler</p>
+          <span className="text-xs text-slate-500">Yama rehberleri & YAML →</span>
+        </Link>
       </div>
 
       {/* Trigger New Job Form & Quick Guide */}
@@ -145,7 +181,14 @@ export default function DashboardPage() {
               <Wrench className="w-5 h-5 text-blue-400" />
               Yeni APK Modlama İşi Başlat
             </h2>
-            <span className="text-xs text-slate-400">GitHub Actions Dispatch</span>
+            <button
+              type="button"
+              onClick={openAppSelector}
+              className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+            >
+              <Store className="w-3.5 h-3.5" />
+              PrimeStore Kataloğundan Seç
+            </button>
           </div>
 
           <form onSubmit={handleTrigger} className="space-y-4">
@@ -153,14 +196,16 @@ export default function DashboardPage() {
               <label className="block text-xs font-medium text-slate-300 mb-1">
                 APK İndirme Linki (Direct URL)
               </label>
-              <input
-                type="url"
-                required
-                placeholder="https://example.com/app-v3.4.apk"
-                value={apkUrl}
-                onChange={(e) => setApkUrl(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500 transition-colors"
-              />
+              <div className="flex gap-2">
+                <input
+                  type="url"
+                  required
+                  placeholder="https://example.com/app-v3.4.apk"
+                  value={apkUrl}
+                  onChange={(e) => setApkUrl(e.target.value)}
+                  className="flex-1 px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -183,16 +228,13 @@ export default function DashboardPage() {
                 <label className="block text-xs font-medium text-slate-300 mb-1">
                   Özel Profil (Opsiyonel)
                 </label>
-                <select
+                <input
+                  type="text"
+                  placeholder="Otomatik (örn: com.metawave.xtreamiptv)"
                   value={profile}
                   onChange={(e) => setProfile(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white text-sm focus:outline-none focus:border-blue-500 transition-colors"
-                >
-                  <option value="">Otomatik Eşle (Paket Adından)</option>
-                  <option value="com.metawave.xtreamiptv">Xtiva IPTV Pro Mod</option>
-                  <option value="com.example.vivox">VivoX Mod</option>
-                  <option value="com.medya.warstv">WarsTV Mod</option>
-                </select>
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-900/80 border border-slate-700 text-white placeholder-slate-500 text-sm focus:outline-none focus:border-blue-500 transition-colors"
+                />
               </div>
             </div>
 
@@ -370,6 +412,79 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      {/* Select from PrimeStore Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-panel w-full max-w-2xl max-h-[80vh] rounded-2xl overflow-hidden flex flex-col border border-slate-700 shadow-2xl">
+            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Store className="w-5 h-5 text-purple-400" />
+                <h3 className="text-base font-bold text-white">PrimeStore Kataloğundan Uygulama Seç</h3>
+              </div>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="text-slate-400 hover:text-white px-2 py-1 text-base font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-slate-800 bg-slate-900/60">
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Uygulama ara..."
+                  value={modalSearch}
+                  onChange={(e) => {
+                    setModalSearch(e.target.value);
+                    fetchModalApps(e.target.value);
+                  }}
+                  className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:outline-none focus:border-purple-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+              {modalLoading ? (
+                <div className="py-8 text-center text-slate-500 text-xs flex items-center justify-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-purple-400" />
+                  Uygulamalar aranıyor...
+                </div>
+              ) : catalogApps.length === 0 ? (
+                <div className="py-8 text-center text-slate-500 text-xs">Uygulama bulunamadı.</div>
+              ) : (
+                catalogApps.map((app) => (
+                  <div
+                    key={app.id}
+                    onClick={() => selectApp(app)}
+                    className="p-3 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-slate-800 hover:border-purple-500/40 cursor-pointer transition-all flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-lg bg-slate-800 overflow-hidden shrink-0 flex items-center justify-center">
+                        {app.logoUrl ? (
+                          <img src={app.logoUrl} alt={app.title} className="w-full h-full object-cover" />
+                        ) : (
+                          <Store className="w-4 h-4 text-slate-500" />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-white truncate">{app.title}</div>
+                        <div className="text-[10px] text-slate-400 font-mono truncate">{app.packageName}</div>
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 flex items-center gap-2">
+                      <span className="text-[10px] text-purple-400 font-medium">Seç →</span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import './globals.css';
 import Link from 'next/link';
-import { Wrench, Layers, FileCode2, Send, Activity } from 'lucide-react';
+import { Wrench, Layers, FileCode2, Send, Activity, Store } from 'lucide-react';
 
 export const metadata = {
   title: 'PrimeForge – APK Modlama & Test Pipeline',
@@ -39,6 +39,13 @@ export default function RootLayout({
                 >
                   <Activity className="w-4 h-4 text-blue-400" />
                   Dashboard
+                </Link>
+                <Link
+                  href="/catalog"
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                >
+                  <Store className="w-4 h-4 text-purple-400" />
+                  PrimeStore Kataloğu
                 </Link>
                 <Link
                   href="/jobs"
