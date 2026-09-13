@@ -132,32 +132,15 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          JOB_ID: ${{ github.event.client_payload.job_id || github.run_id }}
+          PACKAGE_NAME: ${{ github.event.client_payload.package_name || inputs.package_name || '' }}
         with:
           api-level: 30
           arch: x86_64
           profile: pixel_6
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-          script: |
-            TARGET_APK="output/modded.apk"
-            if [ ! -f "$TARGET_APK" ]; then
-              TARGET_APK="input.apk"
-            fi
-            if [ -f "$TARGET_APK" ]; then
-              echo "🚀 Running PrimeForge Multi-Device (TV, Mobile, Tablet) Emulator Test Suite on $TARGET_APK..."
-              python engine/emulator_tester.py "$TARGET_APK" || true
-              python engine/screenshot_uploader.py "${{ github.event.client_payload.job_id || github.run_id }}" "${{ github.event.client_payload.package_name || inputs.package_name || '' }}" || true
-              if [ -f output/test_report.json ]; then
-                CRASHED=$(python -c "import json; print(json.load(open('output/test_report.json')).get('status') == 'CRASHED')")
-                if [ "$CRASHED" = "True" ]; then
-                  echo "❌ UYGULAMA ÇÖKTÜ!"
-                  PACKAGE=$(python -c "import json; print(json.load(open('output/test_report.json'))['package_name'])")
-                  python telegram/bot.py crash "$PACKAGE" output/logcat_test.log || true
-                  exit 1
-                fi
-              fi
-            else
-              echo "No target APK found to test."
-            fi
+          script: python engine/run_emulator_test.py
+
 
       - name: Post-test Catbox Publish & Telegram Approval
         if: success() && (github.event.client_payload.action != 'analyze_only') && (inputs.action != 'analyze_only')
