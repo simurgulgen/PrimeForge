@@ -1,0 +1,37 @@
+name: "⏰ PrimeForge – Scheduled Update Check"
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  check-updates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pyyaml
+
+      - name: Check Profiles & Trigger Updates
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -c "
+          import os, glob, yaml
+          from telegram.bot import _send_message
+          profiles = glob.glob('profiles/*.yml')
+          active = [p for p in profiles if not os.path.basename(p).startswith('_')]
+          print(f'Checking {len(active)} active profiles for updates...')
+          # Future: query upstream source / scraping rules
+          "

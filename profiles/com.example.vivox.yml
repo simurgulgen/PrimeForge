@@ -1,0 +1,37 @@
+name: "VivoX Mod"
+package: "com.example.vivox"
+extends: "_base"
+auto_apply: true
+
+manifest_cleanup:
+  remove_permissions:
+    - "android.permission.QUERY_ALL_PACKAGES"
+  remove_queries: true
+  remove_receivers:
+    - "com.example.vivox.security.PackageChangeReceiver"
+
+smali_patches:
+  - description: "SecurityGuard scan -> return emptyList"
+    target_class: "SecurityGuard"
+    method: "scan"
+    patch_type: "empty_list"
+
+  - description: "SecurityMonitor getBlockedApps -> return emptyList"
+    target_class: "SecurityMonitor"
+    method: "getBlockedApps"
+    patch_type: "empty_list"
+
+  - description: "SecurityMonitor refresh & start -> void"
+    target_class: "SecurityMonitor"
+    methods_return_void:
+      - "refresh"
+      - "start"
+
+  - description: "SecurityMonitor refreshNow -> return Unit"
+    target_class: "SecurityMonitor"
+    method: "refreshNow"
+    patch_type: "return_unit"
+
+test:
+  launch_timeout_seconds: 15
+  expect_no_crash: true

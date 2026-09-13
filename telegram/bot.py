@@ -1,0 +1,204 @@
+# -*- coding: utf-8 -*-
+"""Telegram Bot for PrimeForge notifications and interactive decisions."""
+import json
+import os
+import ssl
+import sys
+import urllib.request
+
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+
+_ctx = ssl.create_default_context()
+_ctx.check_hostname = False
+_ctx.verify_mode = ssl.CERT_NONE
+
+
+def _send_message(text, reply_markup=None, parse_mode="HTML"):
+    """Send a message via Telegram Bot API."""
+    if not BOT_TOKEN or not CHAT_ID:
+        print("⚠️ Telegram not configured")
+        return {}
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": parse_mode}
+    if reply_markup:
+        payload["reply_markup"] = reply_markup
+    data = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=_ctx) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"❌ Telegram send failed: {e}")
+        return {}
+
+
+def _send_photo(photo_path, caption=""):
+    """Send a photo via Telegram Bot API."""
+    if not BOT_TOKEN or not CHAT_ID or not os.path.exists(photo_path):
+        return {}
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+    boundary = "----PrimeForge"
+    with open(photo_path, "rb") as f:
+        photo_data = f.read()
+    body = bytearray()
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(b'Content-Disposition: form-data; name="chat_id"\r\n\r\n')
+    body.extend(f"{CHAT_ID}\r\n".encode())
+    if caption:
+        body.extend(f"--{boundary}\r\n".encode())
+        body.extend(b'Content-Disposition: form-data; name="caption"\r\n\r\n')
+        body.extend(f"{caption}\r\n".encode())
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(b'Content-Disposition: form-data; name="parse_mode"\r\n\r\nHTML\r\n')
+    body.extend(f"--{boundary}\r\n".encode())
+    body.extend(f'Content-Disposition: form-data; name="photo"; filename="screenshot.png"\r\n'.encode())
+    body.extend(b'Content-Type: image/png\r\n\r\n')
+    body.extend(photo_data)
+    body.extend(b'\r\n')
+    body.extend(f"--{boundary}--\r\n".encode())
+    req = urllib.request.Request(url, data=bytes(body),
+                                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30, context=_ctx) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except Exception as e:
+        print(f"❌ Telegram photo failed: {e}")
+        return {}
+
+
+def send_analysis_report(report, job_id=""):
+    """Send detailed analysis report with decision buttons."""
+    pkg = report.get("package_name", "unknown")
+    ver = report.get("version_name", "?")
+    perms = report.get("permissions", {})
+    ads = report.get("ad_networks", [])
+    drm = report.get("drm_systems", [])
+    archs = report.get("architectures", [])
+    obf = report.get("obfuscation", {})
+
+    lines = [
+        f"🔍 <b>PrimeForge Analiz Raporu</b>", "",
+        f"📦 <b>{pkg}</b> v{ver}",
+        f"📐 Mimari: {', '.join(archs) if archs else 'Bilinmiyor'}",
+        f"🔒 Karıştırma: {obf.get('level', '?')}", "",
+    ]
+
+    dangerous = perms.get("dangerous", [])
+    if dangerous:
+        lines.append("⚠️ <b>Tehlikeli İzinler:</b>")
+        for p in dangerous:
+            lines.append(f"  • {p.split('.')[-1]} ⛔")
+        lines.append("")
+
+    if ads:
+        lines.append("📺 <b>Reklam Ağları:</b>")
+        for ad in ads:
+            lines.append(f"  • {ad['name']} ({ad['file_count']} dosya)")
+        lines.append("")
+
+    if drm:
+        lines.append("🔐 <b>DRM/Lisans:</b>")
+        for d in drm:
+            lines.append(f"  • {d['name']}")
+        lines.append("")
+
+    has_std_drm = any(d["name"] in ["RevenueCat", "Google Play Billing"] for d in drm)
+    if has_std_drm and ads:
+        lines.append("💡 <b>Öneri:</b> Standart DRM + reklam bypass uygulanabilir.")
+    elif ads:
+        lines.append("💡 <b>Öneri:</b> Sadece reklam temizliği yeterli.")
+    elif drm:
+        lines.append("💡 <b>Öneri:</b> DRM bypass gerekli.")
+    else:
+        lines.append("💡 <b>Öneri:</b> Manuel inceleme önerilir.")
+
+    buttons = {"inline_keyboard": [
+        [{"text": "✅ Otomatik Modla", "callback_data": f"forge:full_mod:{job_id}"},
+         {"text": "🧹 İzin Temizle", "callback_data": f"forge:sanitize_only:{job_id}"}],
+        [{"text": "📝 Profil Oluştur", "callback_data": f"forge:create_profile:{job_id}"},
+         {"text": "❌ İptal", "callback_data": f"forge:cancel:{job_id}"}],
+    ]}
+    _send_message("\n".join(lines), reply_markup=buttons)
+    print("📱 Analysis report sent to Telegram")
+
+
+def send_build_success(result, job_id=""):
+    """Send build success notification."""
+    build = result.get("build", {})
+    pkg = result.get("package_name", "unknown")
+    ver = result.get("version_name", "?")
+    profile = result.get("profile_used", "unknown")
+    archs = result.get("analysis", {}).get("architectures", [])
+    size_mb = build.get("file_size", 0) / (1024 * 1024)
+
+    text = (
+        f"🔧 <b>PrimeForge Build Tamamlandı</b>\n\n"
+        f"📦 <b>{pkg}</b> v{ver}\n"
+        f"📋 Profil: {profile}\n"
+        f"📐 Mimari: {', '.join(archs)}\n"
+        f"📏 Boyut: {size_mb:.2f} MB\n"
+        f"🔒 SHA256: <code>{build.get('sha256', '?')[:16]}...</code>\n"
+        f"✅ İmza: {'Doğrulandı' if build.get('verified') else '❌ BAŞARISIZ'}\n\n"
+        f"🧪 Emülatör testi bekleniyor..."
+    )
+    _send_message(text)
+    print("📱 Build success sent")
+
+
+def send_approval_request(result, catbox_url, job_id=""):
+    """Send approval request with inline buttons."""
+    pkg = result.get("package_name", "unknown")
+    ver = result.get("version_name", "?")
+    build = result.get("build", {})
+    size_mb = build.get("file_size", 0) / (1024 * 1024)
+
+    text = (
+        f"✅ <b>PrimeForge İş Tamamlandı</b>\n\n"
+        f"📦 <b>{pkg}</b> v{ver}\n"
+        f"📏 {size_mb:.2f} MB\n"
+        f"🔐 İmza: PrimeStore Release Key\n"
+        f"🧪 Emülatör: ✅ Çökmesiz\n"
+        f"🔗 {catbox_url}\n"
+        f"🆔 Job: #{job_id[:8] if job_id else 'local'}"
+    )
+    buttons = {"inline_keyboard": [[
+        {"text": "🚀 Supabase'e Yayınla", "callback_data": f"forge:publish:{job_id}"},
+        {"text": "❌ İptal", "callback_data": f"forge:cancel:{job_id}"},
+    ]]}
+    _send_message(text, reply_markup=buttons)
+
+    screenshot = os.path.join("output", "emulator_screenshot.png")
+    if os.path.exists(screenshot):
+        _send_photo(screenshot, f"📸 {pkg} emülatör ekran görüntüsü")
+    print("📱 Approval request sent")
+
+
+def send_crash_report(package_name, crash_log_path=""):
+    """Send crash report notification."""
+    crash_text = ""
+    if crash_log_path and os.path.exists(crash_log_path):
+        with open(crash_log_path, "r") as f:
+            crash_text = f.read()[:1000]
+    text = (
+        f"❌ <b>PrimeForge Hata!</b>\n\n"
+        f"📦 {package_name}\n"
+        f"🧪 Emülatör Testi BAŞARISIZ\n\n"
+        f"📋 <b>Crash Log:</b>\n<pre>{crash_text}</pre>"
+    )
+    _send_message(text)
+    print("📱 Crash report sent")
+
+
+def request_decision(report, job_id=""):
+    """Request human decision for unknown app."""
+    send_analysis_report(report, job_id)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 2:
+        print("Usage: python telegram/bot.py <command> [args...]")
+        sys.exit(1)
+    command = sys.argv[1]
+    if command == "crash" and len(sys.argv) >= 3:
+        send_crash_report(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else "")

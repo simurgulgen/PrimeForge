@@ -1,0 +1,18 @@
+name: "Bilinmeyen Uygulama"
+auto_apply: false
+
+on_unknown_app:
+  actions:
+    - "static_analysis"
+    - "generate_report"
+    - "wait_for_decision"
+
+  telegram_buttons:
+    - label: "✅ Sadece İzin Temizle & Yayınla"
+      action: "sanitize_only"
+    - label: "🔓 Premium Bypass Dene (Otomatik)"
+      action: "auto_premium_bypass"
+    - label: "📝 Manuel Profil Oluştur"
+      action: "create_manual_profile"
+    - label: "❌ İptal Et"
+      action: "cancel"

@@ -1,0 +1,63 @@
+name: "Xtiva IPTV Pro Mod"
+package: "com.metawave.xtreamiptv"
+extends: "_base"
+auto_apply: true
+
+smali_patches:
+  - description: "RevenueCat PremiumRepository -> always true"
+    target_class: "PremiumRepositoryImpl"
+    search_pattern: "StateFlow.*Boolean"
+    method: "<init>"
+    patch: "sget-object v0, Ljava/lang/Boolean;->TRUE:Ljava/lang/Boolean;"
+    
+  - description: "AccessDecisionUseCase -> always granted"
+    target_class: "AccessDecisionUseCase"
+    method: "invoke"
+    patch_type: "return_true"
+    
+  - description: "GatePolicy -> never restrict"
+    target_class: "GatePolicy"
+    method: "isRestricted"
+    patch_type: "return_false"
+    
+  - description: "AdsConfigEntity -> all ads disabled, limits maxed"
+    target_class: "AdsConfigEntity"
+    boolean_getters_to_false:
+      - "getAdsEnabled"
+      - "getBannerEnabled"
+      - "getNativeEnabled"
+      - "getInterstitialEnabled"
+      - "getRewardedEnabled"
+      - "getGateSubtitles"
+      - "getGateAudioTracks"
+      - "getGatePlaybackSpeed"
+      - "getGateFavorites"
+      - "getGateMultiPlaylist"
+      - "getGateContinueWatching"
+      - "getGateSyncSchedule"
+      - "getGatePlayerEngine"
+      - "getGateParentalControls"
+      - "getGatePictureInPicture"
+      - "getGateAccentThemes"
+      - "getGateCatchUp"
+    integer_overrides:
+      "getFavoritesFreeLimit": 999999
+      "getPlaylistsFreeLimit": 999999
+
+  - description: "PaywallViewModel -> suppress paywall"
+    target_class: "PaywallViewModel"
+    method: "v"
+    patch_type: "return_void"
+
+  - description: "AdsManager -> neutralize ad triggers"
+    target_class: "AdsManager"
+    methods_return_false: ["d", "e"]
+    methods_return_void: ["g", "h", "i", "k"]
+
+manifest_cleanup:
+  remove_permissions:
+    - "com.google.android.gms.permission.AD_ID"
+
+test:
+  launch_timeout_seconds: 15
+  expect_no_crash: true

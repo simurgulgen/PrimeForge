@@ -1,0 +1,137 @@
+name: "🔧 PrimeForge – APK Patch & Test Pipeline"
+
+on:
+  repository_dispatch:
+    types: [patch-apk]
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: "APK indirme linki"
+        required: true
+      package_name:
+        description: "Paket adı (opsiyonel, otomatik tespit edilir)"
+        required: false
+      profile:
+        description: "Yama profili (opsiyonel, otomatik eşlenir)"
+        required: false
+      action:
+        description: "Yapılacak işlem"
+        type: choice
+        default: "full_mod"
+        options:
+          - "full_mod"
+          - "analyze_only"
+          - "sanitize_only"
+
+jobs:
+  forge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Android SDK & Build Tools
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python & System Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install pyyaml requests
+          sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl
+          # Download Apktool 2.10.0
+          sudo wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar -O /usr/local/bin/apktool.jar
+          sudo bash -c 'echo -e "#!/bin/bash\njava -jar /usr/local/bin/apktool.jar \"\$@\"" > /usr/local/bin/apktool'
+          sudo chmod +x /usr/local/bin/apktool
+          apktool --version
+
+      - name: Decode Signing Keystore
+        run: |
+          if [ -n "${{ secrets.KEYSTORE_BASE64 }}" ]; then
+            echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > primestore_release.jks
+          else
+            echo "Generating fallback keystore..."
+            keytool -genkey -v -keystore primestore_release.jks -alias primestore -keyalg RSA -keysize 2048 -validity 10000 -storepass primestore123 -keypass primestore123 -dname "CN=PrimeStore, OU=Release, O=Prime, L=TR, S=TR, C=TR"
+          fi
+
+      - name: Download Target APK
+        run: |
+          APK_URL="${{ github.event.client_payload.apk_url || inputs.apk_url }}"
+          echo "Downloading APK from: $APK_URL"
+          curl -L --retry 3 -o input.apk "$APK_URL"
+          ls -lh input.apk
+
+      - name: Run PrimeForge Engine
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD || 'primestore123' }}
+          KEYSTORE_ALIAS: ${{ secrets.KEYSTORE_ALIAS || 'primestore' }}
+          ACTION: ${{ github.event.client_payload.action || inputs.action || 'full_mod' }}
+          PROFILE: ${{ github.event.client_payload.profile || inputs.profile || '' }}
+          JOB_ID: ${{ github.event.client_payload.job_id || github.run_id }}
+        run: |
+          python engine/forge_runner.py input.apk
+
+      - name: Android Emulator Test
+        if: env.SKIP_EMULATOR != 'true' && (github.event.client_payload.action != 'analyze_only') && (inputs.action != 'analyze_only')
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_6
+          emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+          script: |
+            if [ -f output/modded.apk ]; then
+              echo "Installing modded APK..."
+              adb install -r output/modded.apk
+              PACKAGE=$(python -c "import json; print(json.load(open('output/analysis.json'))['package_name'])")
+              echo "Launching package: $PACKAGE"
+              adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 || true
+              sleep 15
+              adb logcat -d -s AndroidRuntime:E > crash_log.txt || true
+              if grep -q "FATAL EXCEPTION" crash_log.txt; then
+                echo "❌ UYGULAMA ÇÖKTÜ!"
+                python telegram/bot.py crash "$PACKAGE" crash_log.txt || true
+                exit 1
+              fi
+              echo "✅ Uygulama başarıyla açıldı ve 15 saniye çökmeden çalıştı."
+              adb exec-out screencap -p > output/emulator_screenshot.png || true
+            else
+              echo "No modded.apk found to test."
+            fi
+
+      - name: Post-test Catbox Publish & Telegram Approval
+        if: success() && (github.event.client_payload.action != 'analyze_only') && (inputs.action != 'analyze_only')
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_ID: ${{ github.event.client_payload.job_id || github.run_id }}
+        run: |
+          python engine/publish.py
+
+      - name: Upload Output Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: forge-output-${{ github.run_id }}
+          path: |
+            output/
+            docs/guides/
+          retention-days: 7

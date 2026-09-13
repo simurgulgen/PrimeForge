@@ -1,0 +1,28 @@
+# Tüm uygulamalara uygulanan ortak temel sanitasyon ve yapılandırma kuralları
+name: "Temel Sanitasyon"
+auto_apply: true
+
+manifest_cleanup:
+  remove_permissions:
+    - "com.google.android.gms.permission.AD_ID"
+    - "android.permission.ACCESS_ADSERVICES_TOPICS"
+    - "android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
+    - "android.permission.ACCESS_ADSERVICES_AD_ID"
+    - "com.android.vending.BILLING"
+  
+  flag_dangerous_permissions:
+    - "android.permission.SYSTEM_ALERT_WINDOW"
+    - "android.permission.QUERY_ALL_PACKAGES"
+    - "android.permission.PACKAGE_USAGE_STATS"
+    - "android.permission.RECORD_AUDIO"
+    - "android.permission.READ_CONTACTS"
+    - "android.permission.READ_CALL_LOG"
+    - "android.permission.RECEIVE_BOOT_COMPLETED"
+
+version_bump:
+  version_code: 9999
+  version_name_suffix: " (Prime Mod)"
+
+signing:
+  keystore: "primestore_release.jks"
+  alias: "primestore"

@@ -1,0 +1,52 @@
+name: "🚀 PrimeForge – Publish Approved APK"
+
+on:
+  repository_dispatch:
+    types: [publish-approved]
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Supabase Forge Job ID"
+        required: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install requests pyyaml
+
+      - name: Execute Publish
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          JOB_ID: ${{ github.event.client_payload.job_id || inputs.job_id }}
+        run: |
+          python -c "
+          import os, sys
+          from engine.supabase_client import get_job, update_job, find_listing_by_package, update_listing
+          from telegram.bot import _send_message
+          job_id = os.environ.get('JOB_ID')
+          job = get_job(job_id)
+          if not job:
+              print('Job not found')
+              sys.exit(1)
+          pkg = job.get('package_name')
+          url = job.get('modded_apk_url')
+          ver = job.get('version_name')
+          listing = find_listing_by_package(pkg)
+          if listing and listing.get('id'):
+              update_listing(listing['id'], {'fileUrl': url, 'version': f'{ver} (Prime Mod)', 'status': 'published'})
+              print(f'Listing {listing[\"id\"]} updated')
+          update_job(job_id, {'status': 'published', 'decision': 'approved'})
+          _send_message(f'🚀 <b>APK Yayına Alındı:</b>\n\n📦 <b>{pkg}</b> v{ver}\n🔗 {url}')
+          "

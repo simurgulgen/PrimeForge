@@ -1,0 +1,72 @@
+name: "WarsTV Mod"
+package: "com.medya.warstv"
+extends: "_base"
+auto_apply: true
+
+manifest_cleanup:
+  remove_permissions:
+    - "android.permission.QUERY_ALL_PACKAGES"
+  remove_queries: true
+  set_debuggable_false: true
+  set_leanback_not_required: true
+
+smali_patches:
+  - description: "HomeActivity isZararliAppInstalled -> false"
+    target_class: "HomeActivity"
+    method: "isZararliAppInstalled"
+    patch_type: "return_false"
+
+  - description: "MainActivity scanForZararliApps -> false"
+    target_class: "MainActivity"
+    method: "scanForZararliApps"
+    patch_type: "return_false"
+
+  - description: "ChannelListActivity checkSecurityRisks -> false"
+    target_class: "ChannelListActivity"
+    method: "checkSecurityRisks"
+    patch_type: "return_false"
+
+  - description: "ChannelListActivity checkCurrentAccess -> void"
+    target_class: "ChannelListActivity"
+    method: "checkCurrentAccess"
+    patch_type: "return_void"
+
+  - description: "VerifyChannelAccessTask doInBackground -> Boolean.TRUE"
+    target_class: "ChannelListActivity$VerifyChannelAccessTask"
+    method: "doInBackground"
+    patch_type: "return_boolean_object_true"
+
+  - description: "VerifyChannelAccessTask onPostExecute -> void"
+    target_class: "ChannelListActivity$VerifyChannelAccessTask"
+    method: "onPostExecute"
+    patch_type: "return_void"
+
+  - description: "ChannelAdapter click check bypass goto_2"
+    target_class: "ChannelListActivity$ChannelAdapter"
+    raw_replacements:
+      - search: "goto/16 :goto_2"
+        replace: "goto :cond_0"
+
+  - description: "WebActivity checkCurrentAccess -> void"
+    target_class: "WebActivity"
+    method: "checkCurrentAccess"
+    patch_type: "return_void"
+
+  - description: "VerifyWebAccessTask doInBackground -> Boolean.TRUE"
+    target_class: "WebActivity$VerifyWebAccessTask"
+    method: "doInBackground"
+    patch_type: "return_boolean_object_true"
+
+  - description: "VerifyWebAccessTask onPostExecute -> void"
+    target_class: "WebActivity$VerifyWebAccessTask"
+    method: "onPostExecute"
+    patch_type: "return_void"
+
+  - description: "HomeActivity CheckUpdateTask onPostExecute -> void"
+    target_class: "HomeActivity$CheckUpdateTask"
+    method: "onPostExecute"
+    patch_type: "return_void"
+
+test:
+  launch_timeout_seconds: 15
+  expect_no_crash: true
