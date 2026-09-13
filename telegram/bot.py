@@ -328,9 +328,26 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
     elif not sec_summary:
         sec_summary = "VT: 0/67 Temiz | APKiD: Onaylı | ClamAV: Temiz"
 
+    # Detect variant (TV, Mobile, Tablet)
+    variant = ""
+    try:
+        from engine.github_releaser import detect_variant
+        variant = detect_variant(result)
+    except Exception:
+        pass
+
+    variant_badge = ""
+    if variant == "tv":
+        variant_badge = "📺 <b>Varyant:</b> Android TV / TV Box\n"
+    elif variant == "mobile":
+        variant_badge = "📱 <b>Varyant:</b> Mobil (Telefon)\n"
+    elif variant == "tablet":
+        variant_badge = "💻 <b>Varyant:</b> Tablet (16:10)\n"
+
     text = (
         f"✅ <b>PrimeForge İş Tamamlandı</b>\n\n"
         f"🏷️ <b>{app_label}</b> (<code>{pkg}</code>)\n"
+        f"{variant_badge}"
         f"📦 Sürüm: <b>v{ver}</b> (Build: {vcode or '?'})\n"
         f"📏 Boyut: {size_mb:.2f} MB\n"
         f"🔐 İmza: PrimeStore Release Key\n\n"
@@ -360,9 +377,17 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
 
     text += f"🆔 Job: <code>#{job_id[:8] if job_id else 'local'}</code>"
 
+    btn_label = "📥 APK İndir"
+    if variant == "tv":
+        btn_label = "📥 TV APK İndir"
+    elif variant == "mobile":
+        btn_label = "📥 Mobil APK İndir"
+    elif variant == "tablet":
+        btn_label = "📥 Tablet APK İndir"
+
     keyboard_row1 = []
     if catbox_url:
-        keyboard_row1.append({"text": "📥 APK İndir", "url": catbox_url})
+        keyboard_row1.append({"text": btn_label, "url": catbox_url})
     elif rel_url:
         keyboard_row1.append({"text": "📦 Release İndir", "url": rel_url})
 

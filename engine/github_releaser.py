@@ -145,6 +145,44 @@ def generate_release_markdown(
     return "\n".join(lines)
 
 
+def detect_variant(result: dict = None, apk_path: str = "") -> str:
+    """Detect variant: 'tv', 'mobile', 'tablet', or ''."""
+    # 1. Check explicit VARIANT env var
+    env_var = os.environ.get("VARIANT", "").strip().lower()
+    if env_var in ["tv", "android_tv", "atv"]:
+        return "tv"
+    if env_var in ["mobile", "phone"]:
+        return "mobile"
+    if env_var in ["tablet", "tab"]:
+        return "tablet"
+
+    # 2. Check APK_URL or TARGET_URL env var
+    url = (os.environ.get("APK_URL") or os.environ.get("TARGET_URL") or "").lower()
+    if "_tv.apk" in url or "/tv" in url or "netfly_tv" in url or "tv." in url:
+        return "tv"
+    if "_mobile.apk" in url or "netfly_mobile" in url or "mobile" in url:
+        return "mobile"
+    if "_tablet.apk" in url or "netfly_tablet" in url or "tablet" in url:
+        return "tablet"
+
+    # 3. Check requested mod options
+    if result and isinstance(result, dict):
+        mod_opts = result.get("requested_mod_options", {})
+        if mod_opts.get("variant"):
+            return str(mod_opts.get("variant")).lower()
+
+        # 4. Check profile name
+        profile = (result.get("profile_used") or "").lower()
+        if "_tv" in profile:
+            return "tv"
+        if "_mobile" in profile:
+            return "mobile"
+        if "_tablet" in profile:
+            return "tablet"
+
+    return ""
+
+
 def create_github_release(
     result: dict,
     apk_path: str,
@@ -152,7 +190,7 @@ def create_github_release(
     screenshots: dict = None,
     repo_slug: str = None,
 ) -> dict:
-    """Create a GitHub Release on the repository and upload the APK as an asset."""
+    """Create or update a GitHub Release for the package version and upload the APK as a variant asset."""
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     repo = repo_slug or os.environ.get("GITHUB_REPOSITORY") or "simurgulgen/PrimeForge"
 
@@ -168,9 +206,18 @@ def create_github_release(
     # Sanitize version string for Git tag
     clean_version = re.sub(r"[^a-zA-Z0-9\.\-_]", "", version_name)
     clean_pkg = re.sub(r"[^a-zA-Z0-9\.\-_]", "", package_name)
-    timestamp = datetime.now().strftime("%Y%m%d%H%M")
-    tag_name = f"mod-{clean_pkg}-v{clean_version}-{timestamp}"
-    release_name = f"🚀 {app_label} v{version_name} (Modded)"
+
+    # UNIFIED STABLE TAG: All variants (TV, Mobile, Tablet) share the SAME release per version!
+    tag_name = f"mod-{clean_pkg}-v{clean_version}"
+    release_name = f"🚀 {app_label} v{version_name} (Modded - Tüm Cihazlar)"
+
+    variant = detect_variant(result, apk_path)
+    if variant:
+        apk_filename = f"{clean_pkg}_v{clean_version}_{variant}_modded.apk"
+        print(f"🎯 Tespit Edilen Varyant: '{variant}' -> Dosya Adı: {apk_filename}")
+    else:
+        apk_filename = f"{clean_pkg}_v{clean_version}_modded.apk"
+        print(f"🎯 Standart Dosya Adı: {apk_filename}")
 
     architectures = detect_apk_architectures(apk_path, result.get("analysis", {}).get("decompiled_dir"))
     device_types = detect_device_types(result.get("analysis", {}))
@@ -209,39 +256,77 @@ def create_github_release(
         file_size_bytes=result.get("build", {}).get("file_size"),
     )
 
-    print(f"\n📦 Creating GitHub Release '{tag_name}' on {repo}...")
-    create_url = f"https://api.github.com/repos/{repo}/releases"
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept": "application/vnd.github+json",
         "User-Agent": "PrimeForge-Engine",
     }
-    payload = {
-        "tag_name": tag_name,
-        "target_commitish": "main",
-        "name": release_name,
-        "body": body_content,
-        "draft": False,
-        "prerelease": False,
-    }
 
+    release_id = None
+    release_html_url = None
+    upload_url_template = None
+    existing_assets = []
+
+    # 1. Check if release already exists for this tag
+    get_url = f"https://api.github.com/repos/{repo}/releases/tags/{tag_name}"
     try:
-        req = urllib.request.Request(create_url, data=json.dumps(payload).encode("utf-8"), headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
+        req = urllib.request.Request(get_url, headers=headers)
+        with urllib.request.urlopen(req, timeout=20) as resp:
             rel_data = json.load(resp)
+            release_id = rel_data.get("id")
+            release_html_url = rel_data.get("html_url")
+            upload_url_template = rel_data.get("upload_url", "")
+            existing_assets = rel_data.get("assets", [])
+            print(f"ℹ️ Mevcut GitHub Release bulundu: {release_html_url} (ID: {release_id})")
+    except urllib.error.HTTPError as he:
+        if he.code != 404:
+            print(f"⚠️ Release kontrolü uyarısı ({he.code}): {he}")
+    except Exception as e:
+        print(f"⚠️ Release kontrol hatası: {e}")
 
-        release_id = rel_data.get("id")
-        release_html_url = rel_data.get("html_url")
-        upload_url_template = rel_data.get("upload_url", "")
-        print(f"✅ Release created: {release_html_url} (ID: {release_id})")
+    # 2. If not found, create a new unified release
+    if not release_id:
+        print(f"\n📦 Yeni birleşik GitHub Release oluşturuluyor: '{tag_name}' ({repo})...")
+        create_url = f"https://api.github.com/repos/{repo}/releases"
+        payload = {
+            "tag_name": tag_name,
+            "target_commitish": "main",
+            "name": release_name,
+            "body": body_content,
+            "draft": False,
+            "prerelease": False,
+        }
+        try:
+            req = urllib.request.Request(create_url, data=json.dumps(payload).encode("utf-8"), headers=headers)
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                rel_data = json.load(resp)
+            release_id = rel_data.get("id")
+            release_html_url = rel_data.get("html_url")
+            upload_url_template = rel_data.get("upload_url", "")
+            print(f"✅ Yeni Release oluşturuldu: {release_html_url} (ID: {release_id})")
+        except Exception as e:
+            print(f"❌ Failed to create GitHub Release: {e}")
+            return {"status": "error", "error": str(e)}
 
-        # Upload APK file as release asset
-        asset_url = None
+    # 3. If an asset with this exact filename already exists in the release, replace it
+    for a in existing_assets:
+        if a.get("name") == apk_filename:
+            asset_id = a.get("id")
+            del_url = f"https://api.github.com/repos/{repo}/releases/assets/{asset_id}"
+            try:
+                del_req = urllib.request.Request(del_url, headers=headers, method="DELETE")
+                with urllib.request.urlopen(del_req, timeout=15):
+                    print(f"🗑️ Eski asset temizlendi: {apk_filename} (ID: {asset_id})")
+            except Exception as de:
+                print(f"⚠️ Eski asset silinemedi: {de}")
+
+    # 4. Upload the APK as release asset
+    asset_url = None
+    try:
         if os.path.exists(apk_path) and upload_url_template:
             upload_url = upload_url_template.split("{")[0]
-            apk_filename = f"{clean_pkg}_v{clean_version}_modded.apk"
             upload_target = f"{upload_url}?name={apk_filename}"
-            print(f"📤 Uploading APK asset ({apk_filename})...")
+            print(f"📤 APK asset yükleniyor ({apk_filename})...")
 
             file_size = os.path.getsize(apk_path)
             upload_headers = {
@@ -254,10 +339,10 @@ def create_github_release(
                 apk_data = f.read()
 
             asset_req = urllib.request.Request(upload_target, data=apk_data, headers=upload_headers)
-            with urllib.request.urlopen(asset_req, timeout=120) as a_resp:
+            with urllib.request.urlopen(asset_req, timeout=180) as a_resp:
                 a_data = json.load(a_resp)
                 asset_url = a_data.get("browser_download_url")
-                print(f"🎉 Asset uploaded successfully: {asset_url}")
+                print(f"🎉 Asset başarıyla yüklendi: {asset_url}")
 
         return {
             "status": "success",
@@ -265,10 +350,11 @@ def create_github_release(
             "html_url": release_html_url,
             "tag_name": tag_name,
             "asset_url": asset_url,
+            "asset_filename": apk_filename,
+            "variant": variant,
         }
-
     except Exception as e:
-        print(f"❌ Failed to create GitHub Release: {e}")
+        print(f"❌ Failed to upload asset to GitHub Release: {e}")
         return {"status": "error", "error": str(e)}
 
 

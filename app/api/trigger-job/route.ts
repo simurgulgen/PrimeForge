@@ -9,7 +9,15 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '761864148';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name, mod_options, custom_notes, publish_mode = 'manual_review' } = body;
+    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name, mod_options, custom_notes, publish_mode = 'manual_review', variant } = body;
+
+    // Auto-detect variant from URL if not specified
+    if (!variant && apk_url) {
+      const low = apk_url.toLowerCase();
+      if (low.includes('_tv.apk') || low.includes('netfly_tv') || low.includes('/tv')) variant = 'tv';
+      else if (low.includes('_mobile.apk') || low.includes('netfly_mobile') || low.includes('/mobile')) variant = 'mobile';
+      else if (low.includes('_tablet.apk') || low.includes('netfly_tablet') || low.includes('/tablet')) variant = 'tablet';
+    }
 
     // Auto-fill package_name if not provided but profile looks like a package
     if (!package_name && profile && profile.includes('.')) {
@@ -80,6 +88,7 @@ export async function POST(req: Request) {
               app_name,
               version_name,
               profile,
+              variant: variant || '',
               job_id: jobId,
               mod_options: mod_options || {},
               custom_notes: custom_notes || '',
