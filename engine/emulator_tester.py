@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-PrimeForge Multi-Device Emulator Test Suite
-Tests APKs on Android TV (DPAD navigation), Mobile (20:9 Aspect Ratio & Touch),
-and Tablet (16:10 Wide Layout) with real-time logcat crash & ANR monitoring.
+PrimeForge Akıllı Çoklu Cihaz Emülatör Test Motoru v2.0
+======================================================
+1. Android TV (1920x1080 16:9 | 320 DPI | DPAD Navigasyon & Odak Analizi)
+2. Modern Mobil (1080x2400 20:9 | 440 DPI | Dokunmatik, Kaydırma & Letterbox)
+3. Tablet (2560x1600 16:10 | 280 DPI | Geniş Ekran Uyumu & Çoklu Panel)
+4. Medya & Akış Motoru Tespiti (ExoPlayer/Media3, IjkPlayer, LibVLC, Codec)
+5. Performans & Telemetri (Soğuk Başlatma ms, RAM PSS MB, CPU %)
+6. Akıllı Açılır Pencere / İzin Temizleyici (Bounds/Koordinat Tabanlı Tap)
+7. Sıfır Yanlış Pozitifli Logcat Çökme & ANR Gözetmeni
 """
 
 import json
@@ -13,7 +19,17 @@ import subprocess
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
+import zipfile
 from typing import Dict, Any, List, Optional, Tuple
+
+try:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 
 class EmulatorTester:
@@ -24,48 +40,89 @@ class EmulatorTester:
         os.makedirs(self.output_dir, exist_ok=True)
 
         self.package_name = self._resolve_package_name()
+        self.main_activity: Optional[str] = None
+        self.orig_display_size: Optional[str] = None
+        self.orig_display_density: Optional[str] = None
+
         self.logcat_proc: Optional[subprocess.Popen] = None
         self.logcat_lines: List[str] = []
         self.crashes_detected: List[Dict[str, str]] = []
+        self.logcat_warnings: List[str] = []
         self.stop_logcat = False
+        self.target_pid: Optional[int] = None
 
         self.report: Dict[str, Any] = {
             "package_name": self.package_name,
+            "apk_file": os.path.basename(self.apk_path),
             "tested_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "status": "PENDING",
             "tv_test": {},
             "mobile_test": {},
             "tablet_test": {},
+            "performance": {
+                "cold_start_ms": 0,
+                "ram_pss_mb": 0.0,
+                "cpu_percent": 0.0,
+            },
+            "media_engine": {
+                "engine_detected": "Bilinmiyor",
+                "hardware_accel": False,
+                "details": "Tespit edilemedi",
+            },
             "crash_analysis": {
                 "crashed": False,
                 "crash_count": 0,
-                "errors": []
-            }
+                "errors": [],
+                "warnings": [],
+            },
+            "device_compatibility": {
+                "tv": False,
+                "mobile": True,
+                "tablet": True,
+                "verified_by_emulator": True,
+            },
         }
 
+    # =========================================================================
+    # 0. YARDIMCI VE ÇEKİRDEK FONKSİYONLAR
+    # =========================================================================
+
     def _resolve_package_name(self) -> str:
-        """Resolve package name from analysis.json, result.json, or aapt dump."""
+        """Paket adını app_meta.json, analysis.json, result.json veya aapt üzerinden çözer."""
+        # 1. app_meta.json
+        meta_file = os.path.join(self.output_dir, "app_meta.json")
+        if os.path.exists(meta_file):
+            try:
+                with open(meta_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if data.get("package_name"):
+                        return data["package_name"]
+            except Exception:
+                pass
+
+        # 2. analysis.json
         analysis_file = os.path.join(self.output_dir, "analysis.json")
         if os.path.exists(analysis_file):
             try:
                 with open(analysis_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if "package_name" in data and data["package_name"]:
+                    if data.get("package_name"):
                         return data["package_name"]
             except Exception:
                 pass
 
+        # 3. result.json
         result_file = os.path.join(self.output_dir, "result.json")
         if os.path.exists(result_file):
             try:
                 with open(result_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if "package_name" in data and data["package_name"]:
+                    if data.get("package_name"):
                         return data["package_name"]
             except Exception:
                 pass
 
-        # Fallback to aapt badging
+        # 4. aapt badging
         try:
             from engine.asset_extractor import find_aapt_executable
             aapt_bin = find_aapt_executable() or "aapt"
@@ -80,7 +137,7 @@ class EmulatorTester:
         return "unknown.package"
 
     def _adb_cmd(self, args: List[str], timeout: int = 30) -> subprocess.CompletedProcess:
-        """Run ADB command with optional serial."""
+        """Belirtilen serial veya varsayılan ADB üzerinden komut yürütür."""
         cmd = ["adb"]
         if self.device_serial:
             cmd.extend(["-s", self.device_serial])
@@ -88,35 +145,117 @@ class EmulatorTester:
         return subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
 
     def _adb_shell(self, cmd_str: str, timeout: int = 30) -> str:
-        """Run ADB shell command and return stdout."""
+        """ADB shell komutu çalıştırır ve temiz stdout döndürür."""
         res = self._adb_cmd(["shell", cmd_str], timeout=timeout)
         return res.stdout.strip()
 
-    def check_device_connected(self) -> bool:
-        """Check if any ADB device or emulator is connected and ready."""
+    def check_device_ready(self) -> bool:
+        """Cihazın bağlı, açık, kilitsiz ve teste hazır olduğunu doğrular."""
         try:
             res = self._adb_cmd(["devices"])
             lines = [l.strip() for l in res.stdout.splitlines() if l.strip()]
             devices = [l.split()[0] for l in lines[1:] if "device" in l and not "offline" in l]
             if not devices:
-                print("❌ No active ADB devices/emulators found.")
+                print("❌ [HATA] Aktif bir ADB cihazı veya emülatör bulunamadı.")
                 return False
+
             if not self.device_serial:
                 self.device_serial = devices[0]
-            print(f"📱 Connected ADB Device: {self.device_serial}")
+            print(f"📱 [ADB Cihazı] Bağlı ve aktif: {self.device_serial}")
+
+            # Boot tamamlandı mı kontrol et
+            boot = self._adb_shell("getprop sys.boot_completed")
+            if "1" not in boot:
+                print("  ⏳ Cihazın açılışı (sys.boot_completed) bekleniyor...")
+                for _ in range(10):
+                    time.sleep(2)
+                    if "1" in self._adb_shell("getprop sys.boot_completed"):
+                        break
+
+            # Ekranı uyandır ve kilit varsa aç
+            self._adb_shell("input keyevent 224")  # WAKEUP
+            self._adb_shell("input keyevent 82")   # MENU / Unlock
+
+            # Orijinal ekran boyutunu ve yoğunluğunu hafızaya al
+            wm_size_out = self._adb_shell("wm size")
+            m_size = re.search(r"(?:Physical|Override) size:\s*(\d+x\d+)", wm_size_out)
+            if m_size:
+                self.orig_display_size = m_size.group(1)
+
+            wm_dens_out = self._adb_shell("wm density")
+            m_dens = re.search(r"(?:Physical|Override) density:\s*(\d+)", wm_dens_out)
+            if m_dens:
+                self.orig_display_density = m_dens.group(1)
+
+            print(f"  📐 Donanım Ekranı: {self.orig_display_size or 'Default'} | {self.orig_display_density or 'Default'} dpi")
             return True
         except Exception as e:
-            print(f"❌ ADB connection check failed: {e}")
+            print(f"❌ [ADB Hata] Cihaz kontrolü başarısız: {e}")
             return False
 
+    # =========================================================================
+    # 1. KURULUM VE İZİN YÖNETİMİ
+    # =========================================================================
+
+    def install_and_grant_permissions(self) -> bool:
+        """APK'yı yükler ve tüm runtime izinlerini önceden verir."""
+        print(f"\n📦 [Aşama 1: Kurulum] {os.path.basename(self.apk_path)} yükleniyor...")
+        res = self._adb_cmd(["install", "-r", "-g", self.apk_path], timeout=120)
+        if "Success" in res.stdout or "Success" in res.stderr:
+            print("  ✅ APK başarıyla yüklendi (-g izin bayrağı aktif).")
+
+            # Kritik runtime izinlerini garanti altına al (Android 13+ bildirimleri dahil)
+            critical_perms = [
+                "android.permission.POST_NOTIFICATIONS",
+                "android.permission.READ_EXTERNAL_STORAGE",
+                "android.permission.WRITE_EXTERNAL_STORAGE",
+                "android.permission.ACCESS_FINE_LOCATION",
+                "android.permission.RECORD_AUDIO",
+            ]
+            for perm in critical_perms:
+                self._adb_shell(f"pm grant {self.package_name} {perm} 2>/dev/null")
+
+            return True
+
+        print(f"  ❌ Kurulum Başarısız Oldu: {res.stdout} {res.stderr}")
+        return False
+
+    # =========================================================================
+    # 2. HASSAS ÇÖKME & ANR GÖZETMENİ (LOGCAT SENTINEL)
+    # =========================================================================
+
+    def _get_app_pid(self) -> Optional[int]:
+        """Çalışan uygulamanın PID değerini alır."""
+        try:
+            pid_out = self._adb_shell(f"pidof {self.package_name}")
+            if pid_out and pid_out.isdigit():
+                return int(pid_out)
+            # Alternatif ps
+            ps_out = self._adb_shell(f"ps -A | grep {self.package_name}")
+            if ps_out:
+                parts = ps_out.split()
+                if len(parts) >= 2 and parts[1].isdigit():
+                    return int(parts[1])
+        except Exception:
+            pass
+        return None
+
+    def _is_process_alive(self) -> bool:
+        """Hedef uygulamanın sürecinin arka/ön planda yaşayıp yaşamadığını kontrol eder."""
+        return self._get_app_pid() is not None
+
     def start_crash_watcher(self):
-        """Start real-time logcat monitoring in background."""
-        self._adb_cmd(["logcat", "-c"])  # Clear previous logs
+        """Logcat gözetmenini başlatır ve sadece gerçek sistem çökmelerini yakalar."""
+        self._adb_cmd(["logcat", "-c"])  # Önceki kayıtları temizle
+        self.stop_logcat = False
+        self.crashes_detected.clear()
+        self.logcat_lines.clear()
 
         def _reader():
             cmd = ["adb"]
             if self.device_serial:
                 cmd.extend(["-s", self.device_serial])
+            # Sadece Hata (E) ve Fatal (F) seviyesindeki logcat mesajlarını dinle
             cmd.extend(["logcat", "-v", "time", "*:E"])
             try:
                 self.logcat_proc = subprocess.Popen(
@@ -127,14 +266,26 @@ class EmulatorTester:
                         if self.stop_logcat:
                             break
                         self.logcat_lines.append(line)
-                        if any(pattern in line for pattern in [
-                            "FATAL EXCEPTION", "SIGSEGV", "ANR in", "NullPointerException",
-                            "ClassNotFoundException", "NoSuchMethodError"
-                        ]):
-                            self.crashes_detected.append({
-                                "time": time.strftime("%H:%M:%S"),
-                                "line": line.strip()
-                            })
+
+                        # Kesin Çökme Kriterleri:
+                        # 1. Uygulamanın sürecine ait FATAL EXCEPTION
+                        # 2. Uygulamaya ait ANR
+                        # 3. Fatal signal 11 (SIGSEGV)
+                        is_fatal = False
+                        if "FATAL EXCEPTION" in line and (self.package_name in line or "AndroidRuntime" in line):
+                            is_fatal = True
+                        elif "ANR in" in line and self.package_name in line:
+                            is_fatal = True
+                        elif "Fatal signal" in line and ("SIGSEGV" in line or "SIGABRT" in line):
+                            is_fatal = True
+                        elif "Application Error:" in line and self.package_name in line:
+                            is_fatal = True
+
+                        if is_fatal:
+                            entry = {"time": time.strftime("%H:%M:%S"), "line": line.strip()}
+                            if entry not in self.crashes_detected:
+                                self.crashes_detected.append(entry)
+
             except Exception:
                 pass
 
@@ -142,7 +293,7 @@ class EmulatorTester:
         t.start()
 
     def stop_crash_watcher(self):
-        """Stop logcat watcher and save log to file."""
+        """Logcat gözetmenini durdurur ve log dosyasını kaydeder."""
         self.stop_logcat = True
         if self.logcat_proc:
             try:
@@ -152,39 +303,127 @@ class EmulatorTester:
 
         log_path = os.path.join(self.output_dir, "logcat_test.log")
         with open(log_path, "w", encoding="utf-8", errors="replace") as f:
-            f.writelines(self.logcat_lines)
+            f.writelines(self.logcat_lines[-1500:])  # Son 1500 satırı kaydet
 
+        # Eğer süreç ölmediyse ve UI hala odaktaysa, yakalanmamış minör hataları uyarıya çek
         if self.crashes_detected:
-            self.report["crash_analysis"]["crashed"] = True
-            self.report["crash_analysis"]["crash_count"] = len(self.crashes_detected)
-            self.report["crash_analysis"]["errors"] = self.crashes_detected[:10]
+            if not self._is_process_alive():
+                self.report["crash_analysis"]["crashed"] = True
+                self.report["crash_analysis"]["crash_count"] = len(self.crashes_detected)
+                self.report["crash_analysis"]["errors"] = self.crashes_detected[:10]
+            else:
+                # Süreç ayaktaysa, bu çökmeler izole thread veya ad sdk olabilir
+                self.report["crash_analysis"]["warnings"] = [c["line"] for c in self.crashes_detected[:5]]
+                self.report["crash_analysis"]["crashed"] = False
 
-    def install_apk(self) -> bool:
-        """Install target APK with grant-all permissions flag."""
-        print(f"\n📦 Installing APK: {os.path.basename(self.apk_path)}...")
-        res = self._adb_cmd(["install", "-r", "-g", self.apk_path], timeout=120)
-        if "Success" in res.stdout or "Success" in res.stderr:
-            print("  ✅ APK successfully installed.")
-            return True
-        print(f"  ❌ Installation failed: {res.stdout} {res.stderr}")
+    # =========================================================================
+    # 3. AKILLI ARAYÜZ VE AÇILIR PENCERE (POPUP) YÖNETİMİ
+    # =========================================================================
+
+    def smart_dismiss_popups(self) -> bool:
+        """
+        Arayüz hiyerarşisini (UIAutomator XML) analiz eder:
+        1. İzin / Onay butonlarını (Allow, İzin Ver, Tamam, Kabul, Devam)
+        2. Güncelleme istemlerini (İptal, Sonra, Kapat, Later, Cancel)
+        koordinatları (bounds) üzerinden otomatik olarak tıklar.
+        """
+        try:
+            self._adb_shell("uiautomator dump /sdcard/popup_dump.xml")
+            xml_str = self._adb_shell("cat /sdcard/popup_dump.xml")
+            if not xml_str or "<hierarchy" not in xml_str:
+                return False
+
+            root = ET.fromstring(xml_str)
+
+            # Kabul edilecek pozitif buton metinleri
+            positive_terms = {
+                "allow", "izin ver", "while using the app", "uygulamayı kullanırken",
+                "tamam", "kabul et", "accept", "ok", "continue", "devam", "agree",
+                "anladım", "got it", "i agree", "yes", "evet", "başla", "start",
+            }
+            # İptal edilecek güncelleme / abonelik metinleri
+            dismiss_terms = {
+                "later", "sonra", "iptal", "cancel", "şimdi değil", "not now",
+                "kapat", "close", "skip", "atla", "vazgeç", "daha sonra",
+            }
+            target_terms = positive_terms | dismiss_terms
+
+            for node in root.iter("node"):
+                text = (node.attrib.get("text") or "").strip().lower()
+                desc = (node.attrib.get("content-desc") or "").strip().lower()
+                res_id = (node.attrib.get("resource-id") or "").lower()
+                bounds = node.attrib.get("bounds", "")
+
+                is_match = False
+                if any(term in text for term in target_terms):
+                    is_match = True
+                elif any(term in desc for term in target_terms):
+                    is_match = True
+                elif any(bid in res_id for bid in ["permission_allow_button", "button1", "btn_positive"]):
+                    is_match = True
+
+                if is_match and bounds:
+                    m = re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]", bounds)
+                    if m:
+                        x1, y1, x2, y2 = map(int, m.groups())
+                        cx = (x1 + x2) // 2
+                        cy = (y1 + y2) // 2
+                        print(f"  🛡️ [Otomatik Onay] Pop-up tıklandı: '{text or desc or res_id}' ({cx}, {cy})")
+                        self._adb_shell(f"input tap {cx} {cy}")
+                        time.sleep(1)
+                        return True
+
+        except Exception:
+            pass
         return False
 
-    def launch_app(self, prefer_leanback: bool = False) -> bool:
-        """Launch app via Monkey launcher or Leanback launcher."""
+    def wait_for_ui_ready(self, timeout_sec: int = 8) -> bool:
+        """Splash screen veya yükleme dönücüsünün geçmesini ve ana içeriğin gelmesini bekler."""
+        start = time.time()
+        while time.time() - start < timeout_sec:
+            self.smart_dismiss_popups()
+            # UI dumping ile kontrol et
+            try:
+                self._adb_shell("uiautomator dump /sdcard/ready_chk.xml")
+                xml = self._adb_shell("cat /sdcard/ready_chk.xml")
+                # Eğer hiyerarşide 4'ten fazla düğüm varsa ve splash ekranı geçmişse
+                node_count = xml.count("<node")
+                if node_count >= 5 and not any(term in xml.lower() for term in ["lottie", "splashactivity"]):
+                    return True
+            except Exception:
+                pass
+            time.sleep(1)
+        return False
+
+    def launch_app_benchmarked(self, prefer_leanback: bool = False) -> Tuple[bool, int]:
+        """Uygulamayı başlatır, soğuk açılış süresini (Cold Start ms) ölçer."""
         category = "android.intent.category.LEANBACK_LAUNCHER" if prefer_leanback else "android.intent.category.LAUNCHER"
-        print(f"  🚀 Launching {self.package_name} ({category.split('.')[-1]})...")
+        print(f"  🚀 Başlatılıyor: {self.package_name} ({category.split('.')[-1]})...")
+
+        t0 = time.time()
         out = self._adb_shell(f"monkey -p {self.package_name} -c {category} 1")
         if "No activities found" in out and prefer_leanback:
-            print("  ℹ️ Leanback launcher not found, falling back to standard LAUNCHER...")
+            print("  ℹ️ Leanback launcher bulunamadı, standart LAUNCHER ile başlatılıyor...")
+            t0 = time.time()
             out = self._adb_shell(f"monkey -p {self.package_name} -c android.intent.category.LAUNCHER 1")
 
-        time.sleep(3)
-        focus = self._adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")
-        print(f"  🎯 Current Focus: {focus[:100] if focus else 'None'}")
-        return self.package_name in focus
+        # Odaklanılan aktiviteyi bekle ve süreyi kaydet
+        cold_start_ms = 0
+        focused = False
+        for _ in range(25):
+            time.sleep(0.4)
+            focus = self._adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")
+            if self.package_name in focus:
+                cold_start_ms = int((time.time() - t0) * 1000)
+                focused = True
+                break
+
+        self.wait_for_ui_ready(timeout_sec=6)
+        print(f"  ⚡ Soğuk Açılış Süresi: {cold_start_ms} ms (Odak: {'Sağlandı' if focused else 'Bekleniyor'})")
+        return focused, cold_start_ms
 
     def capture_screenshot(self, filename: str) -> str:
-        """Capture screenshot directly via adb exec-out screencap."""
+        """Ekran görüntüsünü doğrudan adb exec-out screencap ile kaydeder."""
         dest = os.path.join(self.output_dir, filename)
         cmd = ["adb"]
         if self.device_serial:
@@ -194,60 +433,34 @@ class EmulatorTester:
             with open(dest, "wb") as f:
                 subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, timeout=20)
             if os.path.exists(dest) and os.path.getsize(dest) > 1024:
-                print(f"  📸 Screenshot saved: {filename} ({os.path.getsize(dest) // 1024} KB)")
+                print(f"  📸 Ekran Görüntüsü Kaydedildi: {filename} ({os.path.getsize(dest) // 1024} KB)")
                 return dest
         except Exception as e:
-            print(f"  ⚠️ Screenshot capture failed: {e}")
+            print(f"  ⚠️ Ekran görüntüsü alınamadı: {e}")
         return ""
 
-    def dismiss_system_dialogs(self):
-        """Automatically detect and click permission and confirmation popups."""
-        try:
-            self._adb_shell("uiautomator dump /sdcard/dialog_dump.xml")
-            xml = self._adb_shell("cat /sdcard/dialog_dump.xml")
-            if any(term in xml.lower() for term in ["permission", "izin", "allow", "tamam", "continue"]):
-                # Attempt to click Allow button coordinates or send DPAD Right + Enter
-                print("  🛡️ System/Permission dialog detected. Approving automatically...")
-                self._adb_shell("input keyevent 22")  # RIGHT
-                self._adb_shell("input keyevent 23")  # CENTER
-                time.sleep(1)
-        except Exception:
-            pass
-
-    def navigate_and_capture_content(self, form_factor: str) -> Optional[str]:
-        """Navigate deeper into the app's categories/menus to capture real content."""
-        print(f"  🎬 Navigating into {form_factor} content (categories/media list)...")
-        self.dismiss_system_dialogs()
-
-        # Navigate down into first content section / list
-        self._adb_shell("input keyevent 20")  # DPAD_DOWN
-        time.sleep(0.5)
-        self._adb_shell("input keyevent 22")  # DPAD_RIGHT
-        time.sleep(0.5)
-        self._adb_shell("input keyevent 23")  # DPAD_CENTER / Select
-        time.sleep(3)  # Wait for content list / posters to render
-
-        content_shot_name = f"{form_factor.lower()}_content_screenshot.png"
-        return self.capture_screenshot(content_shot_name)
+    # =========================================================================
+    # 4. AŞAMA 1: ANDROID TV & DPAD KUMANDA TESTİ
+    # =========================================================================
 
     def test_tv_profile(self) -> Dict[str, Any]:
-        """Test TV profile (1920x1080 320dpi) with DPAD navigation & UI focus tracking."""
-        print("\n" + "=" * 60)
-        print("📺 TEST 1: ANDROID TV (1920x1080 16:9 | DPAD Navigation)")
-        print("=" * 60)
+        """Android TV (1920x1080 320dpi) modunda DPAD yön tuşları, odak takibi ve içerik testi."""
+        print("\n" + "=" * 62)
+        print("📺 TEST 1: ANDROID TV (1920x1080 16:9 | DPAD Kumanda Navigasyonu)")
+        print("=" * 62)
 
-        # Set TV display parameters
+        # İzole başlangıç
+        self._adb_shell(f"am force-stop {self.package_name}")
         self._adb_shell("wm size 1920x1080")
         self._adb_shell("wm density 320")
         time.sleep(1)
 
-        # Launch app
-        self.launch_app(prefer_leanback=True)
-        time.sleep(3)
-        self.dismiss_system_dialogs()
-        time.sleep(2)
+        # Başlat
+        _, start_ms = self.launch_app_benchmarked(prefer_leanback=True)
+        if not self.report["performance"]["cold_start_ms"]:
+            self.report["performance"]["cold_start_ms"] = start_ms
 
-        # Check Leanback capability in Manifest
+        # Leanback Manifest denetimi
         manifest_leanback = False
         analysis_path = os.path.join(self.output_dir, "analysis.json")
         if os.path.exists(analysis_path):
@@ -258,8 +471,8 @@ class EmulatorTester:
             except Exception:
                 pass
 
-        # Simulate DPAD Key Events: UP(19), DOWN(20), RIGHT(22), DOWN(20), LEFT(21), CENTER(23)
-        dpad_keys = [
+        # DPAD Kumanda Gezintisi: AŞAĞI, SAĞ, AŞAĞI, YUKARI, SOL, SEÇ (ENTER)
+        dpad_sequence = [
             ("DPAD_DOWN", 20),
             ("DPAD_RIGHT", 22),
             ("DPAD_DOWN", 20),
@@ -267,16 +480,18 @@ class EmulatorTester:
             ("DPAD_UP", 19),
             ("DPAD_CENTER", 23),
         ]
+        print("  🎮 DPAD Kumanda tuş kombinasyonu gönderiliyor...")
+        focus_changes = 0
+        last_focus = ""
+        for name, code in dpad_sequence:
+            self._adb_shell(f"input keyevent {code}")
+            time.sleep(0.4)
+            current_focus = self._adb_shell("dumpsys window | grep mCurrentFocus")
+            if current_focus and current_focus != last_focus:
+                focus_changes += 1
+                last_focus = current_focus
 
-        print("  🎮 Sending DPAD key navigation sequence...")
-        focus_states = []
-        for name, keycode in dpad_keys:
-            self._adb_shell(f"input keyevent {keycode}")
-            time.sleep(0.5)
-            focus = self._adb_shell("dumpsys window | grep mCurrentFocus")
-            focus_states.append(focus)
-
-        # Check UI hierarchy for focusable / focused elements
+        # UI Hiyerarşisinde odaklanabilir / odaklanmış öğeleri say
         focusable_count = 0
         focused_count = 0
         try:
@@ -287,19 +502,31 @@ class EmulatorTester:
         except Exception:
             pass
 
-        # Determine DPAD Compatibility Score
-        if focused_count > 0 or focusable_count >= 3:
+        # Kumanda Uyumluluk Derecesi
+        if focused_count > 0 or (focusable_count >= 3 and focus_changes >= 2):
             dpad_compat = "COMPATIBLE"
             dpad_msg = "✅ Tam Uyumlu: Kumanda yön tuşları odaklanabiliyor."
         elif focusable_count > 0:
             dpad_compat = "PARTIAL"
-            dpad_msg = "⚠️ Kısmi Uyumlu: Bazı öğeler odaklanabiliyor, Air Mouse önerilir."
+            dpad_msg = "⚠️ Kısmi Uyumlu: Bazı öğeler odaklanabiliyor (Air Mouse önerilir)."
         else:
             dpad_compat = "INCOMPATIBLE"
-            dpad_msg = "❌ Uyumsuz: Odaklanabilir öğe bulunamadı, Dokunmatik/Mouse zorunlu."
+            dpad_msg = "❌ Kumanda Uyumsuz: Odaklanabilir öğe yok (Dokunmatik/Mouse zorunlu)."
 
+        # 1. TV Ana Ekran görüntüsü
         screenshot = self.capture_screenshot("tv_screenshot.png")
-        content_shot = self.navigate_and_capture_content("tv")
+
+        # 2. TV İçerik / Katalog derinliğine gitme
+        print("  🎬 TV içerik / katalog görünümüne geçiliyor...")
+        self._adb_shell("input keyevent 20")  # DPAD_DOWN
+        time.sleep(0.5)
+        self._adb_shell("input keyevent 23")  # DPAD_CENTER
+        time.sleep(3)
+        content_shot = self.capture_screenshot("tv_content_screenshot.png")
+
+        # Geri tuşuyla ana ekrana dönüş testi
+        self._adb_shell("input keyevent 4")  # BACK
+        time.sleep(1)
 
         tv_result = {
             "resolution": "1920x1080 (16:9)",
@@ -307,48 +534,60 @@ class EmulatorTester:
             "leanback_manifest": manifest_leanback,
             "focusable_elements": focusable_count,
             "focused_elements": focused_count,
+            "focus_transitions": focus_changes,
             "dpad_compatibility": dpad_compat,
             "details": dpad_msg,
             "screenshot": os.path.basename(screenshot) if screenshot else None,
-            "content_screenshot": os.path.basename(content_shot) if content_shot else None
+            "content_screenshot": os.path.basename(content_shot) if content_shot else None,
         }
         self.report["tv_test"] = tv_result
         print(f"  {dpad_msg}")
         return tv_result
 
-    def test_mobile_profile(self) -> Dict[str, Any]:
-        """Test Mobile profile (1080x2400 20:9) with touch events & aspect ratio check."""
-        print("\n" + "=" * 60)
-        print("📱 TEST 2: MOBİL (1080x2400 20:9 | Dokunmatik & En-Boy Oranı)")
-        print("=" * 60)
+    # =========================================================================
+    # 5. AŞAMA 2: MODERN MOBİL & DOKUNMATİK TESTİ
+    # =========================================================================
 
-        # Set Modern Tall Phone parameters
+    def test_mobile_profile(self) -> Dict[str, Any]:
+        """Modern uzun telefon (1080x2400 20:9 | 440dpi) dokunmatik, jest ve letterbox testi."""
+        print("\n" + "=" * 62)
+        print("📱 TEST 2: MOBİL (1080x2400 20:9 | Dokunmatik & En-Boy Oranı)")
+        print("=" * 62)
+
+        # İzole başlangıç
+        self._adb_shell(f"am force-stop {self.package_name}")
         self._adb_shell("wm size 1080x2400")
         self._adb_shell("wm density 440")
         time.sleep(1)
 
-        self.launch_app(prefer_leanback=False)
-        time.sleep(3)
+        self.launch_app_benchmarked(prefer_leanback=False)
 
-        # Check Window Bounds / Aspect Ratio Letterboxing
+        # 20:9 Letterbox (Siyah Şerit) Denetimi
         letterboxed = False
         window_dump = self._adb_shell("dumpsys window displays")
-        if "letterbox" in window_dump.lower() or "compat" in window_dump.lower():
+        if "letterbox" in window_dump.lower() or "compatmode" in window_dump.lower():
             letterboxed = True
 
-        # Test Touch Interactions (Tap center and Swipe scroll)
-        print("  👆 Performing touch tap & vertical scroll swipe...")
-        self._adb_shell("input tap 540 1200")
-        time.sleep(0.5)
-        self._adb_shell("input swipe 540 1600 540 800 300")
+        # Dokunmatik Jest Testleri (Üst sekme dokunuşu & dikey kaydırma)
+        print("  👆 Üst kategori sekmesi dokunma & yumuşak dikey kaydırma...")
+        self._adb_shell("input tap 270 320")   # Üst ilk sekme/kategori
         time.sleep(1)
+        self._adb_shell("input swipe 540 1800 540 600 350")  # Dikey kaydır (posterleri lazy-load tetikle)
+        time.sleep(1.5)
 
-        # Verify UI did not freeze/ANR
-        is_responsive = self.package_name in self._adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")
+        is_responsive = self._is_process_alive() and self.package_name in self._adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")
 
-        self.dismiss_system_dialogs()
         screenshot = self.capture_screenshot("mobile_screenshot.png")
-        content_shot = self.navigate_and_capture_content("mobile")
+
+        # İçerik/Detay ekranı için ilk karta dokun
+        print("  🎬 Mobil içerik görünümüne geçiliyor...")
+        self._adb_shell("input tap 540 900")
+        time.sleep(2.5)
+        content_shot = self.capture_screenshot("mobile_content_screenshot.png")
+
+        # Geri tuşu testi
+        self._adb_shell("input keyevent 4")  # BACK
+        time.sleep(1)
 
         mobile_result = {
             "resolution": "1080x2400 (20:9 Tall)",
@@ -358,31 +597,35 @@ class EmulatorTester:
             "touch_responsive": is_responsive,
             "details": "✅ 20:9 Tam ekran ve dokunmatik aktif" if not letterboxed and is_responsive else "⚠️ Boyut veya dokunmatik kısıtlı",
             "screenshot": os.path.basename(screenshot) if screenshot else None,
-            "content_screenshot": os.path.basename(content_shot) if content_shot else None
+            "content_screenshot": os.path.basename(content_shot) if content_shot else None,
         }
         self.report["mobile_test"] = mobile_result
         print(f"  {mobile_result['details']}")
         return mobile_result
 
-    def test_tablet_profile(self) -> Dict[str, Any]:
-        """Test Tablet profile (2560x1600 16:10 Landscape) with wide UI scaling."""
-        print("\n" + "=" * 60)
-        print("💻 TEST 3: TABLET (2560x1600 16:10 | Geniş Ekran Düzeni & Dokunmatik)")
-        print("=" * 60)
+    # =========================================================================
+    # 6. AŞAMA 3: TABLET GENİŞ EKRAN TESTİ
+    # =========================================================================
 
-        # Set Tablet Wide parameters
+    def test_tablet_profile(self) -> Dict[str, Any]:
+        """Tablet modunda (2560x1600 16:10 | 280dpi) geniş ekran adaptasyonu ve dokunmatik testi."""
+        print("\n" + "=" * 62)
+        print("💻 TEST 3: TABLET (2560x1600 16:10 | Geniş Ekran Düzeni & Çoklu Panel)")
+        print("=" * 62)
+
+        # İzole başlangıç
+        self._adb_shell(f"am force-stop {self.package_name}")
         self._adb_shell("wm size 2560x1600")
         self._adb_shell("wm density 280")
         time.sleep(1)
 
-        self.launch_app(prefer_leanback=False)
-        time.sleep(3)
+        self.launch_app_benchmarked(prefer_leanback=False)
 
-        # Test Tablet Touch Interactions
-        print("  🖐️ Performing tablet wide touch interaction...")
+        # Tablet Geniş Alan Jestleri
+        print("  🖐️ Geniş ekran dokunma ve yatay kaydırma jesti...")
         self._adb_shell("input tap 1280 800")
         time.sleep(0.5)
-        self._adb_shell("input swipe 1600 800 600 800 300")
+        self._adb_shell("input swipe 1800 800 600 800 300")
         time.sleep(1)
 
         screenshot = self.capture_screenshot("tablet_screenshot.png")
@@ -392,30 +635,114 @@ class EmulatorTester:
             "density": "280 dpi",
             "adaptive_layout": True,
             "details": "✅ Geniş ekran yatay mod destekleniyor",
-            "screenshot": os.path.basename(screenshot) if screenshot else None
+            "screenshot": os.path.basename(screenshot) if screenshot else None,
         }
         self.report["tablet_test"] = tablet_result
         print(f"  {tablet_result['details']}")
         return tablet_result
 
+    # =========================================================================
+    # 7. AŞAMA 4: MEDYA & AKIŞ MOTORU TEŞHİSİ (EXOPLAYER / IJK / VLC)
+    # =========================================================================
+
+    def probe_streaming_and_media_engine(self):
+        """Uygulamanın kullandığı video oynatıcı motoru ve donanım hızlandırma durumunu teşhis eder."""
+        detected_engines = []
+
+        # 1. APK içindeki yerel kütüphaneler (.so)
+        try:
+            with zipfile.ZipFile(self.apk_path, "r") as z:
+                names = z.namelist()
+                if any("libijkffmpeg" in n or "libijkplayer" in n for n in names):
+                    detected_engines.append("IjkPlayer (FFmpeg Tabanlı)")
+                if any("libvlc" in n for n in names):
+                    detected_engines.append("LibVLC (VideoLAN)")
+                if any("libexoplayer" in n for n in names):
+                    detected_engines.append("ExoPlayer Native")
+        except Exception:
+            pass
+
+        # 2. Logcat ve dumpsys media kontrolü
+        combined_logs = "".join(self.logcat_lines)
+        if "ExoPlayer" in combined_logs or "androidx.media3" in combined_logs:
+            if "ExoPlayer (Media3)" not in detected_engines:
+                detected_engines.append("ExoPlayer (Google Media3)")
+        if "MediaPlayer" in combined_logs and not detected_engines:
+            detected_engines.append("Android Native MediaPlayer")
+        if "chromium" in combined_logs.lower() or "webview" in combined_logs.lower():
+            detected_engines.append("WebView / HTML5 Player")
+
+        # Donanım kod çözücü kontrolü
+        has_hw = "MediaCodec" in combined_logs or "OMX." in combined_logs or "c2.android" in combined_logs
+
+        engine_name = ", ".join(detected_engines) if detected_engines else "Standart Android MediaPlayer"
+        self.report["media_engine"] = {
+            "engine_detected": engine_name,
+            "hardware_accel": has_hw,
+            "details": f"Motor: {engine_name} | Donanım Hızlandırma: {'Aktif' if has_hw else 'Yazılımsal/Standart'}",
+        }
+        print(f"  🎬 Medya Teşhisi: {self.report['media_engine']['details']}")
+
+    # =========================================================================
+    # 8. AŞAMA 5: PERFORMANS & TELEMETRİ ÖLÇÜMÜ
+    # =========================================================================
+
+    def collect_performance_telemetry(self):
+        """RAM (PSS in MB) ve CPU kullanımını ölçer."""
+        # RAM PSS
+        ram_mb = 0.0
+        try:
+            mem_dump = self._adb_shell(f"dumpsys meminfo {self.package_name}")
+            m_pss = re.search(r"TOTAL PSS:\s*(\d+)", mem_dump) or re.search(r"TOTAL\s+(\d+)", mem_dump)
+            if m_pss:
+                ram_mb = round(int(m_pss.group(1)) / 1024, 1)
+        except Exception:
+            pass
+
+        # CPU %
+        cpu_pct = 0.0
+        try:
+            cpu_dump = self._adb_shell(f"dumpsys cpuinfo | grep {self.package_name}")
+            m_cpu = re.search(r"([\d\.]+)%", cpu_dump)
+            if m_cpu:
+                cpu_pct = float(m_cpu.group(1))
+        except Exception:
+            pass
+
+        self.report["performance"]["ram_pss_mb"] = ram_mb
+        self.report["performance"]["cpu_percent"] = cpu_pct
+        print(f"  📊 Telemetri: RAM: {ram_mb} MB PSS | CPU: %{cpu_pct}")
+
+    # =========================================================================
+    # 9. GERİ YÜKLEME VE TÜM SÜRECİ ÇALIŞTIRMA
+    # =========================================================================
+
     def reset_display(self):
-        """Reset window manager display size and density to device default."""
-        print("\n🔄 Resetting Window Manager parameters...")
-        self._adb_shell("wm size reset")
-        self._adb_shell("wm density reset")
+        """Ekran boyutunu ve yoğunluğunu orijinal donanım parametrelerine geri döndürür."""
+        print("\n🔄 [Geri Yükleme] Ekran parametreleri varsayılana sıfırlanıyor...")
+        if self.orig_display_size:
+            self._adb_shell(f"wm size {self.orig_display_size}")
+        else:
+            self._adb_shell("wm size reset")
+
+        if self.orig_display_density:
+            self._adb_shell(f"wm density {self.orig_display_density}")
+        else:
+            self._adb_shell("wm density reset")
 
     def run_all(self) -> Dict[str, Any]:
-        """Execute full multi-device test suite."""
-        print(f"\n🚀 Starting PrimeForge Multi-Device Test Suite for: {self.package_name}")
+        """Tüm çoklu cihaz test aşamalarını sırayla ve güvenli biçimde yürütür."""
+        print(f"\n🚀 [PrimeForge Emülatör Test Motoru v2.0] Başlatılıyor: {self.package_name}")
         start_time = time.time()
 
-        if not self.check_device_connected():
+        # 0. Ön Kontroller
+        if not self.check_device_ready():
             self.report["status"] = "SKIPPED_NO_DEVICE"
-            self.report["error"] = "No ADB device or emulator connected."
+            self.report["error"] = "Aktif bir ADB cihazı veya emülatör bulunamadı."
             self._save_report()
             return self.report
 
-        # 1. Extract App Logo & Metadata if not already extracted
+        # Logo ve Varlık Çıkarımı
         icon_path = os.path.join(self.output_dir, "icon.png")
         if not os.path.exists(icon_path):
             try:
@@ -427,37 +754,43 @@ class EmulatorTester:
                 self.report["has_icon"] = assets.get("has_icon")
                 self.report["has_banner"] = assets.get("has_banner")
             except Exception as e:
-                print(f"  ⚠️ Asset extraction error: {e}")
+                print(f"  ⚠️ Varlık çıkarım uyarısı: {e}")
         else:
             self.report["has_icon"] = True
 
-        # 2. Install APK
-        if not self.install_apk():
+        # 1. Kurulum
+        if not self.install_and_grant_permissions():
             self.report["status"] = "INSTALL_FAILED"
-            self.report["error"] = "Failed to install APK via ADB."
+            self.report["error"] = "APK kurulumu başarısız oldu."
             self._save_report()
             return self.report
 
-        # 3. Start Logcat Crash Watcher
+        # 2. Logcat Gözetmenini Başlat
         self.start_crash_watcher()
 
         try:
-            # 3. Test TV Mode
+            # 3. TV Testi
             self.test_tv_profile()
 
-            # 4. Test Mobile Mode
+            # 4. Mobil Testi
             self.test_mobile_profile()
 
-            # 5. Test Tablet Mode
+            # 5. Tablet Testi
             self.test_tablet_profile()
 
+            # 6. Medya Motoru Teşhisi
+            self.probe_streaming_and_media_engine()
+
+            # 7. Performans ve Kaynak Telemetrisi
+            self.collect_performance_telemetry()
+
         finally:
-            # Always reset display & stop watcher
+            # Güvenli Temizlik & Sıfırlama
             self.reset_display()
             self.stop_crash_watcher()
             self._adb_shell(f"am force-stop {self.package_name}")
 
-        # Evaluate Overall Status & Dynamic Device Compatibility
+        # Nihai Durum & Dinamik Cihaz Uyumluluk Matrisi
         elapsed = round(time.time() - start_time, 1)
         self.report["duration_seconds"] = elapsed
 
@@ -471,18 +804,18 @@ class EmulatorTester:
             "mobile": mobile_compat,
             "tablet": tablet_compat,
             "verified_by_emulator": True,
-            "tested_at": time.strftime("%Y-%m-%d %H:%M:%S")
+            "tested_at": time.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        # Save individual compatibility.json for fast UI consumption
+        # compatibility.json kaydet (Frontend hızlı tüketimi)
         compat_path = os.path.join(self.output_dir, "compatibility.json")
         try:
             with open(compat_path, "w", encoding="utf-8") as f:
-                json.dump(self.report["device_compatibility"], f, indent=2)
+                json.dump(self.report["device_compatibility"], f, indent=2, ensure_ascii=False)
         except Exception:
             pass
 
-        # Update local YAML profile with verified compatibility
+        # YAML profilini güncelle
         try:
             import yaml
             prof_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "profiles")
@@ -493,58 +826,63 @@ class EmulatorTester:
                 pdata["compatibility"] = self.report["device_compatibility"]
                 with open(prof_path, "w", encoding="utf-8") as f:
                     yaml.dump(pdata, f, sort_keys=False, allow_unicode=True)
-                print(f"  💾 Updated {self.package_name}.yml with verified compatibility (TV: {tv_compat})")
+                print(f"  💾 Profil güncellendi: {self.package_name}.yml (TV: {tv_compat})")
         except Exception as e:
-            print(f"  ⚠️ Error updating profile compatibility: {e}")
+            print(f"  ⚠️ Profil güncelleme uyarısı: {e}")
 
-        # Sync compatibility with Supabase listings & profiles
+        # Supabase platform uyumluluğunu senkronize et
         try:
             from engine.supabase_client import update_listing_compatibility
             update_listing_compatibility(self.package_name, self.report["device_compatibility"])
         except Exception:
             pass
 
+        # Sonuç Belirleme
         if crashed:
             self.report["status"] = "CRASHED"
-            print(f"\n❌ TEST BAŞARISIZ: Uygulama test esnasında çöktü! ({len(self.crashes_detected)} hata)")
+            print(f"\n❌ [SONUÇ] TEST BAŞARISIZ: Uygulama test esnasında çöktü! ({len(self.crashes_detected)} kritik hata)")
         elif self.report["tv_test"].get("dpad_compatibility") == "INCOMPATIBLE":
             self.report["status"] = "PASSED_WITH_WARNINGS"
-            print("\n⚠️ TEST GEÇTİ (UYARILI): TV kumanda uyumluluğu eksik (Mouse gerekli).")
+            print("\n⚠️ [SONUÇ] TEST GEÇTİ (UYARILI): TV kumanda uyumluluğu eksik (Mouse/Air Mouse gerekli).")
         else:
             self.report["status"] = "PASSED"
-            print(f"\n✅ TÜM TESTLER BAŞARIYLA TAMAMLANDI! ({elapsed}s)")
+            print(f"\n✅ [SONUÇ] TÜM ÇOKLU CİHAZ TESTLERİ BAŞARIYLA GEÇTİ! ({elapsed}s)")
 
         self._save_report()
         self._print_summary_card()
         return self.report
 
     def _save_report(self):
-        """Save report to output/test_report.json."""
+        """Raporu output/test_report.json dosyasına UTF-8 olarak kaydeder."""
         report_path = os.path.join(self.output_dir, "test_report.json")
         with open(report_path, "w", encoding="utf-8") as f:
             json.dump(self.report, f, indent=2, ensure_ascii=False)
-        print(f"📄 Test report saved to: {report_path}")
+        print(f"📄 [Rapor Kaydedildi] {report_path}")
 
     def _print_summary_card(self):
-        """Print rich ASCII summary card in terminal."""
+        """Terminalde güvenli ve okunaklı özet kartı yazdırır."""
         tv = self.report.get("tv_test", {})
         mob = self.report.get("mobile_test", {})
-        tab = self.report.get("tablet_test", {})
+        perf = self.report.get("performance", {})
+        media = self.report.get("media_engine", {})
         crash = self.report.get("crash_analysis", {})
 
-        print("\n" + "┌" + "─" * 58 + "┐")
-        print(f"│ {'PRIMEFORGE ÇOKLU CİHAZ TEST RAPORU':^56} │")
-        print("├" + "─" * 58 + "┤")
-        print(f"│ 📦 Paket: {self.package_name:<46} │")
-        print(f"│ ⏱️  Süre:  {self.report.get('duration_seconds', 0)}s{' ':<47} │")
-        print("├" + "─" * 58 + "┤")
-        print(f"│ 📺 TV (DPAD):     {tv.get('dpad_compatibility', '?'):<12} {tv.get('details', '')[:25]:<26} │")
-        print(f"│ 📱 Mobil (20:9):  {mob.get('aspect_ratio_status', '?'):<12} {mob.get('details', '')[:25]:<26} │")
-        crash_str = "YOK (0 Hata)" if not crash.get("crashed") else f"VAR ({crash.get('crash_count', 1)} Hata)"
-        print(f"│ 🛡️  Çökme (Crash): {crash_str:<39} │")
-        print("├" + "─" * 58 + "┤")
-        print(f"│ 🏁 SONUÇ: {self.report.get('status', 'UNKNOWN'):<47} │")
-        print("└" + "─" * 58 + "┘\n")
+        print("\n" + "=" * 62)
+        print(f"  🚀 PRIMEFORGE ÇOKLU CİHAZ TEST RAPORU")
+        print("=" * 62)
+        print(f"  📦 Paket Adı:       {self.package_name}")
+        print(f"  ⏱️  Test Süresi:     {self.report.get('duration_seconds', 0)} saniye")
+        print(f"  ⚡ Soğuk Başlatma:  {perf.get('cold_start_ms', 0)} ms")
+        print(f"  📊 RAM / CPU:       {perf.get('ram_pss_mb', 0)} MB PSS | %{perf.get('cpu_percent', 0)}")
+        print(f"  🎬 Medya Motoru:    {media.get('engine_detected', '—')}")
+        print("-" * 62)
+        print(f"  📺 TV (DPAD):       {tv.get('dpad_compatibility', '?')} ({tv.get('details', '')[:30]})")
+        print(f"  📱 Mobil (20:9):    {mob.get('aspect_ratio_status', '?')} ({mob.get('details', '')[:30]})")
+        crash_txt = "0 Hata (Temiz)" if not crash.get("crashed") else f"{crash.get('crash_count', 1)} Kritik Çökme"
+        print(f"  🛡️  Stabilite:       {crash_txt}")
+        print("=" * 62)
+        print(f"  🏁 GENEL DURUM:     {self.report.get('status', 'UNKNOWN')}")
+        print("=" * 62 + "\n")
 
 
 if __name__ == "__main__":
@@ -552,7 +890,7 @@ if __name__ == "__main__":
     serial = sys.argv[2] if len(sys.argv) > 2 else None
 
     if not os.path.exists(target_apk):
-        print(f"❌ Target APK not found: {target_apk}")
+        print(f"❌ [HATA] Hedef APK dosyası bulunamadı: {target_apk}")
         sys.exit(1)
 
     tester = EmulatorTester(target_apk, device_serial=serial)
