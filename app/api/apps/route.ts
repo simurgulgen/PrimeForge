@@ -8,7 +8,10 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get('search') || '';
     const category = searchParams.get('category') || '';
-    const tvOnly = searchParams.get('tv_only') === 'true' || searchParams.get('hide_mobile') === 'true';
+    const tvOnly =
+      searchParams.get('tv_only') === 'true' ||
+      searchParams.get('hide_mobile') === 'true' ||
+      searchParams.get('tvOnly') === 'true';
     const page = parseInt(searchParams.get('page') || '1', 10);
     const limit = parseInt(searchParams.get('limit') || '50', 10);
     const offset = (page - 1) * limit;
@@ -26,7 +29,7 @@ export async function GET(req: Request) {
       if (category.startsWith('apk_cat_') || category.startsWith('m3u_cat_')) {
         query = query.or(`categoryId.eq.${category},categoryName.eq.${category}`);
       } else {
-        query = query.eq('categoryName', category);
+        query = query.or(`categoryName.ilike.%${category}%,categoryId.eq.${category}`);
       }
     }
 
@@ -112,6 +115,7 @@ export async function GET(req: Request) {
 
       return {
         ...app,
+        iconUrl: app.logoUrl,
         has_profile: Boolean(prof),
         is_tv_compatible: isTvCompatible,
         is_mobile_compatible: isMobileCompatible,

@@ -70,11 +70,14 @@ export default function CatalogPage() {
       const params = new URLSearchParams();
       if (search) params.set('search', search);
       if (category && category !== 'all') params.set('category', category);
-      if (tvOnly) params.set('tvOnly', 'true');
+      if (tvOnly) {
+        params.set('tv_only', 'true');
+        params.set('tvOnly', 'true');
+      }
       params.set('page', String(page));
       params.set('limit', '60');
 
-      const res = await fetch(`/api/catalog?${params.toString()}`);
+      const res = await fetch(`/api/apps?${params.toString()}`);
       const data = await res.json();
       if (data.apps) {
         setApps(data.apps);
