@@ -832,18 +832,19 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-teal-300 text-xs focus:outline-none focus:border-purple-500 font-mono"
                 >
                   <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (1M Context / Ücretsiz)</option>
-                  <option value="gemini-1.5-pro">Google Gemini 1.5 Pro</option>
+                  <option value="hy3-free">OpenCode Zen HY3 Free (Tencent Hunyuan 3 / Ücretsiz)</option>
+                  <option value="deepseek-v4-free">OpenCode Zen DeepSeek V4 Free (Yeni Nesil)</option>
                   <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B Versatile (Ultra Hızlı)</option>
                   <option value="nvidia/nemotron-3-super-120b-a12b">NVIDIA Nemotron 3 Super 120B</option>
                   <option value="claude-3-5-haiku-20241022">Anthropic Claude 3.5 Haiku</option>
                 </select>
               </div>
 
-              {/* API Key Configuration for Selected Provider */}
+              {/* API Key / Token Configuration for Selected Provider */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="font-semibold text-white">
-                    {currentProviderInfo.name} API Anahtarı
+                    {currentProviderInfo.name} {currentProviderInfo.id === 'opencodezen' ? 'API Token' : 'API Anahtarı'}
                   </label>
                   {currentProviderInfo.keyUrl && (
                     <a
@@ -852,7 +853,7 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
                       rel="noopener noreferrer"
                       className="text-[11px] text-purple-400 hover:underline flex items-center gap-1"
                     >
-                      Anahtar Al <ExternalLink className="w-3 h-3" />
+                      {currentProviderInfo.id === 'opencodezen' ? 'Token Al' : 'Anahtar Al'} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>

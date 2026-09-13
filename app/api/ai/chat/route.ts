@@ -1,6 +1,5 @@
-// app/api/ai/chat/route.ts
 import { NextResponse } from 'next/server';
-import { sendAIChatRequest, AIMessage, AISettings, DEFAULT_AI_SETTINGS } from '@/lib/ai-service';
+import { sendAIChatRequest, AIMessage, AISettings, DEFAULT_AI_SETTINGS, MANDATORY_TURKISH_INSTRUCTION } from '@/lib/ai-service';
 import { restartAIServer, getAIServerState } from '@/lib/ai-server-manager';
 import { supabase } from '@/lib/supabase';
 
@@ -113,6 +112,11 @@ export async function POST(req: Request) {
       } catch (dbErr) {
         console.error('APK context load warning:', dbErr);
       }
+    }
+
+    // Always enforce 100% Turkish response instruction as final override
+    if (!finalSystemPrompt.endsWith(MANDATORY_TURKISH_INSTRUCTION)) {
+      finalSystemPrompt = `${finalSystemPrompt}\n\n${MANDATORY_TURKISH_INSTRUCTION}`;
     }
 
     const mergedSettings: AISettings = {

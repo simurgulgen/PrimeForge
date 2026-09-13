@@ -129,11 +129,21 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     report["security"] = security_report
 
     if action == "analyze_only":
-        print("\n📊 Analysis complete. Updating Supabase and sending report...")
+        print("\n📊 Analysis complete. Processing extracted screenshots & visual assets...")
+        screenshot_url = None
+        try:
+            from engine.screenshot_uploader import collect_and_upload_screenshots
+            uploaded_shots = collect_and_upload_screenshots(job_id, package_name)
+            screenshot_url = uploaded_shots.get("tv") or uploaded_shots.get("mobile") or uploaded_shots.get("banner") or uploaded_shots.get("icon")
+            if uploaded_shots:
+                report["screenshots"] = uploaded_shots
+        except Exception as e:
+            print(f"⚠️ Screenshot upload warning: {e}")
+
         if job_id and job_id != "local":
             try:
                 v_code = report.get("version_code")
-                update_job(job_id, {
+                job_update_payload = {
                     "status": "completed",
                     "app_name": report.get("app_label") or report.get("package_name"),
                     "package_name": package_name,
@@ -141,8 +151,11 @@ def run_pipeline(apk_path, action=None, profile_name=None):
                     "version_code": int(v_code) if str(v_code).isdigit() else None,
                     "analysis_report": report,
                     "github_run_id": str(os.environ.get("GITHUB_RUN_ID", ""))
-                })
-                print(f"✅ Supabase işi #{job_id} 'completed' olarak kaydedildi.")
+                }
+                if screenshot_url:
+                    job_update_payload["screenshot_url"] = screenshot_url
+                update_job(job_id, job_update_payload)
+                print(f"✅ Supabase işi #{job_id} 'completed' ve ekran görüntüleri ile kaydedildi.")
             except Exception as e:
                 print(f"⚠️ Supabase job update failed: {e}")
 

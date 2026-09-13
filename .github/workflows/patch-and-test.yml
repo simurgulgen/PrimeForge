@@ -87,8 +87,8 @@ jobs:
         run: |
           python engine/forge_runner.py input.apk
 
-      - name: Android Emulator Test
-        if: env.SKIP_EMULATOR != 'true' && (github.event.client_payload.action != 'analyze_only') && (inputs.action != 'analyze_only')
+      - name: Android Emulator Test & Multi-Device Screenshot Capture
+        if: env.SKIP_EMULATOR != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 30
@@ -96,9 +96,14 @@ jobs:
           profile: pixel_6
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
-            if [ -f output/modded.apk ]; then
-              echo "🚀 Running PrimeForge Multi-Device (TV, Mobile, Tablet) Emulator Test Suite..."
-              python engine/emulator_tester.py output/modded.apk || true
+            TARGET_APK="output/modded.apk"
+            if [ ! -f "$TARGET_APK" ]; then
+              TARGET_APK="input.apk"
+            fi
+            if [ -f "$TARGET_APK" ]; then
+              echo "🚀 Running PrimeForge Multi-Device (TV, Mobile, Tablet) Emulator Test Suite on $TARGET_APK..."
+              python engine/emulator_tester.py "$TARGET_APK" || true
+              python engine/screenshot_uploader.py "${{ github.event.client_payload.job_id || github.run_id }}" "${{ github.event.client_payload.package_name || inputs.package_name || '' }}" || true
               if [ -f output/test_report.json ]; then
                 CRASHED=$(python -c "import json; print(json.load(open('output/test_report.json')).get('status') == 'CRASHED')")
                 if [ "$CRASHED" = "True" ]; then
@@ -109,7 +114,7 @@ jobs:
                 fi
               fi
             else
-              echo "No modded.apk found to test."
+              echo "No target APK found to test."
             fi
 
       - name: Post-test Catbox Publish & Telegram Approval

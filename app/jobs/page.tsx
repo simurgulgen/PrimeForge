@@ -32,7 +32,8 @@ export default function JobsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'security' | 'tv' | 'mobile' | 'tablet' | 'updates' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'screenshots' | 'security' | 'tv' | 'mobile' | 'tablet' | 'updates' | 'logs'>('overview');
+  const [lightboxImg, setLightboxImg] = useState<{ url: string; label: string } | null>(null);
 
   const fetchJobs = async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -83,6 +84,44 @@ export default function JobsPage() {
 
   const getSecurityReport = (job: any) => {
     return job?.analysis_report?.security || job?.security_report || null;
+  };
+
+  const getJobScreenshots = (job: any) => {
+    if (!job) return { list: [], mainUrl: null };
+    const raw = job?.analysis_report?.screenshots || {};
+    const emu = job?.analysis_report?.emulator_test_report?.screenshots || {};
+    const mainUrl = job?.screenshot_url || raw.tv || raw.mobile || emu.tv || null;
+
+    const list: { key: string; label: string; url: string; device: 'tv' | 'mobile' | 'tablet' | 'asset'; ratio: string }[] = [];
+
+    const specs: { key: string; label: string; device: 'tv' | 'mobile' | 'tablet' | 'asset'; ratio: string }[] = [
+      { key: 'tv', label: 'Android TV (DPAD 16:9)', device: 'tv', ratio: 'aspect-video' },
+      { key: 'tv_content', label: 'TV İçerik Oynatma (16:9)', device: 'tv', ratio: 'aspect-video' },
+      { key: 'mobile', label: 'Mobil Dokunmatik (20:9)', device: 'mobile', ratio: 'aspect-[9/19.5]' },
+      { key: 'mobile_content', label: 'Mobil İçerik Ekranı (20:9)', device: 'mobile', ratio: 'aspect-[9/19.5]' },
+      { key: 'tablet', label: 'Tablet Geniş Ekran (16:10)', device: 'tablet', ratio: 'aspect-[16/10]' },
+      { key: 'icon', label: 'Uygulama İkonu', device: 'asset', ratio: 'aspect-square' },
+      { key: 'banner', label: 'Android TV Banner', device: 'asset', ratio: 'aspect-[16/9]' },
+    ];
+
+    for (const item of specs) {
+      const url = raw[item.key] || emu[item.key] || (item.key === 'tv' ? job?.analysis_report?.emulator_test_report?.tv_test?.screenshot_url : null);
+      if (url && typeof url === 'string') {
+        list.push({ ...item, url });
+      }
+    }
+
+    if (list.length === 0 && mainUrl) {
+      list.push({
+        key: 'main',
+        label: 'Emülatör Önizleme Ekranı',
+        url: mainUrl,
+        device: 'tv',
+        ratio: 'aspect-video',
+      });
+    }
+
+    return { list, mainUrl };
   };
 
   return (
@@ -446,7 +485,8 @@ export default function JobsPage() {
             {/* Navigation Tabs */}
             <div className="flex border-b border-slate-800 bg-slate-900/40 px-5 gap-4 text-xs font-medium">
               {[
-                { id: 'overview', label: 'Genel Bakış & İçerik', icon: Film },
+                { id: 'overview', label: 'Genel Bakış & Özet', icon: Eye },
+                { id: 'screenshots', label: 'Ekran Görüntüleri', icon: Film },
                 { id: 'security', label: 'Güvenlik (VT/APKiD/Quark)', icon: ShieldCheck },
                 { id: 'tv', label: 'TV & DPAD (16:9)', icon: Tv },
                 { id: 'mobile', label: 'Mobil & Dokunmatik (20:9)', icon: Smartphone },
@@ -553,48 +593,221 @@ export default function JobsPage() {
                       </div>
 
                       {/* Screen Previews Row */}
-                      <div>
-                        <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                          <Film className="w-4 h-4 text-purple-400" /> Çoklu Cihaz & İçerik Ekran Görüntüleri
-                        </h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                          <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-2 flex flex-col items-center">
-                            <div className="text-[10px] text-slate-400 font-medium mb-1.5 flex items-center gap-1">
-                              <Tv className="w-3 h-3 text-indigo-400" /> TV (1920x1080 16:9)
-                            </div>
-                            <div className="w-full aspect-video rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80">
-                              <span className="text-slate-600 text-xs flex flex-col items-center gap-1">
-                                <Tv className="w-6 h-6 text-slate-600" />
-                                <span>TV Ekranı</span>
-                              </span>
-                            </div>
-                          </div>
+                      {(() => {
+                        const shots = getJobScreenshots(selectedJob);
+                        const raw = selectedJob.analysis_report?.screenshots || {};
+                        const emu = selectedJob.analysis_report?.emulator_test_report?.screenshots || {};
+                        const tvImg = raw.tv || raw.tv_content || emu.tv || (selectedJob.screenshot_url?.includes('.png') || selectedJob.screenshot_url?.includes('.jpg') ? selectedJob.screenshot_url : null);
+                        const mobImg = raw.mobile || raw.mobile_content || emu.mobile || null;
+                        const tabImg = raw.tablet || emu.tablet || null;
 
-                          <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-2 flex flex-col items-center">
-                            <div className="text-[10px] text-slate-400 font-medium mb-1.5 flex items-center gap-1">
-                              <Smartphone className="w-3 h-3 text-blue-400" /> Mobil (1080x2400 20:9)
+                        return (
+                          <div>
+                            <div className="flex items-center justify-between mb-3">
+                              <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                                <Film className="w-4 h-4 text-purple-400" /> Çoklu Cihaz & İçerik Ekran Görüntüleri
+                              </h4>
+                              {shots.list.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('screenshots')}
+                                  className="text-[11px] text-blue-400 hover:text-blue-300 font-medium flex items-center gap-1 transition-colors"
+                                >
+                                  Tüm Galeriyi Gör ({shots.list.length} Medya) <ChevronRight className="w-3.5 h-3.5" />
+                                </button>
+                              )}
                             </div>
-                            <div className="w-full aspect-[9/16] max-h-[160px] rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80">
-                              <span className="text-slate-600 text-xs flex flex-col items-center gap-1">
-                                <Smartphone className="w-6 h-6 text-slate-600" />
-                                <span>Mobil Ekranı</span>
-                              </span>
-                            </div>
-                          </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                              {/* TV Screen Preview */}
+                              <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-2.5 flex flex-col items-center">
+                                <div className="text-[10px] text-slate-400 font-medium mb-1.5 flex items-center justify-between w-full">
+                                  <span className="flex items-center gap-1">
+                                    <Tv className="w-3 h-3 text-indigo-400" /> TV (1920x1080 16:9)
+                                  </span>
+                                  {tvImg && <span className="text-emerald-400 text-[9px] font-semibold">Aktif</span>}
+                                </div>
+                                <div
+                                  onClick={() => tvImg && setLightboxImg({ url: tvImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Android TV Ekranı` })}
+                                  className={`w-full aspect-video rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80 relative group ${tvImg ? 'cursor-pointer' : ''}`}
+                                >
+                                  {tvImg ? (
+                                    <>
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={tvImg}
+                                        alt="TV Screenshot"
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <div className="px-2.5 py-1 rounded bg-black/70 text-white text-[10px] font-medium flex items-center gap-1 backdrop-blur-sm">
+                                          <Maximize2 className="w-3 h-3" /> Büyüt
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-600 text-xs flex flex-col items-center gap-1 p-3 text-center">
+                                      <Tv className="w-6 h-6 text-slate-600" />
+                                      <span className="text-[10px]">TV Ekranı Bekleniyor</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
 
-                          <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-2 flex flex-col items-center">
-                            <div className="text-[10px] text-slate-400 font-medium mb-1.5 flex items-center gap-1">
-                              <Tablet className="w-3 h-3 text-purple-400" /> Tablet (2560x1600 16:10)
-                            </div>
-                            <div className="w-full aspect-video rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80">
-                              <span className="text-slate-600 text-xs flex flex-col items-center gap-1">
-                                <Tablet className="w-6 h-6 text-slate-600" />
-                                <span>Tablet Ekranı</span>
-                              </span>
+                              {/* Mobile Screen Preview */}
+                              <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-2.5 flex flex-col items-center">
+                                <div className="text-[10px] text-slate-400 font-medium mb-1.5 flex items-center justify-between w-full">
+                                  <span className="flex items-center gap-1">
+                                    <Smartphone className="w-3 h-3 text-blue-400" /> Mobil (1080x2400 20:9)
+                                  </span>
+                                  {mobImg && <span className="text-emerald-400 text-[9px] font-semibold">Aktif</span>}
+                                </div>
+                                <div
+                                  onClick={() => mobImg && setLightboxImg({ url: mobImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Mobil Dokunmatik Ekran` })}
+                                  className={`w-full aspect-video rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80 relative group ${mobImg ? 'cursor-pointer' : ''}`}
+                                >
+                                  {mobImg ? (
+                                    <>
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={mobImg}
+                                        alt="Mobile Screenshot"
+                                        className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <div className="px-2.5 py-1 rounded bg-black/70 text-white text-[10px] font-medium flex items-center gap-1 backdrop-blur-sm">
+                                          <Maximize2 className="w-3 h-3" /> Büyüt
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-600 text-xs flex flex-col items-center gap-1 p-3 text-center">
+                                      <Smartphone className="w-6 h-6 text-slate-600" />
+                                      <span className="text-[10px]">Mobil Ekranı Bekleniyor</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* Tablet Screen Preview */}
+                              <div className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-2.5 flex flex-col items-center">
+                                <div className="text-[10px] text-slate-400 font-medium mb-1.5 flex items-center justify-between w-full">
+                                  <span className="flex items-center gap-1">
+                                    <Tablet className="w-3 h-3 text-purple-400" /> Tablet (2560x1600 16:10)
+                                  </span>
+                                  {tabImg && <span className="text-emerald-400 text-[9px] font-semibold">Aktif</span>}
+                                </div>
+                                <div
+                                  onClick={() => tabImg && setLightboxImg({ url: tabImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Tablet Geniş Ekran` })}
+                                  className={`w-full aspect-video rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80 relative group ${tabImg ? 'cursor-pointer' : ''}`}
+                                >
+                                  {tabImg ? (
+                                    <>
+                                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                                      <img
+                                        src={tabImg}
+                                        alt="Tablet Screenshot"
+                                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      />
+                                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                        <div className="px-2.5 py-1 rounded bg-black/70 text-white text-[10px] font-medium flex items-center gap-1 backdrop-blur-sm">
+                                          <Maximize2 className="w-3 h-3" /> Büyüt
+                                        </div>
+                                      </div>
+                                    </>
+                                  ) : (
+                                    <span className="text-slate-600 text-xs flex flex-col items-center gap-1 p-3 text-center">
+                                      <Tablet className="w-6 h-6 text-slate-600" />
+                                      <span className="text-[10px]">Tablet Ekranı Bekleniyor</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
                             </div>
                           </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                }
+
+                if (activeTab === 'screenshots') {
+                  const shots = getJobScreenshots(selectedJob);
+                  return (
+                    <div className="space-y-4">
+                      <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                            <Film className="w-4 h-4 text-purple-400" />
+                            Otomatik Emülatör & Medya Ekran Görüntüleri Galerisi
+                          </h4>
+                          <p className="text-xs text-slate-400 mt-0.5">
+                            Android TV, Mobil, Tablet, uygulama ikonu ve banner önizlemeleri. Büyütmek için görselin üzerine tıklayın.
+                          </p>
+                        </div>
+                        <div className="text-xs text-slate-400 font-medium px-3 py-1.5 bg-slate-950 rounded-lg border border-slate-800 shrink-0">
+                          Toplam: <span className="text-purple-400 font-bold">{shots.list.length} Medya Dosyası</span>
                         </div>
                       </div>
+
+                      {shots.list.length === 0 ? (
+                        <div className="p-10 rounded-2xl bg-slate-950/60 border border-slate-800 flex flex-col items-center justify-center text-center space-y-3">
+                          <Film className="w-10 h-10 text-slate-600 animate-pulse" />
+                          <div className="text-slate-300 font-semibold text-sm">Henüz Ekran Görüntüsü Kaydedilmedi</div>
+                          <p className="text-slate-500 text-xs max-w-md">
+                            Bu görev henüz emülatör aşamasına geçmemiş veya statik analiz modunda çalışmış olabilir.
+                            CI/CD emülatörü çalıştığında alınan TV, Mobil ve Tablet ekranları doğrudan Catbox bulutuna ve buraya aktarılır.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {shots.list.map((item) => (
+                            <div
+                              key={item.key}
+                              className="rounded-xl overflow-hidden bg-slate-950 border border-slate-800 p-3 space-y-2.5 hover:border-slate-700 transition-all flex flex-col justify-between"
+                            >
+                              <div className="flex items-center justify-between text-xs">
+                                <span className="font-semibold text-slate-200 flex items-center gap-1.5">
+                                  {item.device === 'tv' && <Tv className="w-3.5 h-3.5 text-indigo-400" />}
+                                  {item.device === 'mobile' && <Smartphone className="w-3.5 h-3.5 text-blue-400" />}
+                                  {item.device === 'tablet' && <Tablet className="w-3.5 h-3.5 text-purple-400" />}
+                                  {item.device === 'asset' && <Sparkles className="w-3.5 h-3.5 text-amber-400" />}
+                                  {item.label}
+                                </span>
+                                <div className="flex items-center gap-2">
+                                  <a
+                                    href={item.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="p-1 rounded bg-slate-900 text-slate-400 hover:text-white transition-colors"
+                                    title="Yeni Sekmede Aç"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              </div>
+
+                              <div
+                                onClick={() => setLightboxImg({ url: item.url, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - ${item.label}` })}
+                                className="w-full h-56 rounded-lg bg-slate-900 flex items-center justify-center overflow-hidden border border-slate-800/80 relative group cursor-pointer"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={item.url}
+                                  alt={item.label}
+                                  className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                                  <div className="px-3 py-1.5 rounded-lg bg-black/70 text-white text-xs font-medium flex items-center gap-1.5 backdrop-blur-sm shadow-lg">
+                                    <Maximize2 className="w-3.5 h-3.5" />
+                                    Büyük Önizleme
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -867,6 +1080,7 @@ export default function JobsPage() {
                 }
 
                 if (activeTab === 'tv') {
+                  const tvImg = rep?.tv_test?.screenshot_url || selectedJob.analysis_report?.screenshots?.tv || selectedJob.analysis_report?.screenshots?.tv_content || (selectedJob.screenshot_url?.includes('.png') ? selectedJob.screenshot_url : null);
                   return (
                     <div className="space-y-4">
                       <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-3">
@@ -893,11 +1107,34 @@ export default function JobsPage() {
                           {tv?.details || 'DPAD test verisi mevcut.'}
                         </div>
                       </div>
+
+                      {tvImg && (
+                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-2">
+                          <div className="flex items-center justify-between text-slate-300 font-semibold">
+                            <span className="flex items-center gap-1.5"><Tv className="w-3.5 h-3.5 text-indigo-400" /> Android TV Önizleme Görüntüsü</span>
+                            <button
+                              type="button"
+                              onClick={() => setLightboxImg({ url: tvImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Android TV Ekranı` })}
+                              className="text-blue-400 hover:text-blue-300 text-[11px] flex items-center gap-1 font-medium"
+                            >
+                              <Maximize2 className="w-3 h-3" /> Büyüt
+                            </button>
+                          </div>
+                          <div
+                            onClick={() => setLightboxImg({ url: tvImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Android TV Ekranı` })}
+                            className="w-full aspect-video rounded-lg overflow-hidden bg-slate-950 border border-slate-800 cursor-pointer relative group flex items-center justify-center"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={tvImg} alt="TV Screenshot" className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 }
 
                 if (activeTab === 'mobile') {
+                  const mobImg = rep?.mobile_test?.screenshot_url || selectedJob.analysis_report?.screenshots?.mobile || selectedJob.analysis_report?.screenshots?.mobile_content || null;
                   return (
                     <div className="space-y-4">
                       <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-3">
@@ -924,11 +1161,34 @@ export default function JobsPage() {
                           {mob?.details || 'Mobil ekran ve dokunmatik test verisi.'}
                         </div>
                       </div>
+
+                      {mobImg && (
+                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-2">
+                          <div className="flex items-center justify-between text-slate-300 font-semibold">
+                            <span className="flex items-center gap-1.5"><Smartphone className="w-3.5 h-3.5 text-blue-400" /> Mobil Önizleme Görüntüsü</span>
+                            <button
+                              type="button"
+                              onClick={() => setLightboxImg({ url: mobImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Mobil Ekranı` })}
+                              className="text-blue-400 hover:text-blue-300 text-[11px] flex items-center gap-1 font-medium"
+                            >
+                              <Maximize2 className="w-3 h-3" /> Büyüt
+                            </button>
+                          </div>
+                          <div
+                            onClick={() => setLightboxImg({ url: mobImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Mobil Ekranı` })}
+                            className="w-full max-h-[360px] aspect-video rounded-lg overflow-hidden bg-slate-950 border border-slate-800 cursor-pointer relative group flex items-center justify-center"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={mobImg} alt="Mobile Screenshot" className="h-full object-contain group-hover:scale-105 transition-transform duration-300" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 }
 
                 if (activeTab === 'tablet') {
+                  const tabImg = rep?.tablet_test?.screenshot_url || selectedJob.analysis_report?.screenshots?.tablet || null;
                   return (
                     <div className="space-y-4">
                       <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-3">
@@ -951,6 +1211,28 @@ export default function JobsPage() {
                           {tab?.details || 'Tablet geniş ekran test verisi.'}
                         </div>
                       </div>
+
+                      {tabImg && (
+                        <div className="p-4 rounded-xl bg-slate-900/60 border border-slate-800 text-xs space-y-2">
+                          <div className="flex items-center justify-between text-slate-300 font-semibold">
+                            <span className="flex items-center gap-1.5"><Tablet className="w-3.5 h-3.5 text-purple-400" /> Tablet Önizleme Görüntüsü</span>
+                            <button
+                              type="button"
+                              onClick={() => setLightboxImg({ url: tabImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Tablet Ekranı` })}
+                              className="text-blue-400 hover:text-blue-300 text-[11px] flex items-center gap-1 font-medium"
+                            >
+                              <Maximize2 className="w-3 h-3" /> Büyüt
+                            </button>
+                          </div>
+                          <div
+                            onClick={() => setLightboxImg({ url: tabImg, label: `${selectedJob.analysis_report?.app_label || selectedJob.package_name} - Tablet Ekranı` })}
+                            className="w-full aspect-video rounded-lg overflow-hidden bg-slate-950 border border-slate-800 cursor-pointer relative group flex items-center justify-center"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img src={tabImg} alt="Tablet Screenshot" className="w-full h-full object-contain group-hover:scale-105 transition-transform duration-300" />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   );
                 }
@@ -1011,6 +1293,51 @@ export default function JobsPage() {
                   Kapat
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Lightbox Modal */}
+      {lightboxImg && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
+          onClick={() => setLightboxImg(null)}
+        >
+          <div
+            className="relative max-w-5xl max-h-[95vh] flex flex-col items-center w-full"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-full flex items-center justify-between pb-3 text-white">
+              <span className="font-semibold text-sm flex items-center gap-2">
+                <Film className="w-4 h-4 text-purple-400" />
+                {lightboxImg.label}
+              </span>
+              <div className="flex items-center gap-3">
+                <a
+                  href={lightboxImg.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 text-xs bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg flex items-center gap-1.5 transition-colors border border-slate-700 font-medium"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  Tam Boyut Aç
+                </a>
+                <button
+                  onClick={() => setLightboxImg(null)}
+                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center font-bold text-sm border border-slate-700 transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+            <div className="rounded-2xl overflow-hidden border border-slate-700 bg-slate-950 shadow-2xl flex items-center justify-center max-h-[85vh] w-full p-2.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={lightboxImg.url}
+                alt={lightboxImg.label}
+                className="max-h-[80vh] max-w-full object-contain rounded-xl shadow-inner"
+              />
             </div>
           </div>
         </div>

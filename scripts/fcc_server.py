@@ -28,6 +28,7 @@ DEFAULT_CONFIG = {
     "fallback_model": "gemini-1.5-flash",
     "keys": {
         "nvidia_nim": os.environ.get("NVIDIA_NIM_API_KEY", ""),
+        "opencodezen": os.environ.get("OPENCODE_API_KEY", os.environ.get("OPENCODEZEN_API_TOKEN", "")),
         "gemini": os.environ.get("GEMINI_API_KEY", ""),
         "anthropic": os.environ.get("ANTHROPIC_API_KEY", ""),
         "groq": os.environ.get("GROQ_API_KEY", ""),
@@ -192,6 +193,8 @@ class FCCServerHandler(BaseHTTPRequestHandler):
                 <label>Aktif Model</label>
                 <select name="model" id="model">
                     <option value="nvidia/nemotron-3-super-120b-a12b" {"selected" if cfg.get("model") == "nvidia/nemotron-3-super-120b-a12b" else ""}>NVIDIA Nemotron 3 Super 120B (Ücretsiz)</option>
+                    <option value="hy3-free" {"selected" if cfg.get("model") == "hy3-free" else ""}>OpenCode Zen HY3 Free (Tencent Hunyuan 3)</option>
+                    <option value="deepseek-v4-free" {"selected" if cfg.get("model") == "deepseek-v4-free" else ""}>OpenCode Zen DeepSeek V4 Free</option>
                     <option value="gemini-1.5-flash" {"selected" if cfg.get("model") == "gemini-1.5-flash" else ""}>Google Gemini 1.5 Flash (1M Context)</option>
                     <option value="gemini-1.5-pro" {"selected" if cfg.get("model") == "gemini-1.5-pro" else ""}>Google Gemini 1.5 Pro</option>
                     <option value="claude-3-5-sonnet-20241022" {"selected" if cfg.get("model") == "claude-3-5-sonnet-20241022" else ""}>Anthropic Claude 3.5 Sonnet</option>
@@ -203,9 +206,16 @@ class FCCServerHandler(BaseHTTPRequestHandler):
                 <label>FCC Otomatik Yedek Model (Fallback)</label>
                 <select name="fallback_model" id="fallback_model">
                     <option value="gemini-1.5-flash" {"selected" if cfg.get("fallback_model") == "gemini-1.5-flash" else ""}>Google Gemini 1.5 Flash</option>
+                    <option value="hy3-free" {"selected" if cfg.get("fallback_model") == "hy3-free" else ""}>OpenCode Zen HY3 Free</option>
+                    <option value="deepseek-v4-free" {"selected" if cfg.get("fallback_model") == "deepseek-v4-free" else ""}>OpenCode Zen DeepSeek V4 Free</option>
                     <option value="llama-3.3-70b-versatile" {"selected" if cfg.get("fallback_model") == "llama-3.3-70b-versatile" else ""}>Groq Llama 3.3 70B</option>
                     <option value="nvidia/nemotron-3-super-120b-a12b" {"selected" if cfg.get("fallback_model") == "nvidia/nemotron-3-super-120b-a12b" else ""}>NVIDIA Nemotron 3 Super 120B</option>
                 </select>
+            </div>
+
+            <div class="field">
+                <label>OpenCode Zen Token (opencode.ai/auth)</label>
+                <input type="password" name="key_opencodezen" id="key_opencodezen" value="{cfg['keys'].get('opencodezen', '')}" placeholder="opencode_zen_... veya Token">
             </div>
 
             <div class="field">

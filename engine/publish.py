@@ -40,13 +40,24 @@ def publish():
         except Exception:
             pass
 
+    # Upload all multi-device screenshots (TV, Mobile, Tablet, Icon, Banner)
+    screenshot_url = None
+    try:
+        from engine.screenshot_uploader import collect_and_upload_screenshots
+        uploaded_shots = collect_and_upload_screenshots(job_id, package_name)
+        screenshot_url = uploaded_shots.get("tv") or uploaded_shots.get("mobile") or uploaded_shots.get("icon")
+    except Exception as e:
+        print(f"  ⚠️ Screenshot upload warning: {e}")
+
     if job_id:
         try:
             analysis_data = result.get("analysis", {})
             if test_report:
                 analysis_data["emulator_test_report"] = test_report
+            if "uploaded_shots" in locals() and uploaded_shots:
+                analysis_data["screenshots"] = uploaded_shots
 
-            update_job(job_id, {
+            update_payload = {
                 "status": "waiting_approval",
                 "modded_apk_url": catbox_url,
                 "modded_apk_hash": result["build"]["sha256"],
@@ -54,8 +65,12 @@ def publish():
                 "emulator_passed": emulator_passed,
                 "profile_used": result.get("profile_used"),
                 "analysis_report": analysis_data,
-            })
-            print("  📝 Job updated in Supabase with emulator test report")
+            }
+            if screenshot_url:
+                update_payload["screenshot_url"] = screenshot_url
+
+            update_job(job_id, update_payload)
+            print("  📝 Job updated in Supabase with emulator test report & screenshots")
         except Exception as e:
             print(f"  ⚠️ Job update failed: {e}")
 

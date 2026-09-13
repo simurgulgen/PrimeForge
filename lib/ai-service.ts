@@ -1,5 +1,5 @@
 // lib/ai-service.ts
-// Multi-provider AI service supporting Claude, NVIDIA NIM (Free Claude Code), Gemini, Groq, and DeepSeek
+// Multi-provider AI service supporting Claude, NVIDIA NIM, Gemini, Groq, DeepSeek, OpenCode Zen, and Custom
 
 export interface AIMessage {
   role: 'user' | 'assistant' | 'system';
@@ -7,7 +7,7 @@ export interface AIMessage {
 }
 
 export interface AISettings {
-  provider: 'anthropic' | 'nvidia_nim' | 'gemini' | 'groq' | 'deepseek' | 'custom_openai';
+  provider: 'anthropic' | 'nvidia_nim' | 'gemini' | 'groq' | 'deepseek' | 'opencodezen' | 'custom_openai';
   model: string;
   fallbackModel?: string;
   keys?: Record<string, string>;
@@ -18,6 +18,11 @@ export interface AISettings {
   systemPrompt: string;
 }
 
+export const MANDATORY_TURKISH_INSTRUCTION = `[KATI VE ZORUNLU DİL KURALI: %100 TÜRKÇE CEVAP]
+Kullanıcı ile HER ZAMAN ve İSTİSNASIZ TÜRKÇE konuşacaksın.
+Teknik smali opcodeları, Java kod blokları veya AndroidManifest XML etiketleri haricinde; tüm açıklamaların, analizlerin, soru yanıtların ve rehberlerin daima akıcı, net, profesyonel ve eksiksiz Türkçe olacaktır.
+Kullanıcı başka bir dilde yazsa veya analiz edilen APK yabancı dilde olsa dahi cevabını daima TÜRKÇE olarak vereceksin.`;
+
 export const DEFAULT_AI_SETTINGS: AISettings = {
   provider: 'nvidia_nim',
   model: 'nvidia/nemotron-3-super-120b-a12b',
@@ -26,7 +31,9 @@ export const DEFAULT_AI_SETTINGS: AISettings = {
   temperature: 0.4,
   maxTokens: 3000,
   systemPrompt: `Sen PrimeForge'un Kıdemli Android Güvenlik, Tersine Mühendislik ve Smali Kodlama Asistanısın.
-Kullanıcıya APK analizi, AndroidManifest.xml izin denetimleri, smali baypas yamaları, reklam/DRM temizliği ve Android TV DPAD optimizasyonu konularında net, uygulanabilir, profesyonel Türkçe kod ve rehberler sunarsın.`,
+Kullanıcıya APK analizi, AndroidManifest.xml izin denetimleri, smali baypas yamaları, reklam/DRM temizliği ve Android TV DPAD optimizasyonu konularında net, uygulanabilir, profesyonel Türkçe kod ve rehberler sunarsın.
+
+${MANDATORY_TURKISH_INSTRUCTION}`,
 };
 
 export const PROVIDER_CATALOG = [
@@ -55,6 +62,20 @@ export const PROVIDER_CATALOG = [
     defaultModel: 'nvidia/nemotron-3-super-120b-a12b',
     keyPlaceholder: 'nvapi-...',
     keyUrl: 'https://build.nvidia.com/settings/api-keys',
+  },
+  {
+    id: 'opencodezen',
+    name: 'OpenCode Zen',
+    badge: 'HY3 Free & DeepSeek V4 Free',
+    models: [
+      { id: 'hy3-free', name: 'HY3 Free (Tencent Hunyuan 3 - Hızlı & Ücretsiz)' },
+      { id: 'deepseek-v4-free', name: 'DeepSeek V4 Free (Yeni Nesil Derin Akıl Yürütme)' },
+      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex (OpenCode Zen)' },
+      { id: 'minimax-m2.7', name: 'MiniMax M2.7 (OpenCode)' },
+    ],
+    defaultModel: 'hy3-free',
+    keyPlaceholder: 'opencode_zen_... veya OpenCode API token',
+    keyUrl: 'https://opencode.ai/auth',
   },
   {
     id: 'gemini',
@@ -115,6 +136,7 @@ export function findProviderForModel(modelId: string): string {
       return prov.id;
     }
   }
+  if (modelId.includes('hy3') || modelId.includes('deepseek-v4') || modelId.startsWith('opencode')) return 'opencodezen';
   if (modelId.startsWith('nvidia/') || modelId.startsWith('meta/')) return 'nvidia_nim';
   if (modelId.startsWith('claude-')) return 'anthropic';
   if (modelId.startsWith('gemini-')) return 'gemini';
@@ -133,6 +155,9 @@ async function executeSingleProviderRequest(
   system: string,
   settings: AISettings
 ): Promise<{ text: string; modelUsed: string }> {
+  // Always append mandatory Turkish language enforcement
+  const enforcedSystemPrompt = `${system}\n\n${MANDATORY_TURKISH_INSTRUCTION}`;
+
   // 1. Google Gemini API
   if (provider === 'gemini') {
     if (!apiKey) {
@@ -153,9 +178,9 @@ async function executeSingleProviderRequest(
         maxOutputTokens: maxTokens,
       },
     };
-    if (system) {
+    if (enforcedSystemPrompt) {
       payload.systemInstruction = {
-        parts: [{ text: system }],
+        parts: [{ text: enforcedSystemPrompt }],
       };
     }
 
@@ -193,7 +218,7 @@ async function executeSingleProviderRequest(
       model,
       max_tokens: maxTokens,
       temperature: temp,
-      system: system || undefined,
+      system: enforcedSystemPrompt || undefined,
       messages: formattedMessages,
     };
 
@@ -217,11 +242,15 @@ async function executeSingleProviderRequest(
     return { text, modelUsed: model };
   }
 
-  // 3. NVIDIA NIM / Groq / DeepSeek / Custom OpenAI
+  // 3. OpenCode Zen / NVIDIA NIM / Groq / DeepSeek / Custom OpenAI
   let endpoint = '';
   let authHeader = `Bearer ${apiKey}`;
 
-  if (provider === 'nvidia_nim') {
+  if (provider === 'opencodezen') {
+    if (!apiKey) throw new Error('OpenCode Zen Token eksik. Lütfen Ayarlar penceresinden OpenCode Zen tokenınızı girin veya OPENCODE_API_KEY tanımlayın.');
+    const base = settings.baseUrl || 'https://api.opencode.ai/v1';
+    endpoint = `${base.replace(/\/$/, '')}/chat/completions`;
+  } else if (provider === 'nvidia_nim') {
     if (!apiKey) throw new Error('NVIDIA NIM API Anahtarı eksik. build.nvidia.com üzerinden ücretsiz alabilirsiniz.');
     endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   } else if (provider === 'groq') {
@@ -237,7 +266,7 @@ async function executeSingleProviderRequest(
   }
 
   const openAiMessages = [
-    ...(system ? [{ role: 'system', content: system }] : []),
+    ...(enforcedSystemPrompt ? [{ role: 'system', content: enforcedSystemPrompt }] : []),
     ...messages.filter((m) => m.role !== 'system').map((m) => ({ role: m.role, content: m.content })),
   ];
 
@@ -283,6 +312,7 @@ export async function sendAIChatRequest(
     if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
     else if (provider === 'nvidia_nim') apiKey = process.env.NVIDIA_NIM_API_KEY;
+    else if (provider === 'opencodezen') apiKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN || process.env.OPENCODE_TOKEN;
     else if (provider === 'groq') apiKey = process.env.GROQ_API_KEY;
     else if (provider === 'deepseek') apiKey = process.env.DEEPSEEK_API_KEY;
   }
@@ -298,6 +328,7 @@ export async function sendAIChatRequest(
       if (!fbKey) {
         if (fbProvider === 'gemini') fbKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
         else if (fbProvider === 'nvidia_nim') fbKey = process.env.NVIDIA_NIM_API_KEY;
+        else if (fbProvider === 'opencodezen') fbKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN;
         else if (fbProvider === 'groq') fbKey = process.env.GROQ_API_KEY;
         else if (fbProvider === 'deepseek') fbKey = process.env.DEEPSEEK_API_KEY;
       }
@@ -321,7 +352,7 @@ export async function testAIConnection(
   const start = Date.now();
   try {
     const res = await sendAIChatRequest(
-      [{ role: 'user', content: 'Merhaba, test mesajıdır. Yalnızca "OK" yanıtı ver.' }],
+      [{ role: 'user', content: 'Merhaba, test mesajıdır. Yalnızca "TAMAM" yanıtı ver.' }],
       { ...settings, maxTokens: 20 }
     );
     const latencyMs = Date.now() - start;
