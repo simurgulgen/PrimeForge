@@ -2,11 +2,39 @@
 """APK recompilation, alignment and signing."""
 import hashlib
 import os
+import re
 import subprocess
+import xml.etree.ElementTree as ET
+
+
+def sanitize_broken_xml(file_path: str, folder_name: str = "") -> bool:
+    """Replace a malformed/binary XML file with a valid XML skeleton."""
+    try:
+        if not folder_name:
+            folder_name = os.path.basename(os.path.dirname(file_path))
+        if folder_name.startswith("layout"):
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<merge xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+        elif folder_name.startswith("xml"):
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+        elif folder_name.startswith("drawable"):
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<shape xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+        elif folder_name.startswith("menu"):
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<menu xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+        elif folder_name.startswith("anim"):
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<set xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+        elif folder_name.startswith("transition"):
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<transitionSet xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+        else:
+            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<resources />\n'
+        with open(file_path, "wb") as fp:
+            fp.write(dummy)
+        return True
+    except Exception:
+        return False
 
 
 def clean_apktool_duplicate_resources(decompiled_dir: str):
-    """Remove corrupted APKTOOL_DUPLICATE_* dummy files and fix binary XMLs produced by apktool on obfuscated APKs."""
+    """Remove corrupted APKTOOL_DUPLICATE_* dummy files and fix binary/malformed XMLs produced by apktool on obfuscated APKs."""
     res_dir = os.path.join(decompiled_dir, "res")
     if not os.path.isdir(res_dir):
         return
@@ -24,29 +52,19 @@ def clean_apktool_duplicate_resources(decompiled_dir: str):
                     pass
                 continue
 
-            # 2. Check for invalid binary XML files (obfuscator trap for aapt2)
+            # 2. Check for invalid binary or malformed XML files (obfuscator trap for aapt2)
             if f.endswith(".xml"):
+                is_valid = False
                 try:
-                    with open(file_path, "rb") as fp:
-                        head = fp.read(16)
-                    stripped = head.lstrip(b" \t\r\n\xef\xbb\xbf")
-                    if not stripped.startswith(b"<"):
-                        folder = os.path.basename(root)
-                        if folder.startswith("layout"):
-                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<merge xmlns:android="http://schemas.android.com/apk/res/android" />\n'
-                        elif folder.startswith("xml"):
-                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" />\n'
-                        elif folder.startswith("drawable"):
-                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<shape xmlns:android="http://schemas.android.com/apk/res/android" />\n'
-                        elif folder.startswith("menu"):
-                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<menu xmlns:android="http://schemas.android.com/apk/res/android" />\n'
-                        else:
-                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<resources />\n'
-                        with open(file_path, "wb") as fp:
-                            fp.write(dummy)
-                        fixed_xmls += 1
+                    ET.parse(file_path)
+                    is_valid = True
                 except Exception:
-                    pass
+                    is_valid = False
+
+                if not is_valid:
+                    folder = os.path.basename(root)
+                    if sanitize_broken_xml(file_path, folder):
+                        fixed_xmls += 1
 
     if removed > 0:
         print(f"🧹 Cleaned {removed} invalid APKTOOL_DUPLICATE resource dummy files.")
@@ -68,6 +86,20 @@ def recompile(decompiled_dir: str, output_apk: str) -> str:
         print(f"⚠️ apktool aapt2 failed, attempting standard recompile...")
         cmd_std = ["apktool", "b", decompiled_dir, "-o", output_apk]
         result = subprocess.run(cmd_std, capture_output=True, text=True, timeout=360)
+
+    # Attempt 3: If still failing due to corrupt XML files reported in stderr, fix those specific files and retry
+    if result.returncode != 0 and result.stderr:
+        error_files = set(re.findall(r'(?:W:\s+)?([^\s:]+\.xml)(?::\d+)?:?\s+error:', result.stderr))
+        fixed_from_stderr = 0
+        for bad_file in error_files:
+            if os.path.isfile(bad_file):
+                folder = os.path.basename(os.path.dirname(bad_file))
+                if sanitize_broken_xml(bad_file, folder):
+                    fixed_from_stderr += 1
+        if fixed_from_stderr > 0:
+            print(f"🔧 AAPT hata çıktısından tespit edilen {fixed_from_stderr} bozuk XML onarıldı, yeniden deneniyor...")
+            cmd_retry = ["apktool", "b", decompiled_dir, "-o", output_apk]
+            result = subprocess.run(cmd_retry, capture_output=True, text=True, timeout=360)
 
     if result.returncode != 0:
         raise RuntimeError(f"apktool build failed:\n{result.stderr}")

@@ -125,3 +125,26 @@ def update_listing_compatibility(package_name: str, compatibility: dict):
                 print(f"  📺 Supabase: {package_name} için TV platform uyumluluğu eklendi!")
     except Exception as e:
         print(f"⚠️ Failed to update listing compatibility: {e}")
+
+
+def get_ai_settings():
+    """Retrieve AI settings from forge_settings table."""
+    try:
+        res = _request("forge_settings?key=eq.ai_studio_settings")
+        if isinstance(res, list) and res and res[0].get("value"):
+            return res[0]["value"]
+    except Exception as e:
+        print(f"⚠️ Failed to load AI settings from Supabase: {e}")
+    return {}
+
+
+def save_ai_settings(settings: dict):
+    """Save or update AI settings in forge_settings table."""
+    now = datetime.now(timezone.utc).isoformat()
+    data = {
+        "key": "ai_studio_settings",
+        "value": settings,
+        "updated_at": now
+    }
+    extra_headers = {"Prefer": "resolution=merge-duplicates,return=representation"}
+    return _request("forge_settings", method="POST", data=data, extra_headers=extra_headers)

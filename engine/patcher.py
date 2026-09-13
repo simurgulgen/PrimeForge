@@ -8,7 +8,19 @@ methods_return_false, methods_return_void, raw_replacements, regex_replacements.
 """
 import os
 import re
+import sys
 from pathlib import Path
+
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 
 def find_smali_class(decompiled_dir: str, class_name: str) -> list:
@@ -140,6 +152,19 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
 
         found_files = find_smali_class(decompiled_dir, target_class)
         if not found_files:
+            # AI Fallback 1: Try resolving obfuscated class name
+            try:
+                from engine.ai_advisor import is_ai_available, ai_resolve_obfuscation
+                if is_ai_available():
+                    print(f"🤖 Hedef sınıf '{target_class}' bulunamadı. AI ile çözümleniyor...")
+                    resolved_file = ai_resolve_obfuscation(decompiled_dir, target_class, desc)
+                    if resolved_file and os.path.exists(resolved_file):
+                        found_files = [resolved_file]
+                        print(f"  ✨ AI sınıfı çözdü: {resolved_file}")
+            except Exception as e:
+                print(f"⚠️ AI obfuscation fallback error: {e}")
+
+        if not found_files:
             results.append({"description": desc, "status": "not_found", "class": target_class})
             continue
 
@@ -213,6 +238,41 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
                 if p:
                     content, c = re.subn(p, r, content, flags=re.DOTALL)
                     patch_count += c
+
+            # AI Fallback 2: If no matches and AI available, try suggesting patch fix
+            if content == original and patch_def.get("method"):
+                try:
+                    from engine.ai_advisor import is_ai_available, ai_suggest_patch_fix
+                    if is_ai_available():
+                        print(f"🤖 '{desc}' 0 eşleşme verdi. AI alternatif yama arıyor...")
+                        fix = ai_suggest_patch_fix(content, patch_def)
+                        if fix:
+                            alt_method = fix.get("alternative_method")
+                            rec_type = fix.get("recommended_patch_type")
+                            if alt_method:
+                                if rec_type == "return_zero":
+                                    content, c = patch_integer_return(content, alt_method, 0)
+                                    patch_count += c
+                                elif rec_type == "return_one":
+                                    content, c = patch_integer_return(content, alt_method, 1)
+                                    patch_count += c
+                                elif rec_type == "return_true":
+                                    content, c = patch_method_return_true(content, alt_method)
+                                    patch_count += c
+                                elif rec_type == "return_false":
+                                    content, c = patch_method_return_false(content, alt_method)
+                                    patch_count += c
+                                elif rec_type == "return_void":
+                                    content, c = patch_method_return_void(content, alt_method)
+                                    patch_count += c
+                            reg = fix.get("regex_replacement")
+                            if isinstance(reg, dict) and reg.get("pattern") and reg.get("replace"):
+                                content, c = re.subn(reg["pattern"], reg["replace"], content, flags=re.DOTALL)
+                                patch_count += c
+                            if patch_count > 0:
+                                print(f"  ✨ AI yaması uygulandı ({patch_count} yama)")
+                except Exception as e:
+                    print(f"⚠️ AI patch suggestion fallback error: {e}")
 
             if content != original:
                 with open(smali_path, "w", encoding="utf-8") as f:

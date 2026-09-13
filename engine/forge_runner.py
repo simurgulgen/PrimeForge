@@ -10,6 +10,17 @@ import sys
 import yaml
 from pathlib import Path
 
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from engine.analyzer import full_analysis
@@ -172,31 +183,78 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     profile = load_profile(profile_name or package_name)
 
     if profile is None or not profile.get("auto_apply", False):
-        print("🚫 No auto-apply profile. Requesting decision via Telegram...")
-        if job_id and job_id != "local":
-            try:
-                v_code = report.get("version_code")
-                update_job(job_id, {
-                    "status": "waiting_decision",
-                    "app_name": report.get("app_label") or report.get("package_name"),
-                    "package_name": package_name,
-                    "version_name": report.get("version_name"),
-                    "version_code": int(v_code) if str(v_code).isdigit() else None,
-                    "analysis_report": report,
-                })
-            except Exception as e:
-                print(f"⚠️ Supabase job update failed: {e}")
+        ai_success = False
         try:
-            from telegram.bot import request_decision
-            request_decision(report, job_id)
+            from engine.ai_advisor import is_ai_available, ai_generate_profile
+            if is_ai_available():
+                print("🤖 PrimeForge AI Oto-Pilot: Uygulama için otomatik modlama profili üretiliyor...")
+                if job_id and job_id != "local":
+                    try:
+                        update_job(job_id, {"status": "ai_profiling"})
+                    except Exception:
+                        pass
+
+                ai_profile = ai_generate_profile(report)
+                if ai_profile and isinstance(ai_profile, dict) and ai_profile.get("package"):
+                    profile = ai_profile
+                    ai_success = True
+
+                    # Save to local profile file
+                    os.makedirs(PROFILES_DIR, exist_ok=True)
+                    target_profile_path = os.path.join(PROFILES_DIR, f"{package_name}.yml")
+                    with open(target_profile_path, "w", encoding="utf-8") as pf:
+                        yaml.dump(profile, pf, default_flow_style=False, allow_unicode=True)
+                    print(f"💾 AI profili kaydedildi: {target_profile_path}")
+
+                    # Upsert to Supabase
+                    try:
+                        from engine.supabase_client import upsert_profile
+                        upsert_profile(
+                            package_name=package_name,
+                            profile_name=profile.get("name", f"{package_name} AI Profile"),
+                            profile_yaml=yaml.dump(profile, default_flow_style=False, allow_unicode=True),
+                            modding_guide="PrimeForge AI Oto-Pilot tarafından otomatik olarak üretildi.",
+                            auto_apply=True
+                        )
+                        print(f"☁️ AI profili Supabase forge_profiles tablosuna kaydedildi.")
+                    except Exception as se:
+                        print(f"⚠️ Supabase profile upsert error: {se}")
+
+                    # Notify Telegram
+                    try:
+                        from telegram.bot import send_ai_profile_generated
+                        send_ai_profile_generated(report, profile, job_id)
+                    except Exception as te:
+                        print(f"⚠️ Telegram AI notification error: {te}")
         except Exception as e:
-            print(f"⚠️ Telegram failed: {e}")
-        github_env = os.environ.get("GITHUB_ENV")
-        if github_env:
-            with open(github_env, "a") as f:
-                f.write("SKIP_EMULATOR=true\n")
-        print("⏸️ Pipeline paused. Waiting for Telegram decision.")
-        sys.exit(0)
+            print(f"⚠️ AI profil üretimi başarısız oldu: {e}")
+
+        if not ai_success:
+            print("🚫 No auto-apply profile and AI unavailable. Requesting decision via Telegram...")
+            if job_id and job_id != "local":
+                try:
+                    v_code = report.get("version_code")
+                    update_job(job_id, {
+                        "status": "waiting_decision",
+                        "app_name": report.get("app_label") or report.get("package_name"),
+                        "package_name": package_name,
+                        "version_name": report.get("version_name"),
+                        "version_code": int(v_code) if str(v_code).isdigit() else None,
+                        "analysis_report": report,
+                    })
+                except Exception as e:
+                    print(f"⚠️ Supabase job update failed: {e}")
+            try:
+                from telegram.bot import request_decision
+                request_decision(report, job_id)
+            except Exception as e:
+                print(f"⚠️ Telegram failed: {e}")
+            github_env = os.environ.get("GITHUB_ENV")
+            if github_env:
+                with open(github_env, "a") as f:
+                    f.write("SKIP_EMULATOR=true\n")
+            print("⏸️ Pipeline paused. Waiting for Telegram decision.")
+            sys.exit(0)
 
     merged_profile = merge_profiles(load_base_profile(), profile)
     print(f"  Profile: {merged_profile.get('name', 'unknown')}")
@@ -298,4 +356,25 @@ def run_pipeline(apk_path, action=None, profile_name=None):
 
 if __name__ == "__main__":
     apk = sys.argv[1] if len(sys.argv) > 1 else "input.apk"
-    run_pipeline(apk)
+    job_id = os.environ.get("JOB_ID", "")
+    try:
+        run_pipeline(apk)
+    except Exception as e:
+        print(f"\n❌ Pipeline Kritik Hatası: {e}")
+        import traceback
+        traceback.print_exc()
+        if job_id and job_id != "local":
+            try:
+                update_job(job_id, {
+                    "status": "failed",
+                    "error_message": str(e)
+                })
+                print(f"📡 Supabase işi #{job_id} 'failed' olarak güncellendi.")
+            except Exception as se:
+                print(f"⚠️ Supabase job update failed: {se}")
+        try:
+            from telegram.bot import _send_message
+            _send_message(f"❌ <b>PrimeForge Kritik Pipeline Hatası!</b>\n\n📦 APK: <code>{apk}</code>\n🆔 Job: <code>#{job_id[:8] if job_id else 'local'}</code>\n\n📋 <b>Hata:</b>\n<pre>{str(e)[:1000]}</pre>")
+        except Exception:
+            pass
+        sys.exit(1)

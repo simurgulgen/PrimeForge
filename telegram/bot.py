@@ -6,6 +6,17 @@ import ssl
 import sys
 import urllib.request
 
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+if sys.stderr and hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
@@ -146,6 +157,39 @@ def send_analysis_report(report, job_id="", security_report=None):
     ]}
     _send_message("\n".join(lines), reply_markup=buttons)
     print("📱 Analysis report sent to Telegram")
+
+
+def send_ai_profile_generated(report, profile, job_id=""):
+    """Send notification that AI auto-pilot generated a profile and pipeline is continuing."""
+    pkg = report.get("package_name", "unknown")
+    app_name = report.get("app_label") or report.get("app_name") or pkg
+    ver = report.get("version_name", "?")
+    mod_features = profile.get("mod_features", [])
+    patches = profile.get("smali_patches", [])
+    perms_removed = profile.get("manifest_cleanup", {}).get("remove_permissions", [])
+
+    lines = [
+        "🤖 <b>PrimeForge AI Oto-Pilot Devrede!</b>", "",
+        f"📱 <b>Uygulama:</b> <b>{app_name}</b>",
+        f"📦 <b>Paket:</b> <code>{pkg}</code> (v{ver})",
+        f"📋 <b>Üretilen Profil:</b> {profile.get('name', 'AI Mod Profile')}", "",
+        "💡 <b>Uygulanacak Modifikasyonlar:</b>",
+    ]
+    for feat in mod_features[:4]:
+        lines.append(f"  • {feat.get('name') or feat.get('id')}")
+    if perms_removed:
+        lines.append(f"  • 🧹 {len(perms_removed)} adet izleme/reklam izni kaldırılıyor")
+    if patches:
+        lines.append(f"  • 🔧 {len(patches)} adet smali baypas yaması hazırlanıyor")
+
+    lines.append("")
+    lines.append("⚡ <i>Modlama ve derleme işlemi otomatik olarak devam ediyor...</i>")
+
+    buttons = {"inline_keyboard": [
+        [{"text": "❌ İptal Et", "callback_data": f"forge:cancel:{job_id}"}]
+    ]}
+    _send_message("\n".join(lines), reply_markup=buttons)
+    print("📱 AI profile generated notification sent to Telegram")
 
 
 def send_build_success(result, job_id=""):
@@ -297,19 +341,39 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
 
 
 def send_crash_report(package_name, crash_log_path=""):
-    """Send crash report notification."""
+    """Send crash report notification with AI diagnostic root cause analysis."""
     crash_text = ""
     if crash_log_path and os.path.exists(crash_log_path):
-        with open(crash_log_path, "r") as f:
-            crash_text = f.read()[:1000]
+        with open(crash_log_path, "r", encoding="utf-8", errors="ignore") as f:
+            crash_text = f.read()[:2000]
+
+    ai_diagnosis = ""
+    try:
+        from engine.ai_advisor import is_ai_available, ai_interpret_test
+        if is_ai_available() and crash_text:
+            test_rep = {"package_name": package_name, "status": "CRASHED", "crashed": True}
+            interp = ai_interpret_test(test_rep, crash_text)
+            if interp and isinstance(interp, dict):
+                root = interp.get("root_cause", "")
+                fix = interp.get("proposed_fix", "")
+                if root or fix:
+                    ai_diagnosis = (
+                        f"\n\n🤖 <b>AI Oto-Pilot Hata Teşhisi:</b>\n"
+                        f"• <b>Kök Neden:</b> {root}\n"
+                        f"• <b>Önerilen Çözüm:</b> {fix}"
+                    )
+    except Exception as e:
+        print(f"⚠️ AI crash interpretation skipped: {e}")
+
     text = (
         f"❌ <b>PrimeForge Hata!</b>\n\n"
-        f"📦 {package_name}\n"
+        f"📦 <code>{package_name}</code>\n"
         f"🧪 Emülatör Testi BAŞARISIZ\n\n"
-        f"📋 <b>Crash Log:</b>\n<pre>{crash_text}</pre>"
+        f"📋 <b>Crash Log:</b>\n<pre>{crash_text[:1000]}</pre>"
+        f"{ai_diagnosis}"
     )
     _send_message(text)
-    print("📱 Crash report sent")
+    print("📱 Crash report sent with AI diagnosis")
 
 
 def request_decision(report, job_id=""):
