@@ -28,32 +28,37 @@ import {
 export default function JobsPage() {
   const [jobs, setJobs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [filter, setFilter] = useState('all');
   const [selectedJob, setSelectedJob] = useState<any | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'security' | 'tv' | 'mobile' | 'tablet' | 'updates' | 'logs'>('overview');
 
-  const fetchJobs = async () => {
-    setLoading(true);
+  const fetchJobs = async (manual = false) => {
+    if (manual) setRefreshing(true);
     try {
-      const res = await fetch('/api/job-status');
+      const res = await fetch(`/api/job-status?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
-      if (data.jobs) setJobs(data.jobs);
+      if (data && Array.isArray(data.jobs)) {
+        setJobs(data.jobs);
+      }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+      if (manual) setRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchJobs();
-    const hasActiveJob = jobs.some((j) =>
-      ['pending', 'downloading', 'analyzing', 'patching', 'building', 'testing', 'uploading'].includes(j.status)
-    );
-    const intervalTime = hasActiveJob ? 4000 : 15000;
-    const timer = setInterval(fetchJobs, intervalTime);
+    const timer = setInterval(() => {
+      fetchJobs(false);
+    }, 6000);
     return () => clearInterval(timer);
-  }, [jobs]);
+  }, []);
 
   const completedCount = jobs.filter((j) => ['published', 'waiting_approval', 'completed', 'analyzed'].includes(j.status)).length;
   const pendingCount = jobs.filter((j) => ['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'uploading'].includes(j.status)).length;
@@ -112,10 +117,12 @@ export default function JobsPage() {
             ))}
           </div>
           <button
-            onClick={fetchJobs}
+            onClick={() => fetchJobs(true)}
+            disabled={refreshing}
             className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+            title="Yenile"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`w-4 h-4 ${refreshing || (loading && jobs.length === 0) ? 'animate-spin text-blue-400' : ''}`} />
           </button>
         </div>
       </div>

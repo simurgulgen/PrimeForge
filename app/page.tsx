@@ -33,16 +33,19 @@ export default function DashboardPage() {
   const [modalSearch, setModalSearch] = useState('');
   const [modalLoading, setModalLoading] = useState(false);
 
-  const fetchJobs = async () => {
-    setRefreshing(true);
+  const fetchJobs = async (manual = false) => {
+    if (manual) setRefreshing(true);
     try {
-      const res = await fetch('/api/job-status');
+      const res = await fetch(`/api/job-status?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache' },
+      });
       const data = await res.json();
-      if (data.jobs) setJobs(data.jobs);
+      if (data && Array.isArray(data.jobs)) setJobs(data.jobs);
     } catch (err) {
       console.error(err);
     } finally {
-      setRefreshing(false);
+      if (manual) setRefreshing(false);
     }
   };
 
@@ -60,8 +63,8 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
-    fetchJobs();
-    const interval = setInterval(fetchJobs, 15000);
+    fetchJobs(false);
+    const interval = setInterval(() => fetchJobs(false), 6000);
     return () => clearInterval(interval);
   }, []);
 
@@ -99,7 +102,7 @@ export default function DashboardPage() {
           text: `İş kuyruğa alındı! Job ID: #${data.job_id?.substring(0, 8)}`,
         });
         setApkUrl('');
-        fetchJobs();
+        fetchJobs(true);
       } else {
         setSubmitMsg({ type: 'error', text: data.error || 'İşlem başarısız oldu.' });
       }
@@ -314,9 +317,10 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-400">Gerçek zamanlı Supabase forge_jobs kayıtları</p>
           </div>
           <button
-            onClick={fetchJobs}
+            onClick={() => fetchJobs(true)}
             disabled={refreshing}
             className="p-2 rounded-lg bg-slate-800/60 hover:bg-slate-800 text-slate-300 transition-colors"
+            title="Yenile"
           >
             <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin text-blue-400' : ''}`} />
           </button>
