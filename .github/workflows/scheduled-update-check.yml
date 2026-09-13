@@ -27,11 +27,4 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -c "
-          import os, glob, yaml
-          from telegram.bot import _send_message
-          profiles = glob.glob('profiles/*.yml')
-          active = [p for p in profiles if not os.path.basename(p).startswith('_')]
-          print(f'Checking {len(active)} active profiles for updates...')
-          # Future: query upstream source / scraping rules
-          "
+          python engine/update_checker.py

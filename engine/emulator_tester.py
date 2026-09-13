@@ -198,6 +198,36 @@ class EmulatorTester:
             print(f"  ⚠️ Screenshot capture failed: {e}")
         return ""
 
+    def dismiss_system_dialogs(self):
+        """Automatically detect and click permission and confirmation popups."""
+        try:
+            self._adb_shell("uiautomator dump /sdcard/dialog_dump.xml")
+            xml = self._adb_shell("cat /sdcard/dialog_dump.xml")
+            if any(term in xml.lower() for term in ["permission", "izin", "allow", "tamam", "continue"]):
+                # Attempt to click Allow button coordinates or send DPAD Right + Enter
+                print("  🛡️ System/Permission dialog detected. Approving automatically...")
+                self._adb_shell("input keyevent 22")  # RIGHT
+                self._adb_shell("input keyevent 23")  # CENTER
+                time.sleep(1)
+        except Exception:
+            pass
+
+    def navigate_and_capture_content(self, form_factor: str) -> Optional[str]:
+        """Navigate deeper into the app's categories/menus to capture real content."""
+        print(f"  🎬 Navigating into {form_factor} content (categories/media list)...")
+        self.dismiss_system_dialogs()
+
+        # Navigate down into first content section / list
+        self._adb_shell("input keyevent 20")  # DPAD_DOWN
+        time.sleep(0.5)
+        self._adb_shell("input keyevent 22")  # DPAD_RIGHT
+        time.sleep(0.5)
+        self._adb_shell("input keyevent 23")  # DPAD_CENTER / Select
+        time.sleep(3)  # Wait for content list / posters to render
+
+        content_shot_name = f"{form_factor.lower()}_content_screenshot.png"
+        return self.capture_screenshot(content_shot_name)
+
     def test_tv_profile(self) -> Dict[str, Any]:
         """Test TV profile (1920x1080 320dpi) with DPAD navigation & UI focus tracking."""
         print("\n" + "=" * 60)
@@ -211,7 +241,9 @@ class EmulatorTester:
 
         # Launch app
         self.launch_app(prefer_leanback=True)
-        time.sleep(4)
+        time.sleep(3)
+        self.dismiss_system_dialogs()
+        time.sleep(2)
 
         # Check Leanback capability in Manifest
         manifest_leanback = False
@@ -265,6 +297,7 @@ class EmulatorTester:
             dpad_msg = "❌ Uyumsuz: Odaklanabilir öğe bulunamadı, Dokunmatik/Mouse zorunlu."
 
         screenshot = self.capture_screenshot("tv_screenshot.png")
+        content_shot = self.navigate_and_capture_content("tv")
 
         tv_result = {
             "resolution": "1920x1080 (16:9)",
@@ -274,7 +307,8 @@ class EmulatorTester:
             "focused_elements": focused_count,
             "dpad_compatibility": dpad_compat,
             "details": dpad_msg,
-            "screenshot": os.path.basename(screenshot) if screenshot else None
+            "screenshot": os.path.basename(screenshot) if screenshot else None,
+            "content_screenshot": os.path.basename(content_shot) if content_shot else None
         }
         self.report["tv_test"] = tv_result
         print(f"  {dpad_msg}")
@@ -310,7 +344,9 @@ class EmulatorTester:
         # Verify UI did not freeze/ANR
         is_responsive = self.package_name in self._adb_shell("dumpsys window | grep -E 'mCurrentFocus|mFocusedApp'")
 
+        self.dismiss_system_dialogs()
         screenshot = self.capture_screenshot("mobile_screenshot.png")
+        content_shot = self.navigate_and_capture_content("mobile")
 
         mobile_result = {
             "resolution": "1080x2400 (20:9 Tall)",
@@ -319,7 +355,8 @@ class EmulatorTester:
             "aspect_ratio_status": "LETTERBOXED" if letterboxed else "FULL_SCREEN",
             "touch_responsive": is_responsive,
             "details": "✅ 20:9 Tam ekran ve dokunmatik aktif" if not letterboxed and is_responsive else "⚠️ Boyut veya dokunmatik kısıtlı",
-            "screenshot": os.path.basename(screenshot) if screenshot else None
+            "screenshot": os.path.basename(screenshot) if screenshot else None,
+            "content_screenshot": os.path.basename(content_shot) if content_shot else None
         }
         self.report["mobile_test"] = mobile_result
         print(f"  {mobile_result['details']}")
@@ -376,14 +413,30 @@ class EmulatorTester:
             self._save_report()
             return self.report
 
-        # 1. Install APK
+        # 1. Extract App Logo & Metadata if not already extracted
+        icon_path = os.path.join(self.output_dir, "icon.png")
+        if not os.path.exists(icon_path):
+            try:
+                from engine.asset_extractor import extract_all_assets
+                assets = extract_all_assets(self.apk_path, output_dir=self.output_dir)
+                self.report["app_label"] = assets.get("app_label")
+                self.report["version_name"] = assets.get("version_name")
+                self.report["version_code"] = assets.get("version_code")
+                self.report["has_icon"] = assets.get("has_icon")
+                self.report["has_banner"] = assets.get("has_banner")
+            except Exception as e:
+                print(f"  ⚠️ Asset extraction error: {e}")
+        else:
+            self.report["has_icon"] = True
+
+        # 2. Install APK
         if not self.install_apk():
             self.report["status"] = "INSTALL_FAILED"
             self.report["error"] = "Failed to install APK via ADB."
             self._save_report()
             return self.report
 
-        # 2. Start Logcat Crash Watcher
+        # 3. Start Logcat Crash Watcher
         self.start_crash_watcher()
 
         try:

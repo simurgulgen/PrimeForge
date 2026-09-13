@@ -147,11 +147,21 @@ def send_build_success(result, job_id=""):
 
 
 def send_multi_device_screenshots(pkg: str):
-    """Send TV, Mobile, and Tablet screenshots to Telegram."""
+    """Send extracted logo, TV content, and multi-device screenshots to Telegram."""
+    # 1. Send Logo if present
+    logo_path = os.path.join("output", "icon.png")
+    if os.path.exists(logo_path):
+        _send_photo(logo_path, f"🎨 <b>{pkg} – Uygulama Logosu</b>")
+        import time
+        time.sleep(0.5)
+
+    # 2. Screenshots (Base + In-Content)
     shots = [
-        ("tv_screenshot.png", f"📺 <b>{pkg} – Android TV (1920x1080)</b>\n🎮 DPAD Kumanda & Odak Testi"),
-        ("mobile_screenshot.png", f"📱 <b>{pkg} – Mobil (1080x2400 20:9)</b>\n👆 Dokunmatik & Tam Ekran Testi"),
-        ("tablet_screenshot.png", f"💻 <b>{pkg} – Tablet (2560x1600 16:10)</b>\n🖐️ Geniş Ekran Düzeni Testi"),
+        ("tv_content_screenshot.png", f"📺 <b>{pkg} – Android TV İçerik Ekranı</b>\n🎬 Kategori & Menü Gezintisi"),
+        ("tv_screenshot.png", f"📺 <b>{pkg} – Android TV Açılış</b>\n🎮 DPAD Odak Durumu"),
+        ("mobile_content_screenshot.png", f"📱 <b>{pkg} – Mobil İçerik Ekranı</b>\n📜 Liste & Dokunmatik Testi"),
+        ("mobile_screenshot.png", f"📱 <b>{pkg} – Mobil 20:9</b>\n👆 Tam Ekran Görünümü"),
+        ("tablet_screenshot.png", f"💻 <b>{pkg} – Tablet 16:10</b>\n🖐️ Geniş Ekran Düzeni"),
     ]
     sent_any = False
     for filename, cap in shots:
@@ -159,10 +169,9 @@ def send_multi_device_screenshots(pkg: str):
         if os.path.exists(path):
             _send_photo(path, cap)
             sent_any = True
-            time_delay = 0.5
             import time
-            time.sleep(time_delay)
-    
+            time.sleep(0.5)
+
     # Fallback to single emulator screenshot if multi-device not present
     if not sent_any:
         single_shot = os.path.join("output", "emulator_screenshot.png")
@@ -174,7 +183,11 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
     """Send approval request with rich multi-device badges and inline buttons."""
     pkg = result.get("package_name", "unknown")
     ver = result.get("version_name", "?")
+    vcode = result.get("version_code", "")
     build = result.get("build", {})
+    analysis = result.get("analysis", {})
+    app_label = analysis.get("app_label", pkg)
+    update_mech = analysis.get("update_mechanism", {})
     size_mb = build.get("file_size", 0) / (1024 * 1024)
 
     # Read test report if not passed
@@ -203,16 +216,21 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
     tab_badge = "✅ 16:10 Geniş Ekran" if tab else "✅ Test Edildi"
     crash_badge = "✅ 0 Hata (Crash/ANR Yok)" if not crash.get("crashed") else f"❌ {crash.get('crash_count', 1)} HATA TESPİT EDİLDİ"
 
+    update_badge = "Otomatik Takip Edilebilir" if update_mech.get("has_update_mechanism") else "Katalog Taraması"
+    mech_type = update_mech.get("mechanism_type", "STANDART")
+
     text = (
         f"✅ <b>PrimeForge İş Tamamlandı</b>\n\n"
-        f"📦 <b>{pkg}</b> v{ver}\n"
-        f"📏 {size_mb:.2f} MB\n"
+        f"🏷️ <b>{app_label}</b> (<code>{pkg}</code>)\n"
+        f"📦 Sürüm: <b>v{ver}</b> (Build: {vcode or '?'})\n"
+        f"📏 Boyut: {size_mb:.2f} MB\n"
         f"🔐 İmza: PrimeStore Release Key\n\n"
-        f"🧪 <b>Çoklu Cihaz Emülatör Test Raporu:</b>\n"
+        f"🧪 <b>Çoklu Cihaz Emülatör & İçerik Testi:</b>\n"
         f"  📺 <b>TV / Kumanda:</b> {tv_dpad_badge}\n"
         f"  📱 <b>Mobil:</b> {mob_badge}\n"
         f"  💻 <b>Tablet:</b> {tab_badge}\n"
         f"  🛡️ <b>Stabilite:</b> {crash_badge}\n\n"
+        f"🔄 <b>Güncelleme Takibi:</b> {update_badge} ({mech_type})\n"
         f"🔗 <a href=\"{catbox_url}\">Catbox APK İndir</a>\n"
         f"🆔 Job: <code>#{job_id[:8] if job_id else 'local'}</code>"
     )
@@ -222,7 +240,7 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
     ]]}
     _send_message(text, reply_markup=buttons)
 
-    # Send multi-device screenshot album
+    # Send logo, in-content screenshots and device albums
     send_multi_device_screenshots(pkg)
     print("📱 Approval request sent with multi-device test results")
 

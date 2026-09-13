@@ -224,15 +224,41 @@ def full_analysis(apk_path: str, output_dir: str = "decompiled") -> dict:
     architectures = detect_architectures(output_dir)
     obfuscation = detect_obfuscation(output_dir)
 
+    # Extract assets (logo, banner, precise metadata)
+    asset_info = {}
+    try:
+        from engine.asset_extractor import extract_all_assets
+        asset_info = extract_all_assets(apk_path, output_dir, "output")
+    except Exception as e:
+        print(f"⚠️ Asset extraction warning: {e}")
+
+    # Detect update mechanism
+    update_info = {}
+    try:
+        from engine.update_analyzer import analyze_decompiled_updates
+        update_info = analyze_decompiled_updates(output_dir, manifest_info.get("package_name", ""))
+    except Exception as e:
+        print(f"⚠️ Update mechanism analysis warning: {e}")
+
     report = {
         **manifest_info,
+        "app_label": asset_info.get("app_label", manifest_info.get("package_name", "App")),
+        "has_icon": asset_info.get("has_icon", False),
+        "has_banner": asset_info.get("has_banner", False),
         "ad_networks": ad_networks,
         "drm_systems": drm_systems,
         "architectures": architectures,
         "obfuscation": obfuscation,
+        "update_mechanism": update_info,
         "apk_path": apk_path,
         "decompiled_dir": output_dir,
     }
+
+    # If asset_extractor discovered higher precision versions, override
+    if asset_info.get("version_name"):
+        report["version_name"] = asset_info["version_name"]
+    if asset_info.get("version_code"):
+        report["version_code"] = asset_info["version_code"]
 
     os.makedirs("output", exist_ok=True)
     report_path = os.path.join("output", "analysis.json")

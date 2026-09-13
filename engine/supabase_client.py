@@ -91,5 +91,5 @@ def update_listing(listing_id, updates):
 
 
 def find_listing_by_package(package_name):
-    result = _request(f'listings?"packageName"=eq.{package_name}&select=id,title,"packageName",version,status')
+    result = _request(f'listings?"packageName"=eq.{package_name}&select=id,title,"packageName",version,"fileUrl",status')
     return result[0] if isinstance(result, list) and result else {}

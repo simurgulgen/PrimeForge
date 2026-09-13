@@ -164,8 +164,15 @@ def generate_and_record_guide(pipeline_result: dict, output_dir: str = "output")
         }
 
     profile_data["auto_apply"] = True
+    profile_data["current_version"] = ver
     profile_data["last_modded_version"] = ver
     profile_data["last_modded_at"] = now_str
+
+    # Record update strategy if detected
+    if "update_check" not in profile_data:
+        update_mech = analysis.get("update_mechanism", {})
+        if update_mech.get("suggested_update_strategy"):
+            profile_data["update_check"] = update_mech["suggested_update_strategy"]
 
     # Update history in profile
     history = profile_data.get("version_history", [])
