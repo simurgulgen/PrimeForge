@@ -1,10 +1,42 @@
 // app/api/ai/chat/route.ts
 import { NextResponse } from 'next/server';
 import { sendAIChatRequest, AIMessage, AISettings, DEFAULT_AI_SETTINGS } from '@/lib/ai-service';
+import { restartAIServer, getAIServerState } from '@/lib/ai-server-manager';
 import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
+
+function isRestartCommand(text: string): boolean {
+  const normalized = text
+    .toLowerCase()
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const triggers = [
+    'yapay zeka serverini yeniden baslat',
+    'yapay zeka serverını yeniden başlat',
+    'yapay zeka sunucusunu yeniden baslat',
+    'yapay zeka sunucusunu yeniden başlat',
+    'serveri yeniden baslat',
+    'serverı yeniden başlat',
+    'sunucuyu yeniden baslat',
+    'sunucuyu yeniden başlat',
+    'serveri restart et',
+    'serverı restart et',
+    'restart server',
+    'ai server restart',
+    'fcc server restart',
+    'fcc sunucusunu yeniden baslat',
+    'fcc sunucusunu yeniden başlat',
+    'yapay zekayi yeniden baslat',
+    'yapay zekayı yeniden başlat',
+    'restart',
+  ];
+
+  return triggers.some((t) => normalized === t || normalized.startsWith(t) || normalized.includes('serverını yeniden başlat') || normalized.includes('sunucuyu yeniden başlat'));
+}
 
 export async function POST(req: Request) {
   try {
@@ -13,6 +45,37 @@ export async function POST(req: Request) {
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'Mesaj listesi boş olamaz.' }, { status: 400 });
+    }
+
+    const lastMessage = messages[messages.length - 1];
+    const userPrompt = lastMessage?.role === 'user' ? lastMessage.content : '';
+
+    // Check if user is saying "yapay zeka serverını yeniden başlat"
+    if (userPrompt && isRestartCommand(userPrompt)) {
+      const restartResult = await restartAIServer('chat_command');
+      const serverState = await getAIServerState();
+
+      const responseMarkdown = `🔄 **AI Sunucusu Başarıyla Yeniden Başlatıldı!**\n\n` +
+        `Yapay zeka motoru, model bağlantıları ve önbellek oturumu başarıyla tazelendi.\n\n` +
+        `| Parametre | Değer |\n` +
+        `|---|---|\n` +
+        `| **Sunucu Durumu** | 🟢 **Çevrimiçi & Sağlıklı** |\n` +
+        `| **Aktif Sağlayıcı** | \`${restartResult.activeProvider.toUpperCase()}\` |\n` +
+        `| **Aktif Model** | \`${restartResult.activeModel}\` |\n` +
+        `| **Yedek (FCC Fallback)** | \`${serverState.fallbackModel}\` |\n` +
+        `| **Tepki Süresi (Ping)** | **${restartResult.latencyMs} ms** |\n` +
+        `| **Yeniden Başlatma Zamanı** | \`${new Date(restartResult.restartedAt).toLocaleTimeString('tr-TR')} (UTC+3)\` |\n` +
+        `| **Motor Türü** | \`${serverState.serverType}\` |\n\n` +
+        `> [!TIP]\n` +
+        `> Yapay zeka çekirdeği sıfırlandı. APK analizlerine veya sorularınıza devam edebilirsiniz.`;
+
+      return NextResponse.json({
+        success: true,
+        text: responseMarkdown,
+        modelUsed: restartResult.activeModel,
+        restarted: true,
+        serverState,
+      });
     }
 
     let finalSystemPrompt = settings.systemPrompt || DEFAULT_AI_SETTINGS.systemPrompt;
