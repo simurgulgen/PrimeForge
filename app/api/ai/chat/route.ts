@@ -1,0 +1,75 @@
+// app/api/ai/chat/route.ts
+import { NextResponse } from 'next/server';
+import { sendAIChatRequest, AIMessage, AISettings, DEFAULT_AI_SETTINGS } from '@/lib/ai-service';
+import { supabase } from '@/lib/supabase';
+
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
+export async function POST(req: Request) {
+  try {
+    const body = await req.json();
+    const { messages = [], settings = DEFAULT_AI_SETTINGS, job_id } = body;
+
+    if (!Array.isArray(messages) || messages.length === 0) {
+      return NextResponse.json({ error: 'Mesaj listesi boş olamaz.' }, { status: 400 });
+    }
+
+    let finalSystemPrompt = settings.systemPrompt || DEFAULT_AI_SETTINGS.systemPrompt;
+
+    // If job_id is provided, attach APK context to the prompt
+    if (job_id) {
+      try {
+        const { data: job } = await supabase
+          .from('forge_jobs')
+          .select('id, app_name, package_name, version_name, action, status, analysis_report')
+          .eq('id', job_id)
+          .maybeSingle();
+
+        if (job) {
+          const report = job.analysis_report || {};
+          const perms = report.permissions || {};
+          const dangerous = perms.dangerous || [];
+          const adRelated = perms.ad_related || [];
+          const allPerms = perms.all || [];
+          const ads = report.ad_networks || [];
+          const drm = report.drm_systems || [];
+
+          finalSystemPrompt += `\n\n--- ŞU ANDA İNCELENEN AKTİF APK BAĞLAMI ---\n` +
+            `Uygulama Adı: ${job.app_name || 'Bilinmiyor'}\n` +
+            `Paket Adı: ${job.package_name || 'Bilinmiyor'}\n` +
+            `Sürüm: ${job.version_name || '?'}\n` +
+            `İşlem Türü: ${job.action}\n` +
+            `Tehlikeli İzinler (${dangerous.length}): ${dangerous.join(', ') || 'Yok'}\n` +
+            `Reklam İzinleri: ${adRelated.join(', ') || 'Yok'}\n` +
+            `Tüm İzinler (${allPerms.length}): ${allPerms.slice(0, 25).join(', ')}\n` +
+            `Tespit Edilen Reklam Ağları: ${ads.map((a: any) => a.name).join(', ') || 'Yok'}\n` +
+            `DRM / Lisans Sistemleri: ${drm.map((d: any) => d.name).join(', ') || 'Yok'}\n` +
+            `-------------------------------------------`;
+        }
+      } catch (dbErr) {
+        console.error('APK context load warning:', dbErr);
+      }
+    }
+
+    const mergedSettings: AISettings = {
+      ...DEFAULT_AI_SETTINGS,
+      ...settings,
+      systemPrompt: finalSystemPrompt,
+    };
+
+    const response = await sendAIChatRequest(messages, mergedSettings);
+
+    return NextResponse.json({
+      success: true,
+      text: response.text,
+      modelUsed: response.modelUsed,
+    });
+  } catch (err: any) {
+    console.error('AI Chat Error:', err);
+    return NextResponse.json(
+      { error: err.message || 'Yapay zeka yanıt oluşturamadı.' },
+      { status: 500 }
+    );
+  }
+}

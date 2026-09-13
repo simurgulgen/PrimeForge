@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import {
   Layers,
   RefreshCw,
@@ -425,12 +426,21 @@ export default function JobsPage() {
                 </div>
               </div>
 
-              <button
-                onClick={() => setSelectedJob(null)}
-                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
-              >
-                ✕
-              </button>
+              <div className="flex items-center gap-2">
+                <Link
+                  href={`/ai?job_id=${selectedJob.id}`}
+                  className="px-3 py-1.5 rounded-lg bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  AI ile İncele
+                </Link>
+                <button
+                  onClick={() => setSelectedJob(null)}
+                  className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-sm font-bold transition-colors"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             {/* Navigation Tabs */}

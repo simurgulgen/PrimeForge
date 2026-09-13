@@ -1,6 +1,6 @@
 import './globals.css';
 import Link from 'next/link';
-import { Wrench, Layers, FileCode2, Send, Activity, Store } from 'lucide-react';
+import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles } from 'lucide-react';
 
 export const metadata = {
   title: 'PrimeForge – APK Modlama & Test Pipeline',
@@ -60,6 +60,13 @@ export default function RootLayout({
                 >
                   <FileCode2 className="w-4 h-4 text-amber-400" />
                   Profiller & Rehberler
+                </Link>
+                <Link
+                  href="/ai"
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-purple-300 hover:text-white hover:bg-purple-500/10 border border-purple-500/20 transition-all flex items-center gap-2 rounded-xl"
+                >
+                  <Sparkles className="w-4 h-4 text-purple-400" />
+                  AI Studio
                 </Link>
               </nav>
             </div>
