@@ -442,8 +442,8 @@ class EmulatorTester:
         print("├" + "─" * 58 + "┤")
         print(f"│ 📺 TV (DPAD):     {tv.get('dpad_compatibility', '?'):<12} {tv.get('details', '')[:25]:<26} │")
         print(f"│ 📱 Mobil (20:9):  {mob.get('aspect_ratio_status', '?'):<12} {mob.get('details', '')[:25]:<26} │")
-        print(f"│ 💻 Tablet (16:10): {'ADAPTIVE':<12} {tab.get('details', '')[:25]:<26} │")
-        print(f"│ 🛡️  Çökme (Crash): {'YOK (0 Hata)' if not crash.get('crashed') else f'VAR ({crash.get(\"crash_count\")} Hata)':<39} │")
+        crash_str = "YOK (0 Hata)" if not crash.get("crashed") else f"VAR ({crash.get('crash_count', 1)} Hata)"
+        print(f"│ 🛡️  Çökme (Crash): {crash_str:<39} │")
         print("├" + "─" * 58 + "┤")
         print(f"│ 🏁 SONUÇ: {self.report.get('status', 'UNKNOWN'):<47} │")
         print("└" + "─" * 58 + "┘\n")
