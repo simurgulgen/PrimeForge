@@ -53,8 +53,8 @@ jobs:
           pip install --upgrade pip
           pip install pyyaml requests quark-engine apkid
           sudo apt-get update && sudo apt-get install -y zipalign apksigner wget curl
-          # Download Apktool 2.10.0
-          sudo wget -q https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar -O /usr/local/bin/apktool.jar
+          # Download Apktool 3.0.3 (Latest)
+          sudo wget -q https://github.com/iBotPeaches/Apktool/releases/download/v3.0.3/apktool_3.0.3.jar -O /usr/local/bin/apktool.jar
           sudo bash -c 'echo -e "#!/bin/bash\njava -jar /usr/local/bin/apktool.jar \"\$@\"" > /usr/local/bin/apktool'
           sudo chmod +x /usr/local/bin/apktool
           apktool --version

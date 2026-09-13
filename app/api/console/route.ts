@@ -1,23 +1,33 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 
-const execAsync = promisify(exec);
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+const GITHUB_TOKEN =
+  process.env.GITHUB_TOKEN ||
+  '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';
+
+function getGhHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'PrimeForge-Web',
+  };
+  if (GITHUB_TOKEN) {
+    headers['Authorization'] = `Bearer ${GITHUB_TOKEN}`;
+  }
+  return headers;
+}
 
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
     const requestedJobId = searchParams.get('jobId');
 
-    // 1. Fetch recent jobs from Supabase
+    // 1. Supabase'den son işleri çek
     const { data: jobs, error: jobsErr } = await supabase
       .from('forge_jobs')
       .select('*')
       .order('created_at', { ascending: false })
-      .limit(25);
+      .limit(30);
 
     if (jobsErr) {
       return NextResponse.json({ error: jobsErr.message }, { status: 500 });
@@ -28,7 +38,6 @@ export async function GET(req: Request) {
       ? allJobs.find((j) => j.id === requestedJobId)
       : allJobs[0];
 
-    // If requested job wasn't in top 25, query specifically
     if (requestedJobId && !selectedJob) {
       const { data: singleJob } = await supabase
         .from('forge_jobs')
@@ -52,77 +61,158 @@ export async function GET(req: Request) {
       });
     }
 
-    // 2. Fetch GitHub Actions run details and logs if github_run_id exists
-    const runId = selectedJob.github_run_id;
+    // 2. GitHub Actions entegrasyonu (Pure HTTP Fetch - Vercel ve tüm ortamlarda %100 çalışır)
+    let runId = selectedJob.github_run_id;
     let runInfo: any = null;
     let logs = '';
+    const headers = getGhHeaders();
 
-    if (runId) {
+    // Run ID yoksa, GitHub API'den son dispatch edilmiş veya aktif olan workflow run'ı bul
+    if (!runId && GITHUB_TOKEN) {
       try {
-        // Fetch run details via gh CLI or GitHub API
-        const { stdout: runJson } = await execAsync(
-          `gh api repos/${GITHUB_REPO}/actions/runs/${runId} --jq "{id, status, conclusion, created_at, updated_at, run_attempt, html_url}"`
+        const runsRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=8`,
+          { headers, cache: 'no-store' }
         );
-        const parsedRun = JSON.parse(runJson.trim());
+        if (runsRes.ok) {
+          const runsData = await runsRes.json();
+          const workflowRuns = runsData.workflow_runs || [];
 
-        // Fetch jobs and steps
-        const { stdout: jobsJson } = await execAsync(
-          `gh api repos/${GITHUB_REPO}/actions/runs/${runId}/jobs --jq ".jobs[0] | {id, name, status, conclusion, started_at, completed_at, steps}"`
-        );
-        const parsedJob = JSON.parse(jobsJson.trim());
+          // Job oluşturulma zamanına en yakın veya şu an çalışan run'ı bul
+          const jobTime = new Date(selectedJob.created_at).getTime();
+          const matchingRun = workflowRuns.find((r: any) => {
+            const rTime = new Date(r.created_at).getTime();
+            return Math.abs(rTime - jobTime) < 30 * 60 * 1000; // 30 dk içinde
+          }) || workflowRuns[0];
 
-        runInfo = {
-          runId: parsedRun.id,
-          status: parsedRun.status,
-          conclusion: parsedRun.conclusion,
-          htmlUrl: parsedRun.html_url,
-          job: {
-            id: parsedJob.id,
-            name: parsedJob.name,
-            status: parsedJob.status,
-            conclusion: parsedJob.conclusion,
-            startedAt: parsedJob.started_at,
-            completedAt: parsedJob.completed_at,
-            steps: parsedJob.steps || [],
-          },
-        };
-
-        // Try to fetch real log
-        try {
-          const { stdout: logOutput } = await execAsync(
-            `gh run view ${runId} --repo ${GITHUB_REPO} --log`,
-            { maxBuffer: 10 * 1024 * 1024 }
-          );
-          logs = logOutput;
-        } catch (logErr: any) {
-          if (parsedRun.status === 'in_progress' || parsedRun.status === 'queued') {
-            logs = `[${new Date().toLocaleTimeString('tr-TR')}] 🚀 GitHub Actions işi (#${runId}) aktif olarak çalışıyor...\n` +
-                   `Adımlar: ${parsedJob.steps?.filter((s: any) => s.status === 'completed').length || 0} / ${parsedJob.steps?.length || 0} tamamlandı.\n` +
-                   `Log akışı GitHub tarafından iş tamamlandığında tam olarak indirilebilir olacaktır.\n` +
-                   `Canlı GitHub Arayüzü: ${parsedRun.html_url}`;
-          } else {
-            logs = logErr.stdout || logErr.message || 'Loglar alınamadı.';
+          if (matchingRun) {
+            runId = String(matchingRun.id);
+            // Supabase'e kalıcı olarak kaydet
+            await supabase
+              .from('forge_jobs')
+              .update({ github_run_id: runId })
+              .eq('id', selectedJob.id);
+            selectedJob.github_run_id = runId;
           }
         }
-      } catch (err: any) {
-        console.warn('Failed to fetch GitHub run details via gh:', err.message);
+      } catch (findErr) {
+        console.warn('Could not auto-detect GitHub run:', findErr);
       }
     }
 
-    // If no GitHub logs are available, generate a synthetic report from analysis_report
+    // Run ID varsa detayları ve logları çek
+    if (runId && GITHUB_TOKEN) {
+      try {
+        // Run detayı
+        const runRes = await fetch(
+          `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${runId}`,
+          { headers, cache: 'no-store' }
+        );
+
+        if (runRes.ok) {
+          const parsedRun = await runRes.json();
+
+          // İş ve adımları çek
+          const jobsRes = await fetch(
+            `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${runId}/jobs`,
+            { headers, cache: 'no-store' }
+          );
+
+          let parsedJob: any = null;
+          if (jobsRes.ok) {
+            const jobsData = await jobsRes.json();
+            parsedJob = jobsData.jobs?.[0] || null;
+          }
+
+          runInfo = {
+            runId: parsedRun.id,
+            status: parsedRun.status,
+            conclusion: parsedRun.conclusion,
+            htmlUrl: parsedRun.html_url,
+            createdAt: parsedRun.created_at,
+            updatedAt: parsedRun.updated_at,
+            job: parsedJob
+              ? {
+                  id: parsedJob.id,
+                  name: parsedJob.name,
+                  status: parsedJob.status,
+                  conclusion: parsedJob.conclusion,
+                  startedAt: parsedJob.started_at,
+                  completedAt: parsedJob.completed_at,
+                  steps: parsedJob.steps || [],
+                }
+              : null,
+          };
+
+          // Canlı veya tamamlanmış logları çek
+          if (parsedJob?.id) {
+            try {
+              const logRes = await fetch(
+                `https://api.github.com/repos/${GITHUB_REPO}/actions/jobs/${parsedJob.id}/logs`,
+                {
+                  headers,
+                  redirect: 'follow',
+                  cache: 'no-store',
+                }
+              );
+
+              if (logRes.ok) {
+                logs = await logRes.text();
+              }
+            } catch (lErr) {
+              console.warn('Failed to fetch job log text:', lErr);
+            }
+          }
+
+          // Eğer henüz ham log gelmediyse ve iş çalışıyorsa dinamik canlı durum metni oluştur
+          if (!logs && parsedRun.status !== 'completed') {
+            const stepsList = (parsedJob?.steps || [])
+              .map((s: any) => {
+                const icon =
+                  s.status === 'completed'
+                    ? s.conclusion === 'success'
+                      ? '✅'
+                      : '❌'
+                    : s.status === 'in_progress'
+                    ? '⏳'
+                    : '⚪';
+                return `  ${icon} Adım ${s.number}: ${s.name} [${s.status.toUpperCase()}${s.conclusion ? ` - ${s.conclusion}` : ''}]`;
+              })
+              .join('\n');
+
+            logs =
+              `[${new Date().toLocaleTimeString('tr-TR')}] 🚀 GitHub Actions Runner Aktif (#${runId})\n` +
+              `================================================================================\n` +
+              `📱 Uygulama: ${selectedJob.app_name || selectedJob.package_name}\n` +
+              `📦 Paket: ${selectedJob.package_name || 'Bilinmiyor'} (İş: #${selectedJob.id.substring(0, 8)})\n` +
+              `⚡ Runner Durumu: ${parsedRun.status.toUpperCase()}\n` +
+              `🔗 Canlı Takip: ${parsedRun.html_url}\n\n` +
+              `📋 Canlı Adım Takip Çizelgesi:\n` +
+              `--------------------------------------------------------------------------------\n` +
+              (stepsList || '  ⏳ Adımlar GitHub Runner tarafından sıraya alınıyor...\n') +
+              `\n💡 Terminal çıktısı her 2 saniyede bir otomatik olarak güncellenmektedir.`;
+          }
+        }
+      } catch (err: any) {
+        console.warn('GitHub API fetch failed:', err.message);
+      }
+    }
+
+    // Eğer log yoksa analiz raporundan sentetik özet üret
     if (!logs && selectedJob.analysis_report) {
       const rep = selectedJob.analysis_report;
-      logs = `=== PRIMESTORE FORGE GÖREV RAPORU ===\n` +
-             `ID: ${selectedJob.id}\n` +
-             `Uygulama: ${selectedJob.app_name || selectedJob.package_name}\n` +
-             `Paket: ${selectedJob.package_name} (Sürüm: ${selectedJob.version_name || '?'})\n` +
-             `Durum: ${selectedJob.status}\n` +
-             `Oluşturulma: ${selectedJob.created_at}\n` +
-             `Mod Seçenekleri: ${JSON.stringify(rep.requested_mod_options || {}, null, 2)}\n` +
-             `Özel Notlar: ${rep.custom_notes || 'Yok'}\n` +
-             `Güvenlik Taraması: VT: ${rep.security?.engines?.virustotal?.detection_ratio || 'Temiz'}, Quark: ${rep.security?.engines?.quark?.status || 'Temiz'}\n` +
-             (selectedJob.modded_apk_url ? `Modlu APK: ${selectedJob.modded_apk_url}\n` : '') +
-             (rep.github_release_url ? `GitHub Release: ${rep.github_release_url}\n` : '');
+      logs =
+        `=== PRIMESTORE FORGE GÖREV RAPORU ===\n` +
+        `ID: ${selectedJob.id}\n` +
+        `Uygulama: ${selectedJob.app_name || selectedJob.package_name}\n` +
+        `Paket: ${selectedJob.package_name} (Sürüm: ${selectedJob.version_name || '?'})\n` +
+        `Durum: ${selectedJob.status}\n` +
+        `Oluşturulma: ${selectedJob.created_at}\n` +
+        `Mod Seçenekleri: ${JSON.stringify(rep.requested_mod_options || {}, null, 2)}\n` +
+        `Özel Notlar: ${rep.custom_notes || 'Yok'}\n` +
+        `Güvenlik Taraması: VT: ${rep.security?.engines?.virustotal?.detection_ratio || 'Temiz'}, Quark: ${rep.security?.engines?.quark?.status || 'Temiz'}\n` +
+        (selectedJob.modded_apk_url ? `Modlu APK: ${selectedJob.modded_apk_url}\n` : '') +
+        (rep.github_release_url ? `GitHub Release: ${rep.github_release_url}\n` : '');
     }
 
     return NextResponse.json({
@@ -130,7 +220,7 @@ export async function GET(req: Request) {
       selectedJob,
       allJobs,
       runInfo,
-      logs: logs || 'Henüz log çıktısı üretilmedi.',
+      logs: logs || 'Henüz log çıktısı üretilmedi. İşlem başladığında terminal akışı burada görünecektir.',
     });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
@@ -150,30 +240,40 @@ export async function POST(req: Request) {
       .from('forge_jobs')
       .select('*')
       .eq('id', jobId)
-      .maybeSingle();
+      .single();
 
     if (jobErr || !job) {
       return NextResponse.json({ error: 'Görev bulunamadı.' }, { status: 404 });
     }
 
     if (action === 'cancel') {
-      // 1. Cancel GitHub Actions run if running
-      if (job.github_run_id) {
+      // 1. GitHub Actions iptal et
+      if (job.github_run_id && GITHUB_TOKEN) {
         try {
-          await execAsync(`gh run cancel ${job.github_run_id} --repo ${GITHUB_REPO}`);
-        } catch (e: any) {
-          console.warn('gh run cancel warning:', e.message);
+          await fetch(
+            `https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${job.github_run_id}/cancel`,
+            {
+              method: 'POST',
+              headers: getGhHeaders(),
+            }
+          );
+        } catch (ghErr) {
+          console.warn('Failed to cancel GitHub run via API:', ghErr);
         }
       }
 
-      // 2. Mark job as cancelled in Supabase
-      await supabase
+      // 2. Supabase durumunu 'cancelled' yap
+      const { error: updErr } = await supabase
         .from('forge_jobs')
         .update({
           status: 'cancelled',
-          error_message: 'Kullanıcı tarafından canlı konsoldan iptal edildi.',
+          completed_at: new Date().toISOString(),
         })
         .eq('id', jobId);
+
+      if (updErr) {
+        return NextResponse.json({ error: updErr.message }, { status: 500 });
+      }
 
       return NextResponse.json({
         success: true,
@@ -181,7 +281,7 @@ export async function POST(req: Request) {
       });
     }
 
-    return NextResponse.json({ error: 'Geçersiz işlem.' }, { status: 400 });
+    return NextResponse.json({ error: 'Bilinmeyen işlem.' }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }

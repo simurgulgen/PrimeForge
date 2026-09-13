@@ -82,17 +82,17 @@ export default function ConsolePage() {
     fetchConsoleData();
   }, []);
 
-  // Poll for active jobs every 5 seconds
+  // Poll for active jobs every 2.5 seconds
   useEffect(() => {
     const isJobActive =
       selectedJob?.status &&
-      ['pending', 'downloading', 'analyzing', 'patching', 'building', 'testing'].includes(selectedJob.status);
+      ['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'uploading'].includes(selectedJob.status);
 
-    if (!isJobActive && runInfo?.status !== 'in_progress') return;
+    if (!isJobActive && runInfo?.status !== 'in_progress' && runInfo?.status !== 'queued') return;
 
     const interval = setInterval(() => {
       fetchConsoleData(selectedJobId, true);
-    }, 4500);
+    }, 2500);
 
     return () => clearInterval(interval);
   }, [selectedJob?.status, selectedJobId, runInfo?.status]);

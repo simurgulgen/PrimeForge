@@ -6,22 +6,52 @@ import subprocess
 
 
 def clean_apktool_duplicate_resources(decompiled_dir: str):
-    """Remove corrupted APKTOOL_DUPLICATE_* dummy files produced by apktool on obfuscated APKs."""
+    """Remove corrupted APKTOOL_DUPLICATE_* dummy files and fix binary XMLs produced by apktool on obfuscated APKs."""
     res_dir = os.path.join(decompiled_dir, "res")
     if not os.path.isdir(res_dir):
         return
     removed = 0
+    fixed_xmls = 0
     for root, dirs, files in os.walk(res_dir):
         for f in files:
+            file_path = os.path.join(root, f)
+            # 1. Clean APKTOOL_DUPLICATE files
             if "APKTOOL_DUPLICATE" in f:
-                file_path = os.path.join(root, f)
                 try:
                     os.remove(file_path)
                     removed += 1
                 except Exception:
                     pass
+                continue
+
+            # 2. Check for invalid binary XML files (obfuscator trap for aapt2)
+            if f.endswith(".xml"):
+                try:
+                    with open(file_path, "rb") as fp:
+                        head = fp.read(16)
+                    stripped = head.lstrip(b" \t\r\n\xef\xbb\xbf")
+                    if not stripped.startswith(b"<"):
+                        folder = os.path.basename(root)
+                        if folder.startswith("layout"):
+                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<merge xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+                        elif folder.startswith("xml"):
+                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+                        elif folder.startswith("drawable"):
+                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<shape xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+                        elif folder.startswith("menu"):
+                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<menu xmlns:android="http://schemas.android.com/apk/res/android" />\n'
+                        else:
+                            dummy = b'<?xml version="1.0" encoding="utf-8"?>\n<resources />\n'
+                        with open(file_path, "wb") as fp:
+                            fp.write(dummy)
+                        fixed_xmls += 1
+                except Exception:
+                    pass
+
     if removed > 0:
         print(f"🧹 Cleaned {removed} invalid APKTOOL_DUPLICATE resource dummy files.")
+    if fixed_xmls > 0:
+        print(f"🔧 Sanitized {fixed_xmls} malformed/binary XML trap files into valid XML skeletons.")
 
 
 def recompile(decompiled_dir: str, output_apk: str) -> str:
