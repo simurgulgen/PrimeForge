@@ -67,8 +67,10 @@ class EmulatorTester:
 
         # Fallback to aapt badging
         try:
-            cmd = ["aapt", "dump", "badging", self.apk_path]
-            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=10)
+            from engine.asset_extractor import find_aapt_executable
+            aapt_bin = find_aapt_executable() or "aapt"
+            cmd = [aapt_bin, "dump", "badging", self.apk_path]
+            out = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True, timeout=15)
             m = re.search(r"package:\s*name='([^']+)'", out)
             if m:
                 return m.group(1)

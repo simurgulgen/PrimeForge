@@ -70,3 +70,10 @@ smali_patches:
 test:
   launch_timeout_seconds: 15
   expect_no_crash: true
+
+current_version: "9"
+update_check:
+  type: "http_json_get"
+  endpoint: "https://dar.vin/update-json"
+  version_key: "version"
+  apk_key: "url"

@@ -24,16 +24,62 @@ if sys.platform == "win32":
         pass
 
 
+def find_aapt_executable() -> Optional[str]:
+    """Find aapt or aapt2 executable across system PATH and Android SDK directories."""
+    # 1. System PATH
+    found = shutil.which("aapt") or shutil.which("aapt.exe")
+    if found:
+        return found
+
+    # 2. Android SDK paths
+    sdk_roots = []
+    for env_var in ["ANDROID_HOME", "ANDROID_SDK_ROOT"]:
+        val = os.environ.get(env_var)
+        if val and os.path.exists(val):
+            sdk_roots.append(val)
+
+    if sys.platform == "win32":
+        local_app_data = os.environ.get("LOCALAPPDATA", "")
+        if local_app_data:
+            sdk_roots.append(os.path.join(local_app_data, "Android", "Sdk"))
+        sdk_roots.append(r"C:\Android\Sdk")
+    else:
+        sdk_roots.extend([
+            os.path.expanduser("~/Android/Sdk"),
+            os.path.expanduser("~/Library/Android/sdk"),
+            "/usr/lib/android-sdk",
+            "/opt/android-sdk"
+        ])
+
+    for root in sdk_roots:
+        bt_dir = os.path.join(root, "build-tools")
+        if os.path.exists(bt_dir):
+            try:
+                versions = sorted(os.listdir(bt_dir), reverse=True)
+                for v in versions:
+                    exe_name = "aapt.exe" if sys.platform == "win32" else "aapt"
+                    cand = os.path.join(bt_dir, v, exe_name)
+                    if os.path.isfile(cand) and os.access(cand, os.X_OK if sys.platform != "win32" else os.F_OK):
+                        return cand
+            except Exception:
+                pass
+    return None
+
+
 def extract_metadata_from_aapt(apk_path: str) -> Dict[str, Any]:
     """Extract precise metadata using aapt dump badging if available."""
     meta: Dict[str, Any] = {}
+    aapt_bin = find_aapt_executable()
+    if not aapt_bin:
+        return meta
+
     try:
         res = subprocess.run(
-            ["aapt", "dump", "badging", apk_path],
+            [aapt_bin, "dump", "badging", apk_path],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=15
+            timeout=20
         )
         out = res.stdout
         if out:
@@ -56,9 +102,9 @@ def extract_metadata_from_aapt(apk_path: str) -> Dict[str, Any]:
                 if single_icon:
                     icons = [single_icon.group(1)]
             if icons:
-                # Prefer .png over .xml
-                png_icons = [i for i in icons if i.endswith(".png")]
-                meta["icon_path"] = png_icons[-1] if png_icons else icons[-1]
+                # Prefer .png / .webp over .xml
+                image_icons = [i for i in icons if i.endswith((".png", ".webp", ".jpg"))]
+                meta["icon_path"] = image_icons[-1] if image_icons else icons[-1]
 
             # Banner
             banner_m = re.search(r"banner:\s*'([^']+)'", out)
@@ -72,7 +118,7 @@ def extract_metadata_from_aapt(apk_path: str) -> Dict[str, Any]:
             target_m = re.search(r"targetSdkVersion:\s*'([^']+)'", out)
             if target_m:
                 meta["target_sdk"] = target_m.group(1)
-    except Exception as e:
+    except Exception:
         pass
     return meta
 
@@ -140,7 +186,8 @@ def extract_icon_and_banner(apk_path: str, meta: Dict[str, Any], output_dir: str
 
         # 1. Look for designated icon_path
         target_icon = meta.get("icon_path")
-        if target_icon and target_icon in names and target_icon.endswith(".png"):
+        valid_exts = (".png", ".webp", ".jpg", ".jpeg")
+        if target_icon and target_icon in names and target_icon.endswith(valid_exts):
             with open(icon_dest, "wb") as f:
                 f.write(z.read(target_icon))
             icon_found = True
@@ -151,7 +198,7 @@ def extract_icon_and_banner(apk_path: str, meta: Dict[str, Any], output_dir: str
             density_order = ["xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi"]
             candidates = []
             for name in names:
-                if name.endswith(".png") and any(k in name.lower() for k in ["ic_launcher", "app_icon", "icon"]):
+                if name.endswith(valid_exts) and any(k in name.lower() for k in ["ic_launcher", "app_icon", "icon"]):
                     candidates.append(name)
 
             best_candidate = None
@@ -172,12 +219,12 @@ def extract_icon_and_banner(apk_path: str, meta: Dict[str, Any], output_dir: str
 
         # 3. Look for designated banner_path or TV banner
         target_banner = meta.get("banner_path")
-        if target_banner and target_banner in names:
+        if target_banner and target_banner in names and target_banner.endswith(valid_exts):
             with open(banner_dest, "wb") as f:
                 f.write(z.read(target_banner))
             banner_found = True
         else:
-            banner_candidates = [n for n in names if n.endswith(".png") and "banner" in n.lower()]
+            banner_candidates = [n for n in names if n.endswith(valid_exts) and "banner" in n.lower()]
             if banner_candidates:
                 with open(banner_dest, "wb") as f:
                     f.write(z.read(banner_candidates[0]))

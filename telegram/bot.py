@@ -148,10 +148,16 @@ def send_build_success(result, job_id=""):
 
 def send_multi_device_screenshots(pkg: str):
     """Send extracted logo, TV content, and multi-device screenshots to Telegram."""
-    # 1. Send Logo if present
+    # 1. Send Logo & Banner if present
     logo_path = os.path.join("output", "icon.png")
     if os.path.exists(logo_path):
         _send_photo(logo_path, f"🎨 <b>{pkg} – Uygulama Logosu</b>")
+        import time
+        time.sleep(0.5)
+
+    banner_path = os.path.join("output", "banner.png")
+    if os.path.exists(banner_path):
+        _send_photo(banner_path, f"📺 <b>{pkg} – Android TV Banner</b>")
         import time
         time.sleep(0.5)
 

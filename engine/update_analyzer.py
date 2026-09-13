@@ -161,9 +161,28 @@ class UpdateAnalyzer:
         mechanism_type = "NONE"
         strategy = {}
 
+        def endpoint_relevance(ep: Dict[str, str]) -> int:
+            score = 0
+            u = ep.get("url", "").lower()
+            s = ep.get("source_class", "").lower()
+            if "update" in u:
+                score += 10
+            if "version" in u:
+                score += 8
+            if "upgrade" in u:
+                score += 7
+            if any(term in s for term in ["update", "version", "ota", "checkupdate"]):
+                score += 15
+            if any(term in u for term in [".json", "check", "apk", "latest"]):
+                score += 5
+            if any(ign in u for ign in ["apple.com", "schema", "w3.org", "google.com", "android.com"]):
+                score -= 30
+            return score
+
         # Prioritize GitHub or Custom Endpoints
         github_endpoints = [e for e in endpoints if e["type"] == "github_release"]
         custom_endpoints = [e for e in endpoints if e["type"] == "custom_endpoint"]
+        custom_endpoints.sort(key=endpoint_relevance, reverse=True)
 
         if github_endpoints:
             mechanism_type = "GITHUB_RELEASES"
@@ -171,11 +190,12 @@ class UpdateAnalyzer:
                 "type": "github_releases",
                 "url": github_endpoints[0]["url"]
             }
-        elif custom_endpoints:
+        elif custom_endpoints and endpoint_relevance(custom_endpoints[0]) > 0:
             mechanism_type = "CUSTOM_API_ENDPOINT"
+            best_ep = custom_endpoints[0]
             strategy = {
                 "type": "http_json_get",
-                "endpoint": custom_endpoints[0]["url"],
+                "endpoint": best_ep["url"],
                 "version_key": "versionCode" if "versionCode" in json_keys else "version",
                 "apk_key": "apk_url" if "apk_url" in json_keys else "download_url"
             }
@@ -204,8 +224,9 @@ class UpdateAnalyzer:
         }
 
         print(f"  📡 Mechanism Detected: {mechanism_type}")
-        if endpoints:
-            print(f"  🔗 Primary Endpoint: {endpoints[0]['url']}")
+        primary_url = strategy.get("endpoint") or strategy.get("url") or (endpoints[0]["url"] if endpoints else None)
+        if primary_url:
+            print(f"  🔗 Primary Endpoint: {primary_url}")
 
         return result
 

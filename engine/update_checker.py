@@ -25,7 +25,11 @@ if sys.platform == "win32":
     except Exception:
         pass
 
-PROFILES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "profiles")
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+PROFILES_DIR = os.path.join(PROJECT_ROOT, "profiles")
 OUTPUT_DIR = os.path.abspath("output")
 
 _ctx = ssl.create_default_context()
@@ -60,20 +64,44 @@ class UpdateChecker:
         self.results: List[Dict[str, Any]] = []
 
     def load_active_profiles(self) -> List[Dict[str, Any]]:
-        """Load all YAML profiles from profiles/ directory (excluding base/unknown)."""
+        """Load all YAML profiles from profiles/ directory and supplement from Supabase."""
         profiles = []
-        for file_path in glob.glob(os.path.join(PROFILES_DIR, "*.yml")):
-            base = os.path.basename(file_path)
-            if base.startswith("_"):
-                continue
-            try:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    data = yaml.safe_load(f)
-                    if data and "package" in data:
-                        data["_file_path"] = file_path
-                        profiles.append(data)
-            except Exception as e:
-                print(f"⚠️ Error reading profile {base}: {e}")
+        seen_packages = set()
+
+        # 1. Local Profiles
+        for ext in ["*.yml", "*.yaml"]:
+            for file_path in glob.glob(os.path.join(PROFILES_DIR, ext)):
+                base = os.path.basename(file_path)
+                if base.startswith("_"):
+                    continue
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        data = yaml.safe_load(f)
+                        if data and "package" in data:
+                            data["_file_path"] = file_path
+                            seen_packages.add(data["package"])
+                            profiles.append(data)
+                except Exception as e:
+                    print(f"⚠️ Error reading profile {base}: {e}")
+
+        # 2. Remote Supabase Catalog listings
+        try:
+            from engine.supabase_client import get_all_listings
+            listings = get_all_listings(limit=50)
+            for item in listings:
+                pkg = item.get("packageName")
+                if pkg and pkg not in seen_packages:
+                    seen_packages.add(pkg)
+                    profiles.append({
+                        "name": item.get("title", pkg),
+                        "package": pkg,
+                        "current_version": str(item.get("version", "1.0.0")),
+                        "auto_apply": False,
+                        "_file_path": None
+                    })
+        except Exception:
+            pass
+
         return profiles
 
     def check_github_releases(self, url: str) -> Optional[Dict[str, Any]]:
@@ -112,9 +140,22 @@ class UpdateChecker:
         try:
             with urllib.request.urlopen(req, timeout=15, context=_ctx) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
+
                 remote_version = data.get(version_key)
+                if remote_version is None:
+                    for vk in ["version", "versionCode", "version_code", "latest", "ver"]:
+                        if vk in data:
+                            remote_version = data[vk]
+                            break
+
                 apk_url = data.get(apk_key)
-                return {"remote_version": str(remote_version) if remote_version else None, "apk_url": apk_url}
+                if apk_url is None:
+                    for ak in ["url", "apk_url", "download_url", "apkUrl", "downloadUrl", "link"]:
+                        if ak in data:
+                            apk_url = data[ak]
+                            break
+
+                return {"remote_version": str(remote_version) if remote_version is not None else None, "apk_url": apk_url}
         except Exception as e:
             print(f"  ⚠️ HTTP check failed for {endpoint}: {e}")
             return None
