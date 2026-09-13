@@ -26,12 +26,14 @@ _ctx.verify_mode = ssl.CERT_NONE
 
 
 def _send_message(text, reply_markup=None, parse_mode="HTML"):
-    """Send a message via Telegram Bot API."""
+    """Send a message via Telegram Bot API with automatic plain text fallback."""
     if not BOT_TOKEN or not CHAT_ID:
         print("⚠️ Telegram not configured")
         return {}
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": text, "parse_mode": parse_mode}
+    payload = {"chat_id": CHAT_ID, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
     data = json.dumps(payload).encode("utf-8")
@@ -39,9 +41,23 @@ def _send_message(text, reply_markup=None, parse_mode="HTML"):
     try:
         with urllib.request.urlopen(req, timeout=15, context=_ctx) as resp:
             return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if parse_mode:
+            # Fallback to plain text if HTML tags caused 400 Bad Request
+            try:
+                payload.pop("parse_mode", None)
+                data2 = json.dumps(payload).encode("utf-8")
+                req2 = urllib.request.Request(url, data=data2, headers={"Content-Type": "application/json"}, method="POST")
+                with urllib.request.urlopen(req2, timeout=15, context=_ctx) as resp2:
+                    return json.loads(resp2.read().decode("utf-8"))
+            except Exception:
+                pass
+        print(f"❌ Telegram send failed: {e}")
+        return {}
     except Exception as e:
         print(f"❌ Telegram send failed: {e}")
         return {}
+
 
 
 def _send_photo(photo_path, caption=""):

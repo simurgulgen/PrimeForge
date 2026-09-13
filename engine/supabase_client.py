@@ -15,6 +15,10 @@ _ctx.check_hostname = False
 _ctx.verify_mode = ssl.CERT_NONE
 
 
+import re
+
+_UUID_RE = re.compile(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+
 def _request(endpoint, method="GET", data=None, extra_headers=None):
     """Make a request to Supabase REST API."""
     if not SUPABASE_KEY:
@@ -38,27 +42,34 @@ def _request(endpoint, method="GET", data=None, extra_headers=None):
             return json.loads(content) if content else {}
     except urllib.error.HTTPError as e:
         error_body = e.read().decode("utf-8") if e.fp else ""
-        print(f"Supabase error {e.code}: {error_body}")
-        raise
+        print(f"Supabase notice/error {e.code}: {error_body}")
+        return {}
     except Exception as e:
         print(f"Supabase request failed: {e}")
         return {}
 
 
 def create_job(apk_url, action="full_mod", github_run_id=""):
-    data = {"apk_url": apk_url, "action": action, "status": "pending", "github_run_id": github_run_id}
+    data = {"apk_url": apk_url, "action": action, "status": "pending", "github_run_id": str(github_run_id)}
     result = _request("forge_jobs", method="POST", data=data)
     return result[0] if isinstance(result, list) and result else result
 
 
 def update_job(job_id, updates):
+    if not job_id:
+        return {}
     updates["updated_at"] = datetime.now(timezone.utc).isoformat()
-    return _request(f"forge_jobs?id=eq.{job_id}", method="PATCH", data=updates)
+    target = f"id=eq.{job_id}" if _UUID_RE.match(str(job_id)) else f"github_run_id=eq.{job_id}"
+    return _request(f"forge_jobs?{target}", method="PATCH", data=updates)
 
 
 def get_job(job_id):
-    result = _request(f"forge_jobs?id=eq.{job_id}")
+    if not job_id:
+        return {}
+    target = f"id=eq.{job_id}" if _UUID_RE.match(str(job_id)) else f"github_run_id=eq.{job_id}"
+    result = _request(f"forge_jobs?{target}")
     return result[0] if isinstance(result, list) and result else {}
+
 
 
 def get_profile(package_name):

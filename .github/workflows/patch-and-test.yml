@@ -96,8 +96,15 @@ jobs:
         run: |
           APK_URL="${{ github.event.client_payload.apk_url || inputs.apk_url }}"
           echo "Downloading APK from: $APK_URL"
-          curl -L --retry 3 -o input.apk "$APK_URL"
+          curl -H "User-Agent: Mozilla/5.0" -L --retry 3 -o input.apk "$APK_URL"
           ls -lh input.apk
+          FILE_SIZE=$(wc -c < input.apk || echo 0)
+          if [ "$FILE_SIZE" -lt 50000 ]; then
+            echo "❌ Downloaded APK is invalid or too small ($FILE_SIZE bytes):"
+            head -n 20 input.apk
+            exit 1
+          fi
+
 
       - name: Run PrimeForge Engine
         env:
