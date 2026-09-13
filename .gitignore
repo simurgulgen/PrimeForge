@@ -22,6 +22,7 @@ node_modules/
 .vercel/
 **/.vercel/
 
-# IDE
+# IDE & Build
 .vscode/
 .idea/
+*.tsbuildinfo

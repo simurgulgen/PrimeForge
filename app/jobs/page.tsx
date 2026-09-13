@@ -143,13 +143,15 @@ export default function JobsPage() {
 
   const completedCount = jobs.filter((j) => ['published', 'waiting_approval', 'completed', 'analyzed'].includes(j.status)).length;
   const pendingCount = jobs.filter((j) => ['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'uploading'].includes(j.status)).length;
-  const failedCount = jobs.filter((j) => ['failed', 'test_failed', 'cancelled'].includes(j.status)).length;
+  const failedCount = jobs.filter((j) => ['failed', 'test_failed'].includes(j.status)).length;
+  const cancelledCount = jobs.filter((j) => ['cancelled', 'canceled'].includes(j.status)).length;
 
   const filtered = jobs.filter((j) => {
     if (filter === 'all') return true;
     if (filter === 'completed') return ['published', 'waiting_approval', 'completed', 'analyzed'].includes(j.status);
     if (filter === 'pending') return ['pending', 'downloading', 'analyzing', 'waiting_decision', 'patching', 'building', 'testing', 'uploading'].includes(j.status);
-    if (filter === 'failed') return ['failed', 'test_failed', 'cancelled'].includes(j.status);
+    if (filter === 'failed') return ['failed', 'test_failed'].includes(j.status);
+    if (filter === 'cancelled') return ['cancelled', 'canceled'].includes(j.status);
     return true;
   });
 
@@ -223,6 +225,7 @@ export default function JobsPage() {
               { id: 'completed', label: `Tamamlanan (${completedCount})` },
               { id: 'pending', label: `İşlemde / Bekleyen (${pendingCount})` },
               { id: 'failed', label: `Hatalı (${failedCount})` },
+              { id: 'cancelled', label: `İptal Edilen (${cancelledCount})` },
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -390,6 +393,13 @@ export default function JobsPage() {
                             return (
                               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-rose-500/10 text-rose-400 border border-rose-500/20">
                                 <XCircle className="w-3 h-3" /> {s === 'test_failed' ? 'Test Başarısız' : 'Hata'}
+                              </span>
+                            );
+                          }
+                          if (s === 'cancelled' || s === 'canceled') {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-700/40 text-slate-300 border border-slate-600/50">
+                                <Ban className="w-3 h-3 text-slate-400" /> İptal Edildi
                               </span>
                             );
                           }
@@ -595,12 +605,35 @@ export default function JobsPage() {
                         v{selectedJob.version_name} {selectedJob.version_code ? `(#${selectedJob.version_code})` : ''}
                       </span>
                     )}
+                    {selectedJob.status === 'cancelled' && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-slate-700/60 text-slate-300 font-bold border border-slate-600 flex items-center gap-1">
+                        <Ban className="w-3 h-3 text-slate-400" /> İptal Edildi
+                      </span>
+                    )}
+                    {(selectedJob.status === 'completed' || selectedJob.status === 'published') && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3 text-emerald-400" /> {selectedJob.status === 'published' ? 'Yayınlandı' : 'Tamamlandı'}
+                      </span>
+                    )}
+                    {selectedJob.status === 'failed' && (
+                      <span className="text-xs px-2.5 py-0.5 rounded-full bg-rose-500/20 text-rose-300 font-bold border border-rose-500/30 flex items-center gap-1">
+                        <XCircle className="w-3 h-3 text-rose-400" /> Hata
+                      </span>
+                    )}
                   </h3>
                   <p className="text-[11px] text-slate-400 font-mono">{selectedJob.package_name}</p>
                 </div>
               </div>
 
               <div className="flex items-center gap-2">
+                <Link
+                  href={`/console?jobId=${selectedJob.id}`}
+                  className="px-3 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/30 text-cyan-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  title="Görevin canlı konsolunu ve anlık GitHub terminal loglarını görüntüle"
+                >
+                  <Terminal className="w-3.5 h-3.5 text-cyan-400" />
+                  Canlı Konsol
+                </Link>
                 <button
                   type="button"
                   onClick={() => {

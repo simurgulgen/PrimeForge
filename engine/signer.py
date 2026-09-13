@@ -5,11 +5,40 @@ import os
 import subprocess
 
 
+def clean_apktool_duplicate_resources(decompiled_dir: str):
+    """Remove corrupted APKTOOL_DUPLICATE_* dummy files produced by apktool on obfuscated APKs."""
+    res_dir = os.path.join(decompiled_dir, "res")
+    if not os.path.isdir(res_dir):
+        return
+    removed = 0
+    for root, dirs, files in os.walk(res_dir):
+        for f in files:
+            if "APKTOOL_DUPLICATE" in f:
+                file_path = os.path.join(root, f)
+                try:
+                    os.remove(file_path)
+                    removed += 1
+                except Exception:
+                    pass
+    if removed > 0:
+        print(f"🧹 Cleaned {removed} invalid APKTOOL_DUPLICATE resource dummy files.")
+
+
 def recompile(decompiled_dir: str, output_apk: str) -> str:
-    """Recompile decompiled APK using apktool."""
-    cmd = ["apktool", "b", decompiled_dir, "-o", output_apk]
-    print(f"📦 Recompiling: {' '.join(cmd)}")
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    """Recompile decompiled APK using apktool with duplicate cleanup and aapt2."""
+    clean_apktool_duplicate_resources(decompiled_dir)
+
+    # Attempt 1: apktool with --use-aapt2
+    cmd = ["apktool", "b", "--use-aapt2", decompiled_dir, "-o", output_apk]
+    print(f"📦 Recompiling (aapt2): {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=360)
+
+    # Attempt 2: fallback without --use-aapt2 if needed
+    if result.returncode != 0:
+        print(f"⚠️ apktool aapt2 failed, attempting standard recompile...")
+        cmd_std = ["apktool", "b", decompiled_dir, "-o", output_apk]
+        result = subprocess.run(cmd_std, capture_output=True, text=True, timeout=360)
+
     if result.returncode != 0:
         raise RuntimeError(f"apktool build failed:\n{result.stderr}")
     print(f"✅ Recompiled to {output_apk}")

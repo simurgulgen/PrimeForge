@@ -12,25 +12,29 @@ from pathlib import Path
 
 
 def find_smali_class(decompiled_dir: str, class_name: str) -> list:
-    """Find all smali files matching a class name."""
+    """Find all smali files matching a class name or class path."""
     results = []
     smali_dirs = [d for d in os.listdir(decompiled_dir) if d.startswith("smali")]
+
+    clean_name = class_name.lstrip("L").rstrip(";").replace(".", "/")
+    stem_name = clean_name.split("/")[-1]
 
     for sdir in smali_dirs:
         sdir_path = os.path.join(decompiled_dir, sdir)
         for smali_file in Path(sdir_path).rglob("*.smali"):
-            if smali_file.stem == class_name:
+            str_path = str(smali_file).replace("\\", "/")
+            if smali_file.stem == stem_name or clean_name in str_path:
                 results.append(str(smali_file))
                 continue
             try:
                 with open(smali_file, "r", encoding="utf-8") as f:
                     first_lines = f.read(2048)
-                if f'.source "{class_name}' in first_lines:
+                if f'.source "{stem_name}' in first_lines or (f'.class ' in first_lines and stem_name in first_lines):
                     results.append(str(smali_file))
             except Exception:
                 pass
 
-    return results
+    return list(set(results))
 
 
 def patch_method_return_true(content: str, method_name: str) -> tuple:
@@ -166,6 +170,16 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
                 patch_count += c
             elif patch_type == "return_boolean_object_true" and method:
                 content, c = patch_method_return_boolean_object_true(content, method)
+                patch_count += c
+            elif patch_type in ["return_zero", "return_0"] and method:
+                content, c = patch_integer_return(content, method, 0)
+                patch_count += c
+            elif patch_type in ["return_one", "return_1"] and method:
+                content, c = patch_integer_return(content, method, 1)
+                patch_count += c
+            elif patch_type in ["integer_return", "integer_value"] and method:
+                val = patch_def.get("value", 0)
+                content, c = patch_integer_return(content, method, int(val))
                 patch_count += c
 
             for m in patch_def.get("methods_return_false", []):

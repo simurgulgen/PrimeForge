@@ -548,6 +548,13 @@ export default function DashboardPage() {
                             </span>
                           );
                         }
+                        if (s === 'cancelled' || s === 'canceled') {
+                          return (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-700/40 text-slate-300 border border-slate-600/50 inline-flex items-center gap-1">
+                              <Ban className="w-3 h-3 text-slate-400" /> İptal Edildi
+                            </span>
+                          );
+                        }
                         return (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                             Bekliyor
