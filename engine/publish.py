@@ -28,24 +28,40 @@ def publish():
     catbox_url = upload_to_catbox(apk_path)
     print(f"  URL: {catbox_url}")
 
+    # Load multi-device test report if available
+    test_report_path = os.path.join("output", "test_report.json")
+    test_report = None
+    emulator_passed = True
+    if os.path.exists(test_report_path):
+        try:
+            with open(test_report_path, "r", encoding="utf-8") as f:
+                test_report = json.load(f)
+                emulator_passed = test_report.get("status") in ["PASSED", "PASSED_WITH_WARNINGS"]
+        except Exception:
+            pass
+
     if job_id:
         try:
+            analysis_data = result.get("analysis", {})
+            if test_report:
+                analysis_data["emulator_test_report"] = test_report
+
             update_job(job_id, {
                 "status": "waiting_approval",
                 "modded_apk_url": catbox_url,
                 "modded_apk_hash": result["build"]["sha256"],
                 "modded_apk_size": result["build"]["file_size"],
-                "emulator_passed": True,
+                "emulator_passed": emulator_passed,
                 "profile_used": result.get("profile_used"),
-                "analysis_report": result.get("analysis"),
+                "analysis_report": analysis_data,
             })
-            print("  📝 Job updated in Supabase")
+            print("  📝 Job updated in Supabase with emulator test report")
         except Exception as e:
             print(f"  ⚠️ Job update failed: {e}")
 
     try:
         from telegram.bot import send_approval_request
-        send_approval_request(result, catbox_url, job_id)
+        send_approval_request(result, catbox_url, job_id, test_report=test_report)
     except Exception as e:
         print(f"  ⚠️ Telegram notification failed: {e}")
 

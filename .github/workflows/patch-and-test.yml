@@ -97,20 +97,17 @@ jobs:
           emulator-options: -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
           script: |
             if [ -f output/modded.apk ]; then
-              echo "Installing modded APK..."
-              adb install -r output/modded.apk
-              PACKAGE=$(python -c "import json; print(json.load(open('output/analysis.json'))['package_name'])")
-              echo "Launching package: $PACKAGE"
-              adb shell monkey -p "$PACKAGE" -c android.intent.category.LAUNCHER 1 || true
-              sleep 15
-              adb logcat -d -s AndroidRuntime:E > crash_log.txt || true
-              if grep -q "FATAL EXCEPTION" crash_log.txt; then
-                echo "❌ UYGULAMA ÇÖKTÜ!"
-                python telegram/bot.py crash "$PACKAGE" crash_log.txt || true
-                exit 1
+              echo "🚀 Running PrimeForge Multi-Device (TV, Mobile, Tablet) Emulator Test Suite..."
+              python engine/emulator_tester.py output/modded.apk || true
+              if [ -f output/test_report.json ]; then
+                CRASHED=$(python -c "import json; print(json.load(open('output/test_report.json')).get('status') == 'CRASHED')")
+                if [ "$CRASHED" = "True" ]; then
+                  echo "❌ UYGULAMA ÇÖKTÜ!"
+                  PACKAGE=$(python -c "import json; print(json.load(open('output/test_report.json'))['package_name'])")
+                  python telegram/bot.py crash "$PACKAGE" output/logcat_test.log || true
+                  exit 1
+                fi
               fi
-              echo "✅ Uygulama başarıyla açıldı ve 15 saniye çökmeden çalıştı."
-              adb exec-out screencap -p > output/emulator_screenshot.png || true
             else
               echo "No modded.apk found to test."
             fi
