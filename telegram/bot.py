@@ -342,13 +342,37 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
         f"  💻 <b>Tablet:</b> {tab_badge}\n"
         f"  🛡️ <b>Stabilite:</b> {crash_badge}\n\n"
         f"🔄 <b>Güncelleme Takibi:</b> {update_badge} ({mech_type})\n"
-        f"🔗 <a href=\"{catbox_url}\">Catbox APK İndir</a>\n"
-        f"🆔 Job: <code>#{job_id[:8] if job_id else 'local'}</code>"
     )
-    buttons = {"inline_keyboard": [[
-        {"text": "🚀 Supabase'e Yayınla", "callback_data": f"forge:publish:{job_id}"},
-        {"text": "❌ İptal", "callback_data": f"forge:cancel:{job_id}"},
-    ]]}
+
+    release_url_path = os.path.join("output", "release_url.txt")
+    rel_url = ""
+    if os.path.exists(release_url_path):
+        try:
+            with open(release_url_path, "r", encoding="utf-8") as rf:
+                rel_url = rf.read().strip()
+        except Exception:
+            pass
+
+    if catbox_url:
+        text += f"🔗 <a href=\"{catbox_url}\">📥 Modlanmış APK İndir</a>\n"
+    if rel_url:
+        text += f"📦 <a href=\"{rel_url}\">GitHub Release Sayfası</a>\n"
+
+    text += f"🆔 Job: <code>#{job_id[:8] if job_id else 'local'}</code>"
+
+    keyboard_row1 = []
+    if catbox_url:
+        keyboard_row1.append({"text": "📥 APK İndir", "url": catbox_url})
+    elif rel_url:
+        keyboard_row1.append({"text": "📦 Release İndir", "url": rel_url})
+
+    buttons = {"inline_keyboard": [
+        keyboard_row1,
+        [
+            {"text": "🚀 Supabase'e Yayınla", "callback_data": f"forge:publish:{job_id}"},
+            {"text": "❌ İptal", "callback_data": f"forge:cancel:{job_id}"},
+        ]
+    ]}
     _send_message(text, reply_markup=buttons)
 
     # Send logo, in-content screenshots and device albums

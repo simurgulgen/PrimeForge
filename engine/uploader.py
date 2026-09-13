@@ -38,13 +38,18 @@ def upload_to_catbox(file_path: str, max_retries: int = 4) -> str:
     body.extend(b'\r\n')
     body.extend(f"--{boundary}--\r\n".encode())
 
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+        "Accept": "*/*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Origin": "https://catbox.moe",
+        "Referer": "https://catbox.moe/",
+    }
     req = urllib.request.Request(
         "https://catbox.moe/user/api.php",
         data=bytes(body),
-        headers={
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) PrimeForge/1.0",
-        },
+        headers=headers,
     )
 
     for attempt in range(1, max_retries + 1):
@@ -63,7 +68,8 @@ def upload_to_catbox(file_path: str, max_retries: int = 4) -> str:
             if attempt < max_retries:
                 time.sleep(3 * attempt)
 
-    raise RuntimeError(f"Failed to upload {filename} to Catbox after {max_retries} attempts")
+    print(f"⚠️ Catbox upload basarisiz oldu ({max_retries} deneme). Fallback mekanizmasi kullanilacak.")
+    return None
 
 
 def upload_to_imgbb(file_path: str, api_key: str = None, max_retries: int = 3) -> str:

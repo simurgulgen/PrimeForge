@@ -128,3 +128,31 @@ def bump_version(decompiled_dir: str, profile: dict) -> dict:
 
     print(f"📦 Version bumped: {', '.join(changes)}")
     return {"changes": changes}
+
+
+def sanitize_native_libraries(decompiled_dir: str, profile: dict) -> list:
+    """Remove suspicious/tracking/ad native libraries (.so) that trigger VirusTotal."""
+    remove_libs = profile.get("remove_native_libs", [])
+    if not remove_libs:
+        return []
+
+    changes = []
+    lib_root = os.path.join(decompiled_dir, "lib")
+    if os.path.isdir(lib_root):
+        for root, dirs, files in os.walk(lib_root):
+            for f in files:
+                for target in remove_libs:
+                    if target.lower() in f.lower():
+                        p = os.path.join(root, f)
+                        try:
+                            os.remove(p)
+                            rel = os.path.relpath(p, decompiled_dir)
+                            changes.append(f"Removed native lib: {rel}")
+                            print(f"  🛡️ Removed VirusTotal trigger lib: {rel}")
+                        except Exception as e:
+                            print(f"  ⚠️ Could not remove {p}: {e}")
+
+    if changes:
+        print(f"🛡️ Native libraries sanitized: {len(changes)} files removed for VirusTotal cleanliness")
+    return changes
+

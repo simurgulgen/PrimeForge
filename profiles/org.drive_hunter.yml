@@ -1,0 +1,124 @@
+name: "Netfly Cinema & TV VIP Mod (Clean & Ad-Free)"
+package: "org.drive_hunter"
+extends: "_base"
+auto_apply: true
+
+mod_features:
+  - id: "unlock_premium"
+    name: "VIP & Premium Abonelik Kilidi"
+    description: "Tüm VIP film, dizi ve canlı yayın içeriklerinin kilidini açar, sınırsız erişim sağlar."
+    default: true
+  - id: "remove_ads"
+    name: "Tüm Reklamları Kaldır (Pangle & AdMob)"
+    description: "Açılış, geçiş, video önü ve arayüz içi tüm reklam bileşenlerini temizler."
+    default: true
+  - id: "clean_virustotal"
+    name: "VirusTotal Tehditlerini Temizle"
+    description: "EXECUTE_COMMANDS iznini ve şüpheli ByteDance/PGLArmor izleme kütüphanelerini (.so) kaldırır."
+    default: true
+  - id: "bypass_update"
+    name: "Zorunlu Güncelleme Engeli Baypas"
+    description: "Eski sürümlerin zorunlu güncelleme uyarısı vermesini engeller."
+    default: true
+
+variants:
+  tv: "https://netflyapp.com/file/netfly_tv.apk"
+  mobile: "https://netflyapp.com/file/netfly_mobile.apk"
+  tablet: "https://netflyapp.com/file/netfly_tablet.apk"
+
+manifest_cleanup:
+  remove_permissions:
+    - "android.permission.EXECUTE_COMMANDS"
+    - "android.permission.READ_DEVICE_CONFIG"
+    - "android.permission.WRITE_DEVICE_CONFIG"
+    - "com.google.android.gms.permission.AD_ID"
+    - "android.permission.ACCESS_ADSERVICES_ATTRIBUTION"
+    - "android.permission.ACCESS_ADSERVICES_AD_ID"
+    - "android.permission.AD_SERVICES_CONFIG"
+    - "android.permission.ACCESS_ADSERVICES_TOPICS"
+    - "com.google.android.finsky.permission.BIND_GET_INSTALL_REFERRER_SERVICE"
+
+  remove_components:
+    - "com.bytedance.sdk.openadsdk"
+    - "com.google.android.gms.ads.AdActivity"
+
+remove_native_libs:
+  - "libpglarmor.so"
+  - "libnms.so"
+  - "libsecurecheck.so"
+  - "libapminsighta.so"
+  - "libapminsightb.so"
+  - "libbuffer_pgl.so"
+  - "libfile_lock_pgl.so"
+  - "libtt_ugen_layout.so"
+
+smali_patches:
+  - description: "CheckResultEntity.getIsPremium -> 1"
+    target_class: "xyz.stream.utils.entity.CheckResultEntity"
+    method: "getIsPremium"
+    patch_type: "return_integer_object"
+    value: 1
+
+  - description: "CheckResultEntity.getIsVip -> 1"
+    target_class: "xyz.stream.utils.entity.CheckResultEntity"
+    method: "getIsVip"
+    patch_type: "return_one"
+
+  - description: "CheckResultEntity.getActive -> 1"
+    target_class: "xyz.stream.utils.entity.CheckResultEntity"
+    method: "getActive"
+    patch_type: "return_integer_object"
+    value: 1
+
+  - description: "CheckResultEntity.getExpired -> 2099-12-31"
+    target_class: "xyz.stream.utils.entity.CheckResultEntity"
+    method: "getExpired"
+    patch_type: "return_string"
+    value: "2099-12-31"
+
+  - description: "CheckResultEntity.getExpiredAt -> 2147483647"
+    target_class: "xyz.stream.utils.entity.CheckResultEntity"
+    method: "getExpiredAt"
+    patch_type: "return_integer_object"
+    value: 2147483647
+
+  - description: "CheckResultEntity.getIsFreeTrial -> 0"
+    target_class: "xyz.stream.utils.entity.CheckResultEntity"
+    method: "getIsFreeTrial"
+    patch_type: "return_integer_object"
+    value: 0
+
+  - description: "xyz.stream.utils.f.i -> return_true (Always Logged In)"
+    target_class: "xyz.stream.utils.f"
+    method: "i"
+    patch_type: "return_true"
+
+  - description: "xyz.netfly.feature.ads.p.u -> return_false (Disable Ads)"
+    target_class: "xyz.netfly.feature.ads.p"
+    method: "u"
+    patch_type: "return_false"
+
+  - description: "xyz.netfly.feature.ads.p.d -> return_false"
+    target_class: "xyz.netfly.feature.ads.p"
+    method: "d"
+    patch_type: "return_false"
+
+  - description: "xyz.netfly.feature.ads.p.s -> return_false"
+    target_class: "xyz.netfly.feature.ads.p"
+    method: "s"
+    patch_type: "return_false"
+
+  - description: "xyz.netfly.feature.ads.p.v -> return_void (Bypass Interstitial)"
+    target_class: "xyz.netfly.feature.ads.p"
+    method: "v"
+    patch_type: "return_void"
+
+  - description: "xyz.netfly.feature.ads.p.p -> return_void (Bypass Frame Ads)"
+    target_class: "xyz.netfly.feature.ads.p"
+    method: "p"
+    patch_type: "return_void"
+
+test:
+  launch_timeout_seconds: 20
+  expect_no_crash: true
+  tv_dpad_verify: true

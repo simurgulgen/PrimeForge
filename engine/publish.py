@@ -52,6 +52,8 @@ def publish():
 
     # Create GitHub Release with screenshots, architectures, device types and modded APK
     github_release_url = None
+    rel_asset_url = None
+    rel_info = {}
     try:
         from engine.github_releaser import create_github_release
         rel_info = create_github_release(
@@ -62,11 +64,14 @@ def publish():
         )
         if rel_info.get("status") == "success":
             github_release_url = rel_info.get("html_url")
+            rel_asset_url = rel_info.get("asset_url")
             print(f"  📦 GitHub Release created: {github_release_url}")
             with open(os.path.join("output", "release_url.txt"), "w") as rf:
                 rf.write(github_release_url)
     except Exception as e:
         print(f"  ⚠️ GitHub Release creation warning: {e}")
+
+    primary_download_url = catbox_url or rel_asset_url or github_release_url or ""
 
     if job_id:
         try:
@@ -80,7 +85,7 @@ def publish():
 
             update_payload = {
                 "status": "waiting_approval",
-                "modded_apk_url": catbox_url,
+                "modded_apk_url": primary_download_url,
                 "modded_apk_hash": result["build"]["sha256"],
                 "modded_apk_size": result["build"]["file_size"],
                 "emulator_passed": emulator_passed,
@@ -99,16 +104,18 @@ def publish():
 
     try:
         from telegram.bot import send_approval_request
-        send_approval_request(result, catbox_url, job_id, test_report=test_report)
+        send_approval_request(result, primary_download_url, job_id, test_report=test_report)
     except Exception as e:
         print(f"  ⚠️ Telegram notification failed: {e}")
 
     with open(os.path.join("output", "catbox_url.txt"), "w") as f:
-        f.write(catbox_url)
+        f.write(primary_download_url)
+    with open(os.path.join("output", "download_url.txt"), "w") as f:
+        f.write(primary_download_url)
 
     print(f"\n✅ Published! Waiting for approval.")
     print(f"  📦 {package_name}")
-    print(f"  🔗 {catbox_url}")
+    print(f"  🔗 {primary_download_url}")
 
 
 if __name__ == "__main__":

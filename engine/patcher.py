@@ -24,27 +24,27 @@ if sys.stderr and hasattr(sys.stderr, "reconfigure"):
 
 
 def find_smali_class(decompiled_dir: str, class_name: str) -> list:
-    """Find all smali files matching a class name or class path."""
+    """Find all smali files matching a class name or class path (instant direct lookup)."""
     results = []
     smali_dirs = [d for d in os.listdir(decompiled_dir) if d.startswith("smali")]
 
-    clean_name = class_name.lstrip("L").rstrip(";").replace(".", "/")
+    clean_name = class_name.lstrip("L").rstrip(";").replace(".", "/").strip()
     stem_name = clean_name.split("/")[-1]
 
+    # 1. Direct path check (instant O(1) file system check)
+    for sdir in smali_dirs:
+        direct_candidate = os.path.join(decompiled_dir, sdir, clean_name + ".smali")
+        if os.path.exists(direct_candidate):
+            results.append(direct_candidate)
+
+    if results:
+        return results
+
+    # 2. Targeted stem search if direct path did not hit
     for sdir in smali_dirs:
         sdir_path = os.path.join(decompiled_dir, sdir)
-        for smali_file in Path(sdir_path).rglob("*.smali"):
-            str_path = str(smali_file).replace("\\", "/")
-            if smali_file.stem == stem_name or clean_name in str_path:
-                results.append(str(smali_file))
-                continue
-            try:
-                with open(smali_file, "r", encoding="utf-8") as f:
-                    first_lines = f.read(2048)
-                if f'.source "{stem_name}' in first_lines or (f'.class ' in first_lines and stem_name in first_lines):
-                    results.append(str(smali_file))
-            except Exception:
-                pass
+        for smali_file in Path(sdir_path).rglob(f"{stem_name}.smali"):
+            results.append(str(smali_file))
 
     return list(set(results))
 
@@ -137,6 +137,45 @@ def patch_integer_return(content: str, method_name: str, value: int) -> tuple:
     return new_content, count
 
 
+def patch_method_return_integer_object(content: str, method_name: str, value: int = 1) -> tuple:
+    """Patch a method returning Integer object to return Integer.valueOf(value)."""
+    pattern = rf'(\.method\s+[^\n]*\b{re.escape(method_name)}\b[^\n]*\)Ljava/lang/Integer;\s*)(.*?)(\.end method)'
+    hex_val = hex(value)
+    def replacer(m):
+        if value <= 7:
+            const_insn = f"const/4 v0, {hex_val}"
+        elif value <= 32767:
+            const_insn = f"const/16 v0, {hex_val}"
+        else:
+            const_insn = f"const v0, {hex_val}"
+        return (
+            f"{m.group(1)}\n"
+            f"    .locals 1\n\n"
+            f"    {const_insn}\n"
+            f"    invoke-static {{v0}}, Ljava/lang/Integer;->valueOf(I)Ljava/lang/Integer;\n"
+            f"    move-result-object v0\n"
+            f"    return-object v0\n"
+            f"{m.group(3)}"
+        )
+    new_content, count = re.subn(pattern, replacer, content, flags=re.DOTALL)
+    return new_content, count
+
+
+def patch_method_return_string(content: str, method_name: str, string_val: str) -> tuple:
+    """Patch a method returning String to return a constant string."""
+    pattern = rf'(\.method\s+[^\n]*\b{re.escape(method_name)}\b[^\n]*\)Ljava/lang/String;\s*)(.*?)(\.end method)'
+    def replacer(m):
+        return (
+            f"{m.group(1)}\n"
+            f"    .locals 1\n\n"
+            f"    const-string v0, \"{string_val}\"\n"
+            f"    return-object v0\n"
+            f"{m.group(3)}"
+        )
+    new_content, count = re.subn(pattern, replacer, content, flags=re.DOTALL)
+    return new_content, count
+
+
 def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
     """Apply all smali patches defined in a YAML profile."""
     patches = profile.get("smali_patches", [])
@@ -205,6 +244,14 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
             elif patch_type in ["integer_return", "integer_value"] and method:
                 val = patch_def.get("value", 0)
                 content, c = patch_integer_return(content, method, int(val))
+                patch_count += c
+            elif patch_type in ["return_integer_object", "integer_object"] and method:
+                val = patch_def.get("value", 1)
+                content, c = patch_method_return_integer_object(content, method, int(val))
+                patch_count += c
+            elif patch_type in ["return_string", "string_return"] and method:
+                val = patch_def.get("value", "")
+                content, c = patch_method_return_string(content, method, str(val))
                 patch_count += c
 
             for m in patch_def.get("methods_return_false", []):

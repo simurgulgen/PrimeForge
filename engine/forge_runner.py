@@ -264,6 +264,12 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     print("-" * 40)
     sanitize_result = sanitize_manifest(DECOMPILED_DIR, merged_profile)
 
+    # Step 3.5: Sanitize native libraries (remove VirusTotal triggers like ByteDance/PGLArmor)
+    print("\n🛡️ Step 3.5: Native Libraries Sanitization (VirusTotal Clean)")
+    print("-" * 40)
+    from engine.sanitizer import sanitize_native_libraries
+    sanitize_native_libraries(DECOMPILED_DIR, merged_profile)
+
     # Step 4: Apply smali patches
     patch_result = {"applied": 0, "total": 0}
     if action != "sanitize_only":
