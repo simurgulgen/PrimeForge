@@ -107,6 +107,27 @@ def generate_and_record_guide(pipeline_result: dict, output_dir: str = "output")
         f"- **Emülatör Uyumluluğu:** 15 saniye çökmesiz başlatma doğrulaması yapıldı.",
         f"- **Crash Log Kontrolü:** `FATAL EXCEPTION` bulunamadı.",
         f"- **Ekran Görüntüsü:** `output/emulator_screenshot.png`",
+    ])
+
+    try:
+        from engine.ai_advisor import is_ai_available, ai_generate_modding_guide
+        if is_ai_available():
+            print("🤖 Yapay Zeka Modlama Rehberi analizi oluşturuyor...")
+            ai_commentary = ai_generate_modding_guide(pipeline_result)
+            if ai_commentary and ai_commentary.strip():
+                guide_lines.extend([
+                    f"",
+                    f"---",
+                    f"",
+                    f"## 🤖 Yapay Zeka Tersine Mühendislik & Güvenlik Değerlendirmesi",
+                    f"",
+                    ai_commentary.strip(),
+                    f"",
+                ])
+    except Exception as e:
+        print(f"⚠️ AI guide enrichment warning: {e}")
+
+    guide_lines.extend([
         f"",
         f"---",
         f"",

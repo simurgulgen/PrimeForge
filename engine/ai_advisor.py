@@ -543,3 +543,39 @@ GÖREV:
     except Exception as e:
         print(f"⚠️ AI test interpretation failed: {e}")
         return {"root_cause": "AI analiz başarısız", "proposed_fix": str(e)}
+
+
+def ai_generate_modding_guide(pipeline_result: dict) -> str:
+    """Generate an insightful AI reverse-engineering commentary and modding guide in Markdown."""
+    pkg = pipeline_result.get("package_name", "unknown")
+    ver = pipeline_result.get("version_name", "1.0.0")
+    analysis = pipeline_result.get("analysis", {})
+    sanitization = pipeline_result.get("sanitization", {})
+    patching = pipeline_result.get("patching", {})
+
+    prompt = f"""PrimeForge ile modlanan aşağıdaki Android uygulaması için geliştirici ve topluluk odaklı, profesyonel bir 'Yapay Zeka Modlama Analizi ve Değerlendirmesi' bölümü oluştur (Markdown formatında).
+
+UYGULAMA BİLGİLERİ:
+- Paket: {pkg}
+- Sürüm: {ver}
+- Mimariler: {analysis.get('architectures', [])}
+- Karıştırma (Obfuscation): {analysis.get('obfuscation', {}).get('level', 'normal')}
+- Tespit Edilen Reklamlar: {[a.get('name') for a in analysis.get('ad_networks', [])]}
+- Tespit Edilen DRM/Lisans: {[d.get('name') for d in analysis.get('drm_systems', [])]}
+- Kaldırılan İzinler: {sanitization.get('changes', [])}
+- Uygulanan Smali Yamaları: {[p.get('description') for p in patching.get('results', []) if p.get('status') == 'applied']}
+
+GÖREV:
+Aşağıdaki başlıkları içeren akıcı, profesyonel bir Türkçe Markdown raporu hazırla:
+1. 🧠 Tersine Mühendislik & Güvenlik Özeti (Uygulamanın koruma seviyesi ve zayıf noktaları)
+2. 🎯 Baypas Mekanizması Açıklaması (Yapılan smali ve manifest müdahalelerinin mantığı)
+3. 🛡️ Kararlılık & Gelecek Güncelleme Tavsiyeleri (Yeni sürüm çıktığında dikkat edilmesi gereken hususlar)
+
+Yalnızca doğrudan Markdown metnini döndür, fazladan selamlaşma veya sohbet cümlesi ekleme.
+"""
+    try:
+        return ask_ai(prompt, system_instruction="Kıdemli Android güvenlik araştırmacısı ve tersine mühendislik uzmanı olarak doğrudan Türkçe Markdown çıktısı sağla.", max_tokens=1200, temp=0.3)
+    except Exception as e:
+        print(f"⚠️ AI guide generation error: {e}")
+        return ""
+
