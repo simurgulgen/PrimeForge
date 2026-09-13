@@ -9,10 +9,26 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '761864148';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { apk_url, action = 'full_mod', package_name, profile } = body;
+    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name } = body;
 
-    if (!apk_url) {
-      return NextResponse.json({ error: 'apk_url is required' }, { status: 400 });
+    // Auto-fill package_name if not provided but profile looks like a package
+    if (!package_name && profile && profile.includes('.')) {
+      package_name = profile;
+    }
+
+    // Try resolving app_name and version from catalog if missing
+    if (!app_name && package_name) {
+      try {
+        const { data: appData } = await supabase
+          .from('prime_apps')
+          .select('title, version_name')
+          .eq('package_name', package_name)
+          .maybeSingle();
+        if (appData) {
+          app_name = appData.title;
+          if (!version_name) version_name = appData.version_name;
+        }
+      } catch (_) {}
     }
 
     // 1. Insert into forge_jobs
@@ -22,6 +38,8 @@ export async function POST(req: Request) {
         apk_url,
         action,
         package_name: package_name || null,
+        app_name: app_name || null,
+        version_name: version_name || null,
         profile_used: profile || null,
         status: 'pending',
       })
@@ -52,6 +70,8 @@ export async function POST(req: Request) {
               apk_url,
               action,
               package_name,
+              app_name,
+              version_name,
               profile,
               job_id: jobId,
             },
@@ -63,13 +83,29 @@ export async function POST(req: Request) {
       }
     }
 
-    // 3. Send Telegram notification
+    // 3. Send Rich Telegram notification
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-      const msg = `🌐 <b>Web Dashboard'dan İş Başlatıldı</b>\n\n` +
-        `📦 APK: <code>${apk_url}</code>\n` +
-        `🎯 İşlem: <code>${action}</code>\n` +
-        `🆔 Job ID: <code>${jobId}</code>\n` +
-        `⚡ GitHub Dispatch: ${dispatchSuccess ? '✅ Başarılı' : '⚠️ Token gerekli'}`;
+      const actionLabels: Record<string, string> = {
+        full_mod: '🛠️ Tam Modlama & Emülatör Testi',
+        sanitize_only: '🧹 İzin & Manifest Temizliği',
+        analyze_only: '🔍 Yalnızca Güvenlik & Statik Analiz',
+        rebuild_only: '⚡ Yeniden Derleme & İmzala',
+      };
+      const actionLabel = actionLabels[action] || action;
+
+      const appTitle = app_name ? `<b>${app_name}</b>` : (package_name ? `<code>${package_name}</code>` : 'Bilinmeyen APK');
+      const pkgLabel = package_name ? `<code>${package_name}</code>` : '<i>Analizde çıkarılacak</i>';
+      const verLabel = version_name ? `v${version_name}` : '<i>Analizde çıkarılacak</i>';
+      const shortId = jobId.substring(0, 8);
+
+      const msg = `🚀 <b>PrimeForge — Yeni İş Kuyruğa Alındı</b>\n\n` +
+        `📱 <b>Uygulama:</b> ${appTitle}\n` +
+        `📦 <b>Paket:</b> ${pkgLabel}\n` +
+        `🏷️ <b>Sürüm:</b> ${verLabel}\n` +
+        `🎯 <b>İşlem Modu:</b> ${actionLabel}\n` +
+        `🆔 <b>Job ID:</b> <code>#${shortId}</code>\n` +
+        `⚡ <b>GitHub Runner:</b> ${dispatchSuccess ? '✅ Tetiklendi (İşleniyor)' : '⏳ Kuyrukta Bekliyor'}\n\n` +
+        `🔗 <a href="https://prime-forge-8iec.vercel.app/jobs">Canlı Takip & Emülatör Raporu ↗</a>`;
 
       fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
         method: 'POST',
@@ -78,6 +114,14 @@ export async function POST(req: Request) {
           chat_id: TELEGRAM_CHAT_ID,
           text: msg,
           parse_mode: 'HTML',
+          reply_markup: {
+            inline_keyboard: [
+              [
+                { text: '📊 Dashboard', url: 'https://prime-forge-8iec.vercel.app/jobs' },
+                { text: '⚡ Durum Sorgula', callback_data: `forge:status:${jobId}` },
+              ],
+            ],
+          },
         }),
       }).catch((e) => console.error('Telegram error:', e));
     }

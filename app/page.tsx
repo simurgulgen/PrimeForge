@@ -32,6 +32,12 @@ export default function DashboardPage() {
   const [catalogApps, setCatalogApps] = useState<any[]>([]);
   const [modalSearch, setModalSearch] = useState('');
   const [modalLoading, setModalLoading] = useState(false);
+  const [selectedAppInfo, setSelectedAppInfo] = useState<{
+    title: string;
+    packageName: string;
+    version?: string;
+    icon?: string;
+  } | null>(null);
 
   const fetchJobs = async (manual = false) => {
     if (manual) setRefreshing(true);
@@ -80,6 +86,12 @@ export default function DashboardPage() {
     if (app.packageName) {
       setProfile(app.packageName);
     }
+    setSelectedAppInfo({
+      title: app.title || app.name || 'Uygulama',
+      packageName: app.packageName || '',
+      version: app.version || app.versionName || '',
+      icon: app.iconUrl || '',
+    });
     setModalOpen(false);
   };
 
@@ -89,19 +101,32 @@ export default function DashboardPage() {
     setLoading(true);
     setSubmitMsg(null);
 
+    const appName = selectedAppInfo?.title || null;
+    const pkgName = selectedAppInfo?.packageName || (profile && profile.includes('.') ? profile : null);
+    const verName = selectedAppInfo?.version || null;
+    const displayName = appName || pkgName || 'APK Dosyası';
+
     try {
       const res = await fetch('/api/trigger-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apk_url: apkUrl, action, profile }),
+        body: JSON.stringify({
+          apk_url: apkUrl,
+          action,
+          profile,
+          package_name: pkgName,
+          app_name: appName,
+          version_name: verName,
+        }),
       });
       const data = await res.json();
       if (res.ok) {
         setSubmitMsg({
           type: 'success',
-          text: `İş kuyruğa alındı! Job ID: #${data.job_id?.substring(0, 8)}`,
+          text: `✅ ${displayName} için işlem başarıyla kuyruğa alındı! (Job ID: #${data.job_id?.substring(0, 8)})`,
         });
         setApkUrl('');
+        setSelectedAppInfo(null);
         fetchJobs(true);
       } else {
         setSubmitMsg({ type: 'error', text: data.error || 'İşlem başarısız oldu.' });
@@ -193,6 +218,46 @@ export default function DashboardPage() {
               PrimeStore Kataloğundan Seç
             </button>
           </div>
+
+          {selectedAppInfo && (
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-gradient-to-r from-purple-950/40 to-indigo-950/40 border border-purple-500/30 mb-4 shadow-sm">
+              <div className="flex items-center gap-3">
+                {selectedAppInfo.icon ? (
+                  <img
+                    src={selectedAppInfo.icon}
+                    alt=""
+                    className="w-10 h-10 rounded-xl object-cover border border-purple-500/30 shadow"
+                  />
+                ) : (
+                  <div className="w-10 h-10 rounded-xl bg-purple-900/40 border border-purple-500/30 flex items-center justify-center">
+                    <Store className="w-5 h-5 text-purple-400" />
+                  </div>
+                )}
+                <div>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    <span>{selectedAppInfo.title}</span>
+                    {selectedAppInfo.version && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-mono font-medium">
+                        v{selectedAppInfo.version}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-400 font-mono">{selectedAppInfo.packageName}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedAppInfo(null);
+                  setProfile('');
+                }}
+                className="text-xs text-slate-400 hover:text-rose-400 transition-colors px-2.5 py-1 rounded-lg bg-slate-900/60 border border-slate-800"
+                title="Katalog seçimini temizle"
+              >
+                ✕ Seçimi Kaldır
+              </button>
+            </div>
+          )}
 
           <form onSubmit={handleTrigger} className="space-y-4">
             <div>
@@ -349,9 +414,10 @@ export default function DashboardPage() {
                 jobs.slice(0, 8).map((job) => (
                   <tr key={job.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="px-4 py-3 font-medium text-white">
-                      <div>{job.package_name || 'Bilinmiyor'}</div>
+                      <div className="font-bold text-slate-100">{job.app_name || job.package_name || 'Bilinmiyor'}</div>
                       <div className="text-slate-500 text-[10px] font-mono">
-                        {job.version_name ? `v${job.version_name}` : job.apk_url?.substring(0, 30) + '...'}
+                        {job.app_name && job.package_name ? `${job.package_name} • ` : ''}
+                        {job.version_name ? `v${job.version_name}` : (job.apk_url ? job.apk_url.substring(0, 25) + '...' : '')}
                       </div>
                     </td>
                     <td className="px-4 py-3">

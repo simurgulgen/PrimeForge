@@ -177,7 +177,7 @@ export default function JobsPage() {
                   const updateMech = getUpdateMechanism(j);
                   const tvStatus = rep?.tv_test?.dpad_compatibility;
                   const mobStatus = rep?.mobile_test?.aspect_ratio_status;
-                  const appLabel = j.analysis_report?.app_label || j.package_name;
+                  const appLabel = j.app_name || j.analysis_report?.app_label || j.package_name;
 
                   return (
                     <tr

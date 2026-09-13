@@ -70,6 +70,7 @@ def _send_photo(photo_path, caption=""):
 def send_analysis_report(report, job_id="", security_report=None):
     """Send detailed analysis report with decision buttons and security scan status."""
     pkg = report.get("package_name", "unknown")
+    app_name = report.get("app_name") or report.get("app_label") or pkg
     ver = report.get("version_name", "?")
     perms = report.get("permissions", {})
     ads = report.get("ad_networks", [])
@@ -87,9 +88,10 @@ def send_analysis_report(report, job_id="", security_report=None):
 
     lines = [
         f"🔍 <b>PrimeForge Analiz & Güvenlik Raporu</b>", "",
-        f"📦 <b>{pkg}</b> v{ver}",
-        f"📐 Mimari: {', '.join(archs) if archs else 'Bilinmiyor'}",
-        f"🔒 Karıştırma: {obf.get('level', '?')}", "",
+        f"📱 <b>Uygulama:</b> <b>{app_name}</b>",
+        f"📦 <b>Paket:</b> <code>{pkg}</code> (v{ver})",
+        f"📐 <b>Mimari:</b> {', '.join(archs) if archs else 'Bilinmiyor'}",
+        f"🔒 <b>Karıştırma/Koruma:</b> {obf.get('level', '?')}", "",
     ]
 
     # Security Engines Overview
@@ -150,6 +152,7 @@ def send_build_success(result, job_id=""):
     """Send build success notification."""
     build = result.get("build", {})
     pkg = result.get("package_name", "unknown")
+    app_name = result.get("app_name") or result.get("app_label") or pkg
     ver = result.get("version_name", "?")
     profile = result.get("profile_used", "unknown")
     archs = result.get("analysis", {}).get("architectures", [])
@@ -157,13 +160,14 @@ def send_build_success(result, job_id=""):
 
     text = (
         f"🔧 <b>PrimeForge Build Tamamlandı</b>\n\n"
-        f"📦 <b>{pkg}</b> v{ver}\n"
-        f"📋 Profil: {profile}\n"
-        f"📐 Mimari: {', '.join(archs)}\n"
-        f"📏 Boyut: {size_mb:.2f} MB\n"
-        f"🔒 SHA256: <code>{build.get('sha256', '?')[:16]}...</code>\n"
-        f"✅ İmza: {'Doğrulandı' if build.get('verified') else '❌ BAŞARISIZ'}\n\n"
-        f"🧪 Emülatör testi bekleniyor..."
+        f"📱 <b>Uygulama:</b> <b>{app_name}</b>\n"
+        f"📦 <b>Paket:</b> <code>{pkg}</code> v{ver}\n"
+        f"📋 <b>Profil:</b> {profile}\n"
+        f"📐 <b>Mimari:</b> {', '.join(archs) if archs else 'Bilinmiyor'}\n"
+        f"📏 <b>Boyut:</b> {size_mb:.2f} MB\n"
+        f"🔒 <b>SHA256:</b> <code>{build.get('sha256', '?')[:16]}...</code>\n"
+        f"✅ <b>İmza:</b> {'Doğrulandı' if build.get('verified') else '❌ BAŞARISIZ'}\n\n"
+        f"🧪 Emülatör çoklu cihaz testi bekleniyor..."
     )
     _send_message(text)
     print("📱 Build success sent")
@@ -215,7 +219,7 @@ def send_approval_request(result, catbox_url, job_id="", test_report=None):
     vcode = result.get("version_code", "")
     build = result.get("build", {})
     analysis = result.get("analysis", {})
-    app_label = analysis.get("app_label", pkg)
+    app_label = result.get("app_name") or analysis.get("app_label", pkg)
     update_mech = analysis.get("update_mechanism", {})
     size_mb = build.get("file_size", 0) / (1024 * 1024)
 
