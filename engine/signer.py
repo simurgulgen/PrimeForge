@@ -72,8 +72,26 @@ def clean_apktool_duplicate_resources(decompiled_dir: str):
         print(f"🔧 Sanitized {fixed_xmls} malformed/binary XML trap files into valid XML skeletons.")
 
 
+def sanitize_apktool_yml(decompiled_dir: str):
+    """Ensure apktool.yml has unquoted versionCode to prevent NumberFormatException in SnakeYAML/Apktool."""
+    yml_path = os.path.join(decompiled_dir, "apktool.yml")
+    if os.path.isfile(yml_path):
+        try:
+            with open(yml_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            # If versionCode is quoted like versionCode: '9999' or versionCode: "9999"
+            new_content = re.sub(r"versionCode:\s*['\"](\d+)['\"]", r"versionCode: \1", content)
+            if new_content != content:
+                with open(yml_path, "w", encoding="utf-8") as f:
+                    f.write(new_content)
+                print("🔧 Fixed quoted versionCode in apktool.yml")
+        except Exception:
+            pass
+
+
 def recompile(decompiled_dir: str, output_apk: str) -> str:
     """Recompile decompiled APK using apktool with duplicate cleanup and aapt2."""
+    sanitize_apktool_yml(decompiled_dir)
     clean_apktool_duplicate_resources(decompiled_dir)
 
     # Attempt 1: apktool with --use-aapt2

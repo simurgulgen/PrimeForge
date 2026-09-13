@@ -98,21 +98,25 @@ def bump_version(decompiled_dir: str, profile: dict) -> dict:
     changes = []
     version_bump = profile.get("version_bump", {})
 
-    # Bump version code
+    # Bump version code (must be an unquoted integer for apktool / brut.yaml parser)
     new_vc = version_bump.get("version_code", 9999)
-    content = re.sub(r'versionCode:\s*\S+', f"versionCode: '{new_vc}'", content)
-    changes.append(f"versionCode → {new_vc}")
+    try:
+        new_vc_int = int(str(new_vc).strip("'\""))
+    except Exception:
+        new_vc_int = 9999
+    content = re.sub(r'versionCode:\s*[\'"]?\S+?[\'"]?', f"versionCode: {new_vc_int}", content)
+    changes.append(f"versionCode → {new_vc_int}")
 
-    # Append suffix to version name
+    # Append suffix to version name (clean unquoted format)
     suffix = version_bump.get("version_name_suffix", " (Prime Mod)")
-    match = re.search(r"versionName:\s*['\"]?([^'\"\\n]+)", content)
+    match = re.search(r"versionName:\s*['\"]?([^'\"\r\n]+)", content)
     if match:
-        old_name = match.group(1).strip()
+        old_name = match.group(1).strip().strip("'\"")
         if suffix not in old_name:
             new_name = old_name + suffix
             content = re.sub(
-                r"versionName:\s*['\"]?[^'\"\\n]+['\"]?",
-                f"versionName: '{new_name}'",
+                r"versionName:\s*['\"]?[^\r\n]+",
+                f"versionName: {new_name}",
                 content,
             )
             changes.append(f"versionName → {new_name}")
