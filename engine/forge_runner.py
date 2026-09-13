@@ -362,7 +362,37 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"\n❌ Pipeline Kritik Hatası: {e}")
         import traceback
+        traceback_str = traceback.format_exc()
         traceback.print_exc()
+
+        # Generate Failure & Diagnostic Report even if build halted
+        try:
+            os.makedirs(OUTPUT_DIR, exist_ok=True)
+            from engine.ai_advisor import is_ai_available, ask_ai
+            diag_text = ""
+            if is_ai_available():
+                print("🤖 Yapay zeka hata teşhis raporu hazırlıyor...")
+                diag_prompt = f"""PrimeForge modlama sırasında kritik bir hata oluştu:
+Paket / APK: {apk}
+Hata Mesajı: {e}
+
+Traceback:
+{traceback_str[-2000:]}
+
+GÖREV:
+Geliştirici ve tersine mühendis için bu çökmenin kök nedenini (Root Cause) ve düzeltme adımlarını 3 maddelik net bir Markdown raporu olarak açıkla.
+"""
+                diag_text = ask_ai(diag_prompt, max_tokens=600, temp=0.2)
+
+            with open(os.path.join(OUTPUT_DIR, "failure_diagnosis.md"), "w", encoding="utf-8") as df:
+                df.write(f"# ⚠️ PrimeForge Modlama Hata Teşhis Raporu\n\n")
+                df.write(f"- **Hedef:** `{apk}`\n- **Hata:** `{e}`\n\n")
+                if diag_text:
+                    df.write(f"## 🤖 Yapay Zeka Kök Neden Teşhisi\n\n{diag_text}\n\n")
+                df.write(f"## 📋 Ham Hata Kaydı (Traceback)\n```\n{traceback_str}\n```\n")
+        except Exception as diag_err:
+            print(f"⚠️ Diagnostic guide generation warning: {diag_err}")
+
         if job_id and job_id != "local":
             try:
                 update_job(job_id, {
