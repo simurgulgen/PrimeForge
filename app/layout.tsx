@@ -1,6 +1,6 @@
 import './globals.css';
 import Link from 'next/link';
-import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles } from 'lucide-react';
+import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle } from 'lucide-react';
 
 export const metadata = {
   title: 'PrimeForge – APK Modlama & Test Pipeline',
@@ -60,6 +60,13 @@ export default function RootLayout({
                 >
                   <FileCode2 className="w-4 h-4 text-amber-400" />
                   Profiller & Rehberler
+                </Link>
+                <Link
+                  href="/patches"
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-slate-300 hover:text-white hover:bg-white/5 transition-colors flex items-center gap-2"
+                >
+                  <Puzzle className="w-4 h-4 text-indigo-400" />
+                  Yama Merkezi (Morphe)
                 </Link>
                 <Link
                   href="/ai"

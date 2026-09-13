@@ -27,7 +27,9 @@ import {
   Send,
   Eye,
   ArrowRight,
+  Puzzle,
 } from 'lucide-react';
+import { getAllPatches } from '@/lib/morphe';
 
 export interface ModOptions {
   unlock_premium: boolean;
@@ -36,6 +38,7 @@ export interface ModOptions {
   bypass_update: boolean;
   enable_tv_compat: boolean;
   signature_bypass: boolean;
+  morphe_patches?: string[];
 }
 
 export interface InteractiveModModalProps {
@@ -89,6 +92,18 @@ export default function InteractiveModModal({ app, onClose, onSuccess }: Interac
   const [customNotes, setCustomNotes] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const availableMorphePatches = getAllPatches(app.packageName);
+  const [selectedMorphePatches, setSelectedMorphePatches] = useState<string[]>([]);
+  const [showMorpheSection, setShowMorpheSection] = useState<boolean>(
+    Boolean(app.packageName && (app.packageName.includes('youtube') || app.packageName.includes('reddit') || app.packageName.includes('twitter')))
+  );
+
+  const toggleMorphePatch = (patchId: string) => {
+    setSelectedMorphePatches((prev) =>
+      prev.includes(patchId) ? prev.filter((p) => p !== patchId) : [...prev, patchId]
+    );
+  };
 
   // Quick preset handlers
   const applyPreset = (preset: 'all' | 'premium_only' | 'ads_only' | 'tv_only' | 'reset') => {
@@ -172,7 +187,10 @@ export default function InteractiveModModal({ app, onClose, onSuccess }: Interac
           profile: app.packageName, // Matches profiles/<package>.yml if present
           action: 'full_mod',
           publish_mode: requireApproval ? 'manual_review' : 'auto_publish',
-          mod_options: options,
+          mod_options: {
+            ...options,
+            morphe_patches: selectedMorphePatches,
+          },
           custom_notes: customNotes,
         }),
       });
@@ -182,7 +200,10 @@ export default function InteractiveModModal({ app, onClose, onSuccess }: Interac
         onSuccess({
           jobId: data.job_id,
           action: 'full_mod',
-          options,
+          options: {
+            ...options,
+            morphe_patches: selectedMorphePatches,
+          },
         });
       } else {
         setErrorMsg(data.error || 'Modlama görevi başlatılamadı.');
@@ -551,6 +572,81 @@ export default function InteractiveModModal({ app, onClose, onSuccess }: Interac
                 </div>
               </div>
             </div>
+          </div>
+
+          {/* Morphe Patches Section */}
+          <div className="rounded-xl border border-indigo-500/30 bg-indigo-950/20 overflow-hidden">
+            <button
+              type="button"
+              onClick={() => setShowMorpheSection(!showMorpheSection)}
+              className="w-full p-4 flex items-center justify-between text-left hover:bg-indigo-900/20 transition-colors"
+            >
+              <div className="flex items-center gap-2.5">
+                <Puzzle className="w-5 h-5 text-indigo-400 shrink-0" />
+                <div>
+                  <div className="text-sm font-bold text-white flex items-center gap-2">
+                    Morphe & ReVanced Uyumlu Bytecode Yamaları
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono">
+                      {availableMorphePatches.length} yama uygun
+                    </span>
+                    {selectedMorphePatches.length > 0 && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30">
+                        {selectedMorphePatches.length} seçildi
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-xs text-slate-400 mt-0.5">
+                    Morphe Patcher motoruyla doğrudan bytecode düzeyinde uygulanan modlar.
+                  </div>
+                </div>
+              </div>
+              {showMorpheSection ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {showMorpheSection && (
+              <div className="p-4 border-t border-indigo-500/20 bg-slate-950/40 space-y-2.5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {availableMorphePatches.map((patch) => {
+                    const isSelected = selectedMorphePatches.includes(patch.id);
+                    return (
+                      <div
+                        key={patch.id}
+                        onClick={() => toggleMorphePatch(patch.id)}
+                        className={`p-2.5 rounded-lg border cursor-pointer transition-all flex items-start gap-2.5 select-none ${
+                          isSelected
+                            ? 'bg-indigo-950/50 border-indigo-500/60 shadow-sm'
+                            : 'bg-slate-900/40 border-slate-800 hover:border-slate-700'
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {}}
+                          className="mt-0.5 w-3.5 h-3.5 rounded text-indigo-600 bg-slate-800 border-slate-700 cursor-pointer"
+                        />
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                            {patch.name}
+                            {patch.isUniversal && (
+                              <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500/15 text-amber-300">
+                                Evrensel
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-slate-400 line-clamp-2 mt-0.5 leading-snug">
+                            {patch.description}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Publishing Policy Card (CRITICAL USER REQUIREMENT) */}

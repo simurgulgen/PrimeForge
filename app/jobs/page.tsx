@@ -507,6 +507,19 @@ export default function JobsPage() {
                           </a>
                         )}
 
+                        {(j.github_release_url || j.analysis_report?.github_release_url) && (
+                          <a
+                            href={j.github_release_url || j.analysis_report?.github_release_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-purple-400 hover:underline flex items-center gap-1 text-[11px] px-1.5 py-0.5 rounded hover:bg-purple-500/10 font-semibold"
+                            title="GitHub Releases Sayfasını Aç"
+                          >
+                            Release <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+
                         {/* Publish button if waiting for approval */}
                         {j.modded_apk_url && j.status !== 'published' && (
                           <button
@@ -1516,6 +1529,17 @@ export default function JobsPage() {
                     className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium flex items-center gap-1.5 transition-colors"
                   >
                     Modlu APK İndir <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+
+                {(selectedJob.github_release_url || selectedJob.analysis_report?.github_release_url) && (
+                  <a
+                    href={selectedJob.github_release_url || selectedJob.analysis_report?.github_release_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-medium flex items-center gap-1.5 transition-colors shadow-md shadow-purple-600/25"
+                  >
+                    GitHub Release <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 )}
                 <button

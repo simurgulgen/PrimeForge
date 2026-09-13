@@ -42,6 +42,7 @@ def publish():
 
     # Upload all multi-device screenshots (TV, Mobile, Tablet, Icon, Banner)
     screenshot_url = None
+    uploaded_shots = {}
     try:
         from engine.screenshot_uploader import collect_and_upload_screenshots
         uploaded_shots = collect_and_upload_screenshots(job_id, package_name)
@@ -49,13 +50,33 @@ def publish():
     except Exception as e:
         print(f"  ⚠️ Screenshot upload warning: {e}")
 
+    # Create GitHub Release with screenshots, architectures, device types and modded APK
+    github_release_url = None
+    try:
+        from engine.github_releaser import create_github_release
+        rel_info = create_github_release(
+            result=result,
+            apk_path=apk_path,
+            test_report=test_report,
+            screenshots=uploaded_shots,
+        )
+        if rel_info.get("status") == "success":
+            github_release_url = rel_info.get("html_url")
+            print(f"  📦 GitHub Release created: {github_release_url}")
+            with open(os.path.join("output", "release_url.txt"), "w") as rf:
+                rf.write(github_release_url)
+    except Exception as e:
+        print(f"  ⚠️ GitHub Release creation warning: {e}")
+
     if job_id:
         try:
             analysis_data = result.get("analysis", {})
             if test_report:
                 analysis_data["emulator_test_report"] = test_report
-            if "uploaded_shots" in locals() and uploaded_shots:
+            if uploaded_shots:
                 analysis_data["screenshots"] = uploaded_shots
+            if github_release_url:
+                analysis_data["github_release_url"] = github_release_url
 
             update_payload = {
                 "status": "waiting_approval",
@@ -68,9 +89,11 @@ def publish():
             }
             if screenshot_url:
                 update_payload["screenshot_url"] = screenshot_url
+            if github_release_url:
+                update_payload["github_release_url"] = github_release_url
 
             update_job(job_id, update_payload)
-            print("  📝 Job updated in Supabase with emulator test report & screenshots")
+            print("  📝 Job updated in Supabase with emulator test report, screenshots & GitHub release")
         except Exception as e:
             print(f"  ⚠️ Job update failed: {e}")
 
