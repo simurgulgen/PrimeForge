@@ -1,0 +1,7 @@
+# Ignore Python engine, Telegram bot and profiles on Vercel build
+engine/
+profiles/
+telegram/
+docs/
+*.py
+*.yml
