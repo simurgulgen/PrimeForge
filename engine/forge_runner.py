@@ -177,10 +177,40 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             print(f"⚠️ Telegram notification failed: {e}")
         return report
 
-    # Step 2: Load profile
-    print("\n📋 Step 2: Loading Profile")
+    # Step 2: Load profile & Recipe
+    print("\n📋 Step 2: Loading Profile & Guide Recipe")
     print("-" * 40)
+
+    # Fetch custom mod options from job if available
+    requested_mod_opts = {}
+    if job_id and job_id != "local":
+        try:
+            job_record = get_job(job_id)
+            if job_record and isinstance(job_record, dict):
+                analysis_field = job_record.get("analysis_report") or {}
+                if isinstance(analysis_field, dict):
+                    requested_mod_opts = analysis_field.get("requested_mod_options", {}) or {}
+        except Exception as e:
+            print(f"⚠️ Job options lookup note: {e}")
+
     profile = load_profile(profile_name or package_name)
+
+    # If action is autonomous_from_guide and profile exists, force auto_apply
+    if action == "autonomous_from_guide" and profile:
+        print(f"🤖 Kayıtlı Rehber ile Otonom Modlama Devrede: '{profile.get('name', package_name)}'")
+        profile["auto_apply"] = True
+
+    # Merge user-selected permissions into profile if provided
+    if profile:
+        strip_danger = requested_mod_opts.get("strip_dangerous_permissions") or []
+        strip_ad = requested_mod_opts.get("strip_ad_permissions") or []
+        extra_perms = list(set(strip_danger + strip_ad))
+        if extra_perms:
+            if "manifest_cleanup" not in profile:
+                profile["manifest_cleanup"] = {}
+            current_perms = profile["manifest_cleanup"].get("remove_permissions") or []
+            profile["manifest_cleanup"]["remove_permissions"] = list(set(current_perms + extra_perms))
+            print(f"🛡️ Kullanıcı tarafından seçilen {len(extra_perms)} izin temizleme kuralı profile eklendi.")
 
     if profile is None or not profile.get("auto_apply", False):
         ai_success = False
@@ -264,6 +294,14 @@ def run_pipeline(apk_path, action=None, profile_name=None):
     print("-" * 40)
     sanitize_result = sanitize_manifest(DECOMPILED_DIR, merged_profile)
 
+    # Step 3.2: Android TV DPAD & Leanback Injection
+    tv_dpad_result = {}
+    if requested_mod_opts.get("enable_tv_dpad_converter") or merged_profile.get("enable_tv_dpad_converter", False):
+        print("\n📺 Step 3.2: Android TV DPAD & Leanback Injection")
+        print("-" * 40)
+        from engine.sanitizer import inject_tv_dpad_support
+        tv_dpad_result = inject_tv_dpad_support(DECOMPILED_DIR, merged_profile)
+
     # Step 3.5: Sanitize native libraries (remove VirusTotal triggers like ByteDance/PGLArmor)
     print("\n🛡️ Step 3.5: Native Libraries Sanitization (VirusTotal Clean)")
     print("-" * 40)
@@ -282,12 +320,20 @@ def run_pipeline(apk_path, action=None, profile_name=None):
                 pass
         patch_result = apply_profile_patches(DECOMPILED_DIR, merged_profile)
 
+        # Step 4.2: Universal Local Ad-Blocker Smali Interceptor
+        ad_hook_result = {}
+        if requested_mod_opts.get("enable_universal_ad_blocker", True) or merged_profile.get("enable_universal_ad_blocker", True):
+            print("\n🛡️ Step 4.2: Universal Local Ad-Blocker Smali Interceptor")
+            print("-" * 40)
+            from engine.patcher import inject_universal_ad_blocker_hook
+            ad_hook_result = inject_universal_ad_blocker_hook(DECOMPILED_DIR)
+
     # Step 5: Bump version
     print("\n📦 Step 5: Version Bump")
     print("-" * 40)
     bump_result = bump_version(DECOMPILED_DIR, merged_profile)
 
-    # Step 6: Build & Sign
+    # Step 6: Build & Sign (with Self-Healing loop)
     print("\n🔐 Step 6: Build & Sign")
     print("-" * 40)
     if job_id and job_id != "local":
@@ -297,7 +343,33 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             pass
     ks_pass = os.environ.get("KEYSTORE_PASSWORD", "primestore123")
     ks_alias = os.environ.get("KEYSTORE_ALIAS", "primestore")
-    build_result = build_and_sign(DECOMPILED_DIR, OUTPUT_DIR, "primestore_release.jks", ks_alias, ks_pass)
+
+    build_result = None
+    heal_attempts = 0
+    max_heal = 2
+
+    while heal_attempts <= max_heal:
+        try:
+            build_result = build_and_sign(DECOMPILED_DIR, OUTPUT_DIR, "primestore_release.jks", ks_alias, ks_pass)
+            break
+        except Exception as b_err:
+            heal_attempts += 1
+            if heal_attempts > max_heal:
+                raise b_err
+            print(f"\n🩺 [Self-Healing] Derleme hatası yakalandı ({b_err}). AI ile otomatik onarım deneniyor ({heal_attempts}/{max_heal})...")
+            try:
+                from engine.ai_advisor import is_ai_available, ai_self_heal_patch
+                if is_ai_available():
+                    patches = merged_profile.get("smali_patches", [])
+                    if patches:
+                        heal_res = ai_self_heal_patch(str(b_err), "", patches[0], package_name)
+                        if heal_res.get("healed") and heal_res.get("revised_patch"):
+                            merged_profile["smali_patches"][0] = heal_res["revised_patch"]
+                            print(f"  ✨ [Self-Healing] Yama revize edildi: {heal_res['revised_patch'].get('patch_type')}")
+                            apply_profile_patches(DECOMPILED_DIR, merged_profile)
+            except Exception as h_err:
+                print(f"⚠️ Self-heal attempt error: {h_err}")
+                raise b_err
 
     # Summary dictionary
     full_result = {
@@ -309,6 +381,7 @@ def run_pipeline(apk_path, action=None, profile_name=None):
         "analysis": report,
         "security": security_report,
         "sanitization": sanitize_result,
+        "tv_dpad_enhancement": tv_dpad_result,
         "patching": patch_result,
         "build": build_result,
     }

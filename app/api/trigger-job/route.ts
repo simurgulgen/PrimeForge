@@ -9,7 +9,12 @@ const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '761864148';
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name, mod_options, custom_notes, publish_mode = 'manual_review', variant } = body;
+    let { apk_url, action = 'full_mod', package_name, profile, app_name, version_name, mod_options, custom_notes, publish_mode = 'manual_review', variant, runner_type } = body;
+
+    // Auto-detect runner type if not specified: local files run locally, URLs can run on cloud
+    if (!runner_type) {
+      runner_type = (apk_url && !apk_url.startsWith('http')) ? 'local' : 'cloud';
+    }
 
     // Auto-detect variant from URL if not specified
     if (!variant && apk_url) {
@@ -49,6 +54,7 @@ export async function POST(req: Request) {
       profile_used: profile || null,
       status: 'pending',
       analysis_report: {
+        runner_type,
         requested_mod_options: mod_options || {},
         custom_notes: custom_notes || '',
         publish_mode: publish_mode || 'manual_review',
@@ -67,9 +73,27 @@ export async function POST(req: Request) {
 
     const jobId = job?.id || `web-${Date.now()}`;
 
-    // 2. Dispatch GitHub Actions workflow
+    // 2. Dispatch: Local Windows Runner vs GitHub Actions Cloud
     let dispatchSuccess = false;
-    if (GITHUB_TOKEN) {
+    if (runner_type === 'local' || (apk_url && !apk_url.startsWith('http'))) {
+      try {
+        const localRes = await fetch(new URL('/api/local-runner', req.url).toString(), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId,
+            apk_path: apk_url,
+            action,
+            package_name,
+            profile_name: profile,
+          }),
+        });
+        const localData = await localRes.json();
+        dispatchSuccess = localData.success;
+      } catch (err) {
+        console.error('Local runner dispatch error:', err);
+      }
+    } else if (GITHUB_TOKEN) {
       try {
         const ghRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/dispatches`, {
           method: 'POST',
@@ -104,6 +128,7 @@ export async function POST(req: Request) {
     // 3. Send Rich Telegram notification
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
       const actionLabels: Record<string, string> = {
+        autonomous_from_guide: '🤖 Otonom Güncelleme (Kayıtlı Rehberden)',
         full_mod: '🛠️ Tam Modlama & Emülatör Testi',
         custom_mod: '🎯 İnteraktif Özelleştirilmiş Mod',
         sanitize_only: '🧹 İzin & Manifest Temizliği',
@@ -120,6 +145,8 @@ export async function POST(req: Request) {
       let optionsListText = '';
       if (mod_options && typeof mod_options === 'object') {
         const optNames: string[] = [];
+        if (mod_options.use_saved_guide) optNames.push('🤖 Kayıtlı Rehberden Otonom Yamalama');
+        if (mod_options.save_guide) optNames.push('💾 Rehber & YAML Reçetesi Kaydı: Aktif');
         if (mod_options.unlock_premium) optNames.push('🔓 Premium Kilidi Aç');
         if (mod_options.remove_ads) optNames.push('🚫 Reklam & Takipçi Temizle');
         if (mod_options.strip_permissions) optNames.push('🧹 İzin Temizliği');

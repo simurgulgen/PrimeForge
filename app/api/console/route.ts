@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import fs from 'fs';
+import path from 'path';
 import { supabase } from '@/lib/supabase';
 
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
@@ -61,14 +63,24 @@ export async function GET(req: Request) {
       });
     }
 
-    // 2. GitHub Actions entegrasyonu (Pure HTTP Fetch - Vercel ve tüm ortamlarda %100 çalışır)
+    // 2. Runner & Logs resolution
     let runId = selectedJob.github_run_id;
     let runInfo: any = null;
     let logs = '';
     const headers = getGhHeaders();
 
+    // Check if local log file exists for this job
+    const localLogPath = path.join(process.cwd(), 'output', 'jobs', `${selectedJob.id}.log`);
+    if (fs.existsSync(localLogPath)) {
+      try {
+        logs = fs.readFileSync(localLogPath, 'utf-8');
+      } catch (e) {
+        console.warn('Failed to read local log:', e);
+      }
+    }
+
     // Run ID yoksa, GitHub API'den son dispatch edilmiş veya aktif olan workflow run'ı bul
-    if (!runId && GITHUB_TOKEN) {
+    if (!logs && !runId && GITHUB_TOKEN) {
       try {
         const runsRes = await fetch(
           `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=8`,

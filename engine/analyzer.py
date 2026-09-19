@@ -214,6 +214,77 @@ def detect_obfuscation(decompiled_dir: str) -> dict:
     }
 
 
+def trace_billing_and_mod_dependencies(decompiled_dir: str) -> dict:
+    """Scan smali code to detect In-App Billing endpoints, VIP/Premium checks,
+    existing modded logic, and class dependency mappings."""
+    smali_dirs = [d for d in os.listdir(decompiled_dir) if d.startswith("smali")]
+    
+    billing_clients = []
+    vip_methods_found = []
+    existing_mod_indicators = []
+    recipe_suggestions = []
+
+    # Patterns indicating premium or purchase verification methods
+    vip_pattern = re.compile(r'\.method.*(isVip|isPremium|isSubscribed|isPurchased|hasSubscription|getPurchaseState|isPro|isUnlocked)\b', re.IGNORECASE)
+    
+    # Pattern indicating existing mod/bypass (e.g. const/4 v0, 0x1 followed immediately by return v0)
+    hardcoded_true_pattern = re.compile(r'const/4\s+([vp]\d+),\s*0x1\s*\n\s*return\s+\1', re.IGNORECASE)
+
+    for sdir in smali_dirs:
+        sdir_path = os.path.join(decompiled_dir, sdir)
+        for smali_file in Path(sdir_path).rglob("*.smali"):
+            try:
+                content = smali_file.read_text(encoding="utf-8", errors="ignore")
+                
+                # Check for Google Play / RevenueCat BillingClient references
+                if "Lcom/android/billingclient/api/BillingClient;" in content or "Lcom/android/vending/billing" in content:
+                    billing_clients.append(str(smali_file.relative_to(sdir_path)))
+                
+                # Check for VIP / Purchase verification methods
+                matches = vip_pattern.findall(content)
+                if matches:
+                    class_match = re.search(r'\.class.*?(L[^;]+;)', content)
+                    class_name = class_match.group(1) if class_match else smali_file.stem
+                    
+                    is_already_patched = bool(hardcoded_true_pattern.search(content))
+                    
+                    vip_methods_found.append({
+                        "class": class_name,
+                        "methods": list(set(matches)),
+                        "file": str(smali_file.relative_to(sdir_path)),
+                        "already_patched": is_already_patched
+                    })
+
+                    if is_already_patched:
+                        existing_mod_indicators.append(f"Hardcoded VIP return-true in {class_name}")
+
+                    # Generate recipe suggestion for profile
+                    for m in set(matches):
+                        recipe_suggestions.append({
+                            "target_class": class_name,
+                            "target_method": m,
+                            "patch_type": "return_true",
+                            "action": "force_vip_status"
+                        })
+
+                # Check for LuckyPatcher / Mod signatures in comments or classes
+                if any(sig in content for sig in ["LuckyPatcher", "Modded by", "ReVanced", "MT VIP", "Mobilism"]):
+                    existing_mod_indicators.append(f"Modding signature in {smali_file.stem}")
+
+            except Exception:
+                continue
+
+    return {
+        "has_billing_client": len(billing_clients) > 0,
+        "billing_client_files": billing_clients[:10],
+        "vip_methods_detected": vip_methods_found[:15],
+        "is_already_modded": len(existing_mod_indicators) > 0,
+        "mod_indicators": list(set(existing_mod_indicators))[:10],
+        "recipe_suggestions": recipe_suggestions[:10]
+    }
+
+
+
 def full_analysis(apk_path: str, output_dir: str = "decompiled") -> dict:
     """Run full static analysis on an APK."""
     decompile_apk(apk_path, output_dir)
@@ -240,6 +311,9 @@ def full_analysis(apk_path: str, output_dir: str = "decompiled") -> dict:
     except Exception as e:
         print(f"⚠️ Update mechanism analysis warning: {e}")
 
+    # Trace billing, IAP, and existing mod dependencies
+    billing_mod_info = trace_billing_and_mod_dependencies(output_dir)
+
     report = {
         **manifest_info,
         "app_label": asset_info.get("app_label", manifest_info.get("package_name", "App")),
@@ -247,6 +321,7 @@ def full_analysis(apk_path: str, output_dir: str = "decompiled") -> dict:
         "has_banner": asset_info.get("has_banner", False),
         "ad_networks": ad_networks,
         "drm_systems": drm_systems,
+        "billing_and_mods": billing_mod_info,
         "architectures": architectures,
         "obfuscation": obfuscation,
         "update_mechanism": update_info,

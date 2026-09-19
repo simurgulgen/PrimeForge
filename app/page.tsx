@@ -19,6 +19,7 @@ import {
   Ban,
   AlertTriangle,
 } from 'lucide-react';
+import ApkDropzone from '@/app/components/ApkDropzone';
 
 export default function DashboardPage() {
   const [apkUrl, setApkUrl] = useState('');
@@ -263,6 +264,9 @@ export default function DashboardPage() {
           <span className="text-xs text-slate-500">Yama rehberleri & YAML →</span>
         </Link>
       </div>
+
+      {/* Instant Mod Dropzone & FilePicker */}
+      <ApkDropzone onJobStarted={() => fetchJobs()} />
 
       {/* Trigger New Job Form & Quick Guide */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

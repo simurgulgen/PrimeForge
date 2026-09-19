@@ -579,3 +579,167 @@ Yalnızca doğrudan Markdown metnini döndür, fazladan selamlaşma veya sohbet 
         print(f"⚠️ AI guide generation error: {e}")
         return ""
 
+
+def ai_preflight_smali_audit(smali_method_code: str, proposed_patch: dict, package_name: str = "") -> dict:
+    """Pre-flight validation of a smali patch using FCC-Claude to prevent compile and runtime crashes.
+    
+    Validates:
+    - Register count (.locals 0 vs registers used)
+    - Method return type matching ()Z vs ()V vs ()I vs ()L...;)
+    - Control flow consistency (:goto_, :cond_ labels)
+    - Obfuscation symbol drift
+    """
+    desc = proposed_patch.get("description", "smali patch")
+    patch_type = proposed_patch.get("patch_type", "")
+    method = proposed_patch.get("method", "")
+    target_class = proposed_patch.get("target_class", "")
+
+    # Fast deterministic pre-check
+    deterministic_result = {
+        "safe": True,
+        "risk_level": "LOW",
+        "required_locals": 1,
+        "issues": [],
+        "autocorrected_patch": dict(proposed_patch),
+        "explanation": "Ön denetim doğrulandı.",
+    }
+
+    # Extract method signature line
+    sig_line = ""
+    for line in smali_method_code.splitlines():
+        if line.strip().startswith(".method"):
+            sig_line = line.strip()
+            break
+
+    # Determine expected return type
+    ret_type = "V"
+    if ")Z" in sig_line:
+        ret_type = "Z"
+    elif ")I" in sig_line:
+        ret_type = "I"
+    elif ")V" in sig_line:
+        ret_type = "V"
+    elif ")L" in sig_line:
+        ret_type = "L"
+
+    # Type mismatch detection
+    if patch_type in ["return_true", "return_false"] and ret_type == "V":
+        deterministic_result["safe"] = False
+        deterministic_result["risk_level"] = "HIGH"
+        deterministic_result["issues"].append("Tip Uyuşmazlığı: Metot void ()V döndürürken patch boolean ()Z bekliyor.")
+        deterministic_result["autocorrected_patch"]["patch_type"] = "return_void"
+        deterministic_result["explanation"] = "Metot void olduğu için return_void olarak düzeltildi."
+    elif patch_type == "return_void" and ret_type == "Z":
+        deterministic_result["safe"] = False
+        deterministic_result["risk_level"] = "HIGH"
+        deterministic_result["issues"].append("Tip Uyuşmazlığı: Metot boolean ()Z döndürürken patch return_void yapmaya çalışıyor.")
+        deterministic_result["autocorrected_patch"]["patch_type"] = "return_false"
+        deterministic_result["explanation"] = "Metot boolean beklediği için return_false olarak düzeltildi."
+
+    # If AI is available, run deep LLM pre-flight audit with FCC-Claude
+    if is_ai_available():
+        prompt = f"""PrimeForge Smali Pre-Flight Hata Önleme ve Derleme Doğrulaması.
+APK Paketi: {package_name or 'Bilinmiyor'}
+Hedef Sınıf: {target_class}
+Yama Tanımı: {json.dumps(proposed_patch, indent=2)}
+
+Hedef Smali Metot Kodu:
+```smali
+{smali_method_code[:2500]}
+```
+
+GÖREV:
+Bu yamayı doğrudan bu metoda uyguladığımızda:
+1. Apktool yeniden derlerken syntax/bytecode hatası verir mi?
+2. .locals veya register sayısı yetersizliği (VerifyError) oluşur mu?
+3. Dönüş tipi ()Z, ()V, ()I veya ()L nesnesi ile yama uyuşuyor mu?
+4. Kod içerisinde unhandled NullPointerException veya bozuk goto etiketi riski var mı?
+
+Aşağıdaki JSON formatında yanıt ver:
+```json
+{{
+  "safe": true,
+  "risk_level": "LOW | MEDIUM | HIGH",
+  "required_locals": 1,
+  "issues": ["Tespit edilen riskler"],
+  "autocorrected_patch": {{
+    "patch_type": "return_true | return_false | return_void | empty_list | vb",
+    "method": "{method}",
+    "locals_count": 1
+  }},
+  "explanation": "Detaylı Türkçe teknik gerekçe ve öneri"
+}}
+```
+"""
+        try:
+            res = ask_ai(prompt, max_tokens=600, temp=0.1)
+            parsed = _extract_yaml_or_json(res)
+            if isinstance(parsed, dict) and "safe" in parsed:
+                return parsed
+        except Exception as e:
+            print(f"⚠️ AI pre-flight call note: {e}")
+
+    return deterministic_result
+
+
+def ai_self_heal_patch(error_log: str, smali_context: str, failed_patch: dict, package_name: str = "") -> dict:
+    """Analyze build or emulator test crash and synthesize self-healing patch via FCC-Claude."""
+    default_heal = {
+        "healed": False,
+        "action": "skip_patch",
+        "revised_patch": failed_patch,
+        "explanation": "Otomatik onarım yapılamadı.",
+    }
+
+    if not is_ai_available():
+        return default_heal
+
+    target_cls = failed_patch.get("target_class", "")
+    target_m = failed_patch.get("method", "")
+
+    prompt = f"""PrimeForge Smali Self-Healing (Kendi Kendini Onaran) Hata Analizcisi.
+Uygulama Paketi: {package_name or 'Bilinmiyor'}
+Hata Logu / Çökme Raporu:
+```
+{error_log[-2000:]}
+```
+
+Hatalı veya Çöken Yama Tanımı:
+{json.dumps(failed_patch, indent=2)}
+
+İlgili Smali Kodu (Varsa):
+```smali
+{smali_context[:2500]}
+```
+
+GÖREV:
+Bu çökmenin kök nedenini (örneğin register yetersizliği, VerifyError, bad return opcode, unhandled NPE veya kopuk kontrol akışı) analiz et.
+Hatanın giderilmesi için düzeltilmiş yama tanımını aşağıdaki JSON formatında döndür:
+```json
+{{
+  "healed": true,
+  "action": "apply_revised_patch | replace_method | skip_patch",
+  "root_cause": "Hatanın teknik açıklaması",
+  "revised_patch": {{
+    "description": "Onarılmış yama",
+    "target_class": "{target_cls}",
+    "method": "{target_m}",
+    "patch_type": "return_true | return_false | return_void | empty_list",
+    "locals_count": 1
+  }},
+  "explanation": "Türkçe teknik gerekçe"
+}}
+```
+"""
+    try:
+        res = ask_ai(prompt, max_tokens=700, temp=0.1)
+        parsed = _extract_yaml_or_json(res)
+        if isinstance(parsed, dict) and parsed.get("healed"):
+            return parsed
+    except Exception as e:
+        print(f"⚠️ Self-healing AI call error: {e}")
+
+    return default_heal
+
+
+

@@ -1,6 +1,8 @@
 import './globals.css';
 import Link from 'next/link';
-import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal } from 'lucide-react';
+import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal, RefreshCw } from 'lucide-react';
+
+import AiCopilotSidebar from '@/app/components/AiCopilotSidebar';
 
 export const metadata = {
   title: 'PrimeForge – APK Modlama & Test Pipeline',
@@ -39,6 +41,13 @@ export default function RootLayout({
                 >
                   <Activity className="w-4 h-4 text-blue-400" />
                   Dashboard
+                </Link>
+                <Link
+                  href="/updates"
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-amber-300 hover:text-white hover:bg-amber-500/10 border border-amber-500/20 transition-all flex items-center gap-2 rounded-xl"
+                >
+                  <RefreshCw className="w-4 h-4 text-amber-400" />
+                  Güncellemeler
                 </Link>
                 <Link
                   href="/console"
@@ -106,6 +115,9 @@ export default function RootLayout({
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {children}
         </main>
+
+        {/* Persistent Right-Docked AI Copilot (FCC-Claude) */}
+        <AiCopilotSidebar />
       </body>
     </html>
   );

@@ -156,3 +156,76 @@ def sanitize_native_libraries(decompiled_dir: str, profile: dict) -> list:
         print(f"🛡️ Native libraries sanitized: {len(changes)} files removed for VirusTotal cleanliness")
     return changes
 
+
+def inject_tv_dpad_support(decompiled_dir: str, profile: dict = None) -> dict:
+    """Make mobile apps Android TV & DPAD remote control compatible.
+    
+    1. Injects Leanback & touchscreen=false features to AndroidManifest.xml
+    2. Injects LEANBACK_LAUNCHER category so the app appears on Android TV Home
+    3. Scans layout XMLs to ensure clickable buttons have android:focusable="true"
+    """
+    manifest_path = os.path.join(decompiled_dir, "AndroidManifest.xml")
+    if not os.path.exists(manifest_path):
+        return {"error": "AndroidManifest.xml not found"}
+
+    changes = []
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    original = content
+
+    # 1. Add leanback & touchscreen features
+    if 'android.software.leanback' not in content:
+        feature_block = (
+            '\n    <uses-feature android:name="android.software.leanback" android:required="false" />\n'
+            '    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />\n'
+        )
+        content = content.replace("</manifest>", f"{feature_block}</manifest>")
+        changes.append("Injected leanback & touchscreen=false features")
+
+    # 2. Add LEANBACK_LAUNCHER to MAIN activity
+    if "android.intent.category.LEANBACK_LAUNCHER" not in content:
+        # Find intent-filter with android.intent.action.MAIN
+        pattern = r'(<intent-filter[^>]*>.*?<action[^>]*android:name="android\.intent\.action\.MAIN"[^>]*>.*?</intent-filter>)'
+        match = re.search(pattern, content, flags=re.DOTALL)
+        if match:
+            filter_block = match.group(1)
+            leanback_cat = '    <category android:name="android.intent.category.LEANBACK_LAUNCHER" />\n    '
+            # Insert before </intent-filter>
+            new_filter = filter_block.replace("</intent-filter>", f"{leanback_cat}</intent-filter>")
+            content = content.replace(filter_block, new_filter, 1)
+            changes.append("Injected LEANBACK_LAUNCHER category to MainActivity")
+
+    if content != original:
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            f.write(content)
+
+    # 3. Scan layout files and enforce focusable="true" on clickable views
+    layout_dirs = [d for d in os.listdir(decompiled_dir) if d.startswith("res") and os.path.isdir(os.path.join(decompiled_dir, d))]
+    dpad_fixed_views = 0
+    for rdir in layout_dirs:
+        res_path = os.path.join(decompiled_dir, rdir)
+        for root, dirs, files in os.walk(res_path):
+            if "layout" in root:
+                for fname in files:
+                    if fname.endswith(".xml"):
+                        lpath = os.path.join(root, fname)
+                        try:
+                            with open(lpath, "r", encoding="utf-8") as lf:
+                                lcontent = lf.read()
+                            # If clickable is true but focusable missing, add focusable="true"
+                            if 'android:clickable="true"' in lcontent and 'android:focusable' not in lcontent:
+                                lcontent = lcontent.replace('android:clickable="true"', 'android:clickable="true" android:focusable="true"')
+                                with open(lpath, "w", encoding="utf-8") as lf:
+                                    lf.write(lcontent)
+                                dpad_fixed_views += 1
+                        except Exception:
+                            pass
+
+    if dpad_fixed_views > 0:
+        changes.append(f"Enforced DPAD focusable on {dpad_fixed_views} clickable layout elements")
+
+    print(f"📺 Android TV DPAD Enjektörü: {len(changes)} iyileştirme uygulandı.")
+    return {"changes": changes, "total": len(changes)}
+
+

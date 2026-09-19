@@ -207,6 +207,32 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
             results.append({"description": desc, "status": "not_found", "class": target_class})
             continue
 
+        # Pre-Flight Smali Audit (FCC-Claude + Deterministic Type/Locals Safety)
+        active_patch_def = dict(patch_def)
+        try:
+            from engine.ai_advisor import ai_preflight_smali_audit
+            method_snippet = ""
+            for sp in found_files:
+                try:
+                    with open(sp, "r", encoding="utf-8") as f_peek:
+                        c_peek = f_peek.read()
+                        target_m = active_patch_def.get("method")
+                        if target_m and target_m in c_peek:
+                            m_match = re.search(rf'(\.method\s+[^\n]*\b{re.escape(target_m)}\b[^\n]*\n.*?\.end method)', c_peek, flags=re.DOTALL)
+                            if m_match:
+                                method_snippet = m_match.group(1)
+                                break
+                except Exception:
+                    pass
+
+            if method_snippet:
+                audit_res = ai_preflight_smali_audit(method_snippet, active_patch_def, package_name=profile.get("package_name", ""))
+                if audit_res.get("safe") is False and audit_res.get("autocorrected_patch"):
+                    print(f"  🛡️ [Pre-Flight Smali] Risk tespit edildi: {audit_res.get('issues')}. Düzeltme uygulandı: {audit_res['autocorrected_patch']}")
+                    active_patch_def.update(audit_res["autocorrected_patch"])
+        except Exception as e:
+            pass
+
         for smali_path in found_files:
             with open(smali_path, "r", encoding="utf-8") as f:
                 content = f.read()
@@ -214,8 +240,8 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
             original = content
             patch_count = 0
 
-            patch_type = patch_def.get("patch_type", "")
-            method = patch_def.get("method", "")
+            patch_type = active_patch_def.get("patch_type", "")
+            method = active_patch_def.get("method", "")
 
             if patch_type == "return_true" and method:
                 content, c = patch_method_return_true(content, method)
@@ -242,36 +268,36 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
                 content, c = patch_integer_return(content, method, 1)
                 patch_count += c
             elif patch_type in ["integer_return", "integer_value"] and method:
-                val = patch_def.get("value", 0)
+                val = active_patch_def.get("value", 0)
                 content, c = patch_integer_return(content, method, int(val))
                 patch_count += c
             elif patch_type in ["return_integer_object", "integer_object"] and method:
-                val = patch_def.get("value", 1)
+                val = active_patch_def.get("value", 1)
                 content, c = patch_method_return_integer_object(content, method, int(val))
                 patch_count += c
             elif patch_type in ["return_string", "string_return"] and method:
-                val = patch_def.get("value", "")
+                val = active_patch_def.get("value", "")
                 content, c = patch_method_return_string(content, method, str(val))
                 patch_count += c
 
-            for m in patch_def.get("methods_return_false", []):
+            for m in active_patch_def.get("methods_return_false", []):
                 content, c = patch_method_return_false(content, m)
                 patch_count += c
 
-            for m in patch_def.get("methods_return_void", []):
+            for m in active_patch_def.get("methods_return_void", []):
                 content, c = patch_method_return_void(content, m)
                 patch_count += c
 
-            for getter in patch_def.get("boolean_getters_to_false", []):
+            for getter in active_patch_def.get("boolean_getters_to_false", []):
                 content, c = patch_method_return_false(content, getter)
                 patch_count += c
 
-            for method_name, value in patch_def.get("integer_overrides", {}).items():
+            for method_name, value in active_patch_def.get("integer_overrides", {}).items():
                 content, c = patch_integer_return(content, method_name, value)
                 patch_count += c
 
             # Raw string replacements
-            for item in patch_def.get("raw_replacements", []):
+            for item in active_patch_def.get("raw_replacements", []):
                 s = item.get("search", "")
                 r = item.get("replace", "")
                 if s and s in content:
@@ -279,7 +305,7 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
                     patch_count += 1
 
             # Regex replacements
-            for item in patch_def.get("regex_replacements", []):
+            for item in active_patch_def.get("regex_replacements", []):
                 p = item.get("pattern", "")
                 r = item.get("replace", "")
                 if p:
@@ -287,12 +313,12 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
                     patch_count += c
 
             # AI Fallback 2: If no matches and AI available, try suggesting patch fix
-            if content == original and patch_def.get("method"):
+            if content == original and active_patch_def.get("method"):
                 try:
                     from engine.ai_advisor import is_ai_available, ai_suggest_patch_fix
                     if is_ai_available():
                         print(f"🤖 '{desc}' 0 eşleşme verdi. AI alternatif yama arıyor...")
-                        fix = ai_suggest_patch_fix(content, patch_def)
+                        fix = ai_suggest_patch_fix(content, active_patch_def)
                         if fix:
                             alt_method = fix.get("alternative_method")
                             rec_type = fix.get("recommended_patch_type")
@@ -333,3 +359,54 @@ def apply_profile_patches(decompiled_dir: str, profile: dict) -> dict:
     applied = sum(1 for r in results if r["status"] == "applied")
     print(f"\n🔧 Patching complete: {applied}/{len(results)} patches applied")
     return {"results": results, "applied": applied, "total": len(results)}
+
+
+def inject_universal_ad_blocker_hook(decompiled_dir: str) -> dict:
+    """Universal Ad-Blocker Smali Interceptor.
+    
+    Instead of deleting classes (which triggers ClassNotFoundException crashes),
+    this hook targets known Ad SDK entrypoints (initialize, loadAd, showAd) and
+    neutralizes them to immediately return void or false.
+    Zero crashes, zero ad network network activity.
+    """
+    targets = [
+        ("com.google.android.gms.ads.MobileAds", "initialize", "void"),
+        ("com.unity3d.ads.UnityAds", "initialize", "void"),
+        ("com.unity3d.services.ads.UnityAds", "initialize", "void"),
+        ("com.applovin.sdk.AppLovinSdk", "initializeSdk", "void"),
+        ("com.ironsource.mediationsdk.IronSource", "init", "void"),
+        ("com.vungle.warren.Vungle", "init", "void"),
+        ("com.bytedance.sdk.openadsdk.TTAdSdk", "init", "void"),
+        ("com.mbridge.msdk.MBridgeSDK", "init", "void"),
+        ("com.chartboost.sdk.Chartboost", "startWithAppId", "void"),
+        ("com.inmobi.sdk.InMobiSdk", "init", "void"),
+    ]
+
+    intercepted = 0
+    details = []
+
+    for class_name, method_name, ret_type in targets:
+        files = find_smali_class(decompiled_dir, class_name)
+        for fpath in files:
+            try:
+                with open(fpath, "r", encoding="utf-8") as f:
+                    content = f.read()
+
+                orig = content
+                if ret_type == "void":
+                    content, c = patch_method_return_void(content, method_name)
+                else:
+                    content, c = patch_method_return_false(content, method_name)
+
+                if c > 0 and content != orig:
+                    with open(fpath, "w", encoding="utf-8") as f:
+                        f.write(content)
+                    intercepted += c
+                    details.append(f"{class_name}->{method_name} ({c} methods neutralized)")
+                    print(f"  🛡️ [Universal Ad-Blocker] {class_name}->{method_name} etkisizleştirildi.")
+            except Exception as e:
+                print(f"⚠️ Ad blocker hook error for {class_name}: {e}")
+
+    print(f"🛡️ Evrensel Ağ Reklam Engelleyici: {intercepted} reklam SDK metodu başarıyla nötralize edildi.")
+    return {"intercepted_count": intercepted, "details": details}
+
