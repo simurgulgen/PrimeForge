@@ -68,6 +68,9 @@ export default function PipelineActivityDrawer() {
       if (e.detail?.jobId) {
         setSelectedJobId(e.detail.jobId);
         setIsOpen(true);
+        // Reset old logs and runInfo from previous runs so old errors are not displayed
+        setLogs('');
+        setRunInfo(null);
         fetchJobsAndDetails(e.detail.jobId);
       }
     };
@@ -202,11 +205,12 @@ export default function PipelineActivityDrawer() {
           s.name.toLowerCase().includes(stepNameKeyword.toLowerCase())
         );
         if (!found) return 'pending';
+        if (found.conclusion === 'skipped') return 'skipped';
+        if (found.conclusion === 'cancelled') return 'pending';
         if (found.status === 'in_progress') return 'in_progress';
         if (found.status === 'completed') {
           return found.conclusion === 'success' ? 'completed' : 'failed';
         }
-        if (found.conclusion === 'skipped') return 'skipped';
         return 'pending';
       };
 
@@ -503,6 +507,7 @@ export default function PipelineActivityDrawer() {
                       const isDone = step.status === 'completed';
                       const isWorking = step.status === 'in_progress';
                       const isError = step.status === 'failed';
+                      const isSkipped = step.status === 'skipped';
 
                       return (
                         <div
@@ -514,6 +519,8 @@ export default function PipelineActivityDrawer() {
                               ? 'bg-cyan-950/30 border-cyan-500/40 text-cyan-100 shadow-lg shadow-cyan-500/10'
                               : isError
                               ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                              : isSkipped
+                              ? 'bg-slate-950/20 border-white/5 text-slate-500 opacity-60'
                               : 'bg-slate-950/30 border-white/5 text-slate-400'
                           }`}
                         >
@@ -525,6 +532,10 @@ export default function PipelineActivityDrawer() {
                               <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
                             ) : isError ? (
                               <XCircle className="w-4 h-4 text-rose-400" />
+                            ) : isSkipped ? (
+                              <div className="w-4 h-4 rounded-full border border-dashed border-slate-600 flex items-center justify-center text-[9px] font-mono text-slate-500">
+                                -
+                              </div>
                             ) : (
                               <div className="w-4 h-4 rounded-full border border-slate-700 flex items-center justify-center text-[9px] font-mono text-slate-500">
                                 {step.number}
@@ -543,6 +554,8 @@ export default function PipelineActivityDrawer() {
                                     ? 'text-cyan-300 font-bold'
                                     : isError
                                     ? 'text-rose-300 font-bold'
+                                    : isSkipped
+                                    ? 'text-slate-500 line-through'
                                     : 'text-slate-300'
                                 }`}
                               >
@@ -555,6 +568,8 @@ export default function PipelineActivityDrawer() {
                                   ? 'İşleniyor...'
                                   : isError
                                   ? 'Hata'
+                                  : isSkipped
+                                  ? 'Atlandı'
                                   : 'Sırada'}
                               </span>
                             </div>

@@ -113,7 +113,17 @@ jobs:
         run: |
           APK_URL="${{ github.event.client_payload.apk_url || inputs.apk_url }}"
           echo "Downloading APK from: $APK_URL"
-          curl -H "User-Agent: Mozilla/5.0" -L --retry 3 -o input.apk "$APK_URL"
+
+          EXTRA_OPTS=()
+          if [[ "$APK_URL" == *"liteapks"* ]]; then
+            echo "LiteAPKs download detected — adding Referer and browser headers..."
+            EXTRA_OPTS+=(-H "Referer: https://liteapks.com/")
+          fi
+
+          curl -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
+            "${EXTRA_OPTS[@]}" \
+            -L --retry 3 --max-time 180 -o input.apk "$APK_URL"
+
           ls -lh input.apk
           FILE_SIZE=$(wc -c < input.apk || echo 0)
           if [ "$FILE_SIZE" -lt 50000 ]; then
@@ -121,6 +131,15 @@ jobs:
             head -n 20 input.apk
             exit 1
           fi
+
+          # Security check: verify APK starts with valid ZIP magic bytes (PK)
+          MAGIC=$(head -c 2 input.apk)
+          if [ "$MAGIC" != "PK" ]; then
+            echo "❌ Security Error: Downloaded file is not a valid APK/ZIP archive (magic: $MAGIC). Might be an HTML redirect or adware page!"
+            head -n 20 input.apk
+            exit 1
+          fi
+          echo "✅ APK validation passed ($FILE_SIZE bytes, valid ZIP header)."
 
 
       - name: Run PrimeForge Engine
