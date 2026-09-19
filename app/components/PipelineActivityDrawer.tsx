@@ -303,7 +303,27 @@ export default function PipelineActivityDrawer() {
     (j) => j.status === 'in_progress' || j.status === 'running' || j.status === 'pending'
   ).length;
 
-  const failedJobsCount = jobs.filter((j) => j.status === 'failed').length;
+  const [clearing, setClearing] = useState(false);
+
+  const handleClearFailedJobs = async () => {
+    if (clearing) return;
+    setClearing(true);
+    try {
+      const res = await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'clear_failed' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        await fetchJobsAndDetails();
+      }
+    } catch (err) {
+      console.error('Failed to clear failed jobs:', err);
+    } finally {
+      setClearing(false);
+    }
+  };
 
   // Send failure message to AI Copilot
   const handleAskAIAboutFailure = (errorText: string) => {
@@ -324,16 +344,12 @@ export default function PipelineActivityDrawer() {
           className={`fixed left-4 bottom-6 z-40 px-4 py-2.5 rounded-full text-white text-xs font-semibold shadow-2xl transition-all flex items-center gap-2.5 border group hover:scale-105 ${
             activeJobsCount > 0
               ? 'bg-gradient-to-r from-cyan-600 via-teal-600 to-blue-600 border-cyan-400/40 shadow-cyan-500/30 animate-pulse'
-              : failedJobsCount > 0
-              ? 'bg-gradient-to-r from-rose-600 to-red-600 border-rose-400/40 shadow-rose-500/30'
               : 'bg-slate-900/90 hover:bg-slate-800 border-white/10 shadow-black/50 text-slate-200'
           }`}
           title="Canlı İşlem ve Pipeline Monitörünü Aç"
         >
           {activeJobsCount > 0 ? (
             <Loader2 className="w-4 h-4 text-cyan-200 animate-spin" />
-          ) : failedJobsCount > 0 ? (
-            <AlertTriangle className="w-4 h-4 text-amber-300" />
           ) : (
             <Activity className="w-4 h-4 text-cyan-400 group-hover:rotate-12 transition-transform" />
           )}
@@ -341,8 +357,6 @@ export default function PipelineActivityDrawer() {
           <span className="tracking-wide font-medium">
             {activeJobsCount > 0
               ? `⚡ Pipeline Çalışıyor (${activeJobsCount})`
-              : failedJobsCount > 0
-              ? `⚠️ ${failedJobsCount} Hata Var`
               : 'Canlı Pipeline Monitörü'}
           </span>
           <ChevronRight className="w-3.5 h-3.5 opacity-70" />
@@ -400,9 +414,21 @@ export default function PipelineActivityDrawer() {
           {jobs.length > 0 && (
             <div className="p-2.5 border-b border-white/5 bg-slate-950/40">
               <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1.5 px-1">
-                <span className="font-semibold uppercase tracking-wider text-[10px] text-slate-500">
-                  İşlemdeki Görevler ({jobs.length})
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold uppercase tracking-wider text-[10px] text-slate-500">
+                    İşlemdeki Görevler ({jobs.length})
+                  </span>
+                  {jobs.some((j) => j.status === 'failed') && (
+                    <button
+                      onClick={handleClearFailedJobs}
+                      disabled={clearing}
+                      className="text-[10px] text-rose-400 hover:text-rose-300 underline font-mono flex items-center gap-1 transition-colors"
+                      title="Geçmişteki hatalı görev kayıtlarını temizle"
+                    >
+                      {clearing ? 'Temizleniyor...' : '🧹 Eski Hataları Temizle'}
+                    </button>
+                  )}
+                </div>
                 <span className="text-[10px] text-cyan-400 font-mono">
                   {selectedJob?.runner_type === 'local' ? '🖥️ Yerel Runner' : '☁️ Cloud Runner'}
                 </span>

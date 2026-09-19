@@ -31,6 +31,23 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, jobId } = body;
 
+    // Clear old failed/cancelled jobs
+    if (action === 'clear_failed') {
+      const { error: delErr } = await supabase
+        .from('forge_jobs')
+        .delete()
+        .in('status', ['failed', 'cancelled']);
+
+      if (delErr) {
+        return NextResponse.json({ error: delErr.message }, { status: 500 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: 'Eski hatalı görev kayıtları temizlendi.',
+      });
+    }
+
     if (!jobId) {
       return NextResponse.json({ error: 'jobId parametresi zorunludur.' }, { status: 400 });
     }
