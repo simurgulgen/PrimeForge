@@ -26,6 +26,9 @@ import {
   Radio,
   Zap,
   Ban,
+  Bot,
+  Copy,
+  Loader2,
 } from 'lucide-react';
 import InteractiveModModal from '@/app/components/InteractiveModModal';
 
@@ -40,6 +43,50 @@ export default function JobsPage() {
   const [jobActionLoading, setJobActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ title: string; message: string; type?: 'success' | 'error' } | null>(null);
   const [customModApp, setCustomModApp] = useState<any | null>(null);
+
+  // AI Security Remediation for Jobs
+  const [aiJobFixLoading, setAiJobFixLoading] = useState<Record<string, boolean>>({});
+  const [aiJobFixResults, setAiJobFixResults] = useState<Record<string, any>>({});
+  const [copiedJobSnippet, setCopiedJobSnippet] = useState<string | null>(null);
+
+  const handleAskJobAiSecurityFix = async (engineName: string, findingDetails: any) => {
+    setAiJobFixLoading((prev) => ({ ...prev, [engineName]: true }));
+    try {
+      let localAiSettings = null;
+      try {
+        const stored = localStorage.getItem('primeforge_ai_settings');
+        if (stored) localAiSettings = JSON.parse(stored);
+      } catch (_) {}
+
+      const res = await fetch('/api/ai/security-audit-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engine: engineName,
+          finding: findingDetails,
+          package_name: selectedJob?.package_name,
+          app_name: selectedJob?.app_name || selectedJob?.package_name,
+          version_name: selectedJob?.version_name,
+          details: findingDetails,
+          ai_settings: localAiSettings,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.fix) {
+        setAiJobFixResults((prev) => ({ ...prev, [engineName]: data.fix }));
+      }
+    } catch (e: any) {
+      console.error('Job AI security fix error:', e);
+    } finally {
+      setAiJobFixLoading((prev) => ({ ...prev, [engineName]: false }));
+    }
+  };
+
+  const handleCopyJobDiff = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedJobSnippet(id);
+    setTimeout(() => setCopiedJobSnippet(null), 2500);
+  };
 
   const handleCancelJob = async (jobId: string) => {
     if (!confirm('Bu görevi iptal etmek istediğinize emin misiniz?')) return;
@@ -1143,6 +1190,18 @@ export default function JobsPage() {
                             <span>Önbellek Durumu:</span>
                             <span className="text-slate-200">{vt?.cached ? '⚡ Supabase Önbelleği' : '🌐 Canlı VT v3 Taraması'}</span>
                           </div>
+
+                          {vt?.malicious > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleAskJobAiSecurityFix('VirusTotal', vt)}
+                              disabled={aiJobFixLoading['VirusTotal']}
+                              className="mt-1 w-full text-[10px] font-semibold py-1.5 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 flex items-center justify-center gap-1 transition"
+                            >
+                              {aiJobFixLoading['VirusTotal'] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-rose-400" />}
+                              <span>{aiJobFixResults['VirusTotal'] ? 'Düzeltme Hazır' : 'AI ile Virüsü Temizle'}</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* 2. APKiD */}
@@ -1183,6 +1242,18 @@ export default function JobsPage() {
                           <div className="text-[11px] text-slate-400 truncate" title={apkid?.summary}>
                             Özet: <span className="text-slate-200">{apkid?.summary || 'Standart Android Derlemesi'}</span>
                           </div>
+
+                          {(apkid?.protector?.length > 0 || apkid?.anti_debug) && (
+                            <button
+                              type="button"
+                              onClick={() => handleAskJobAiSecurityFix('APKiD', apkid)}
+                              disabled={aiJobFixLoading['APKiD']}
+                              className="mt-1 w-full text-[10px] font-semibold py-1.5 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 flex items-center justify-center gap-1 transition"
+                            >
+                              {aiJobFixLoading['APKiD'] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-amber-400" />}
+                              <span>{aiJobFixResults['APKiD'] ? 'Düzeltme Hazır' : 'AI ile Korumayı Baypas Et'}</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* 3. Quark-Engine */}
@@ -1227,6 +1298,18 @@ export default function JobsPage() {
                           <div className="text-[11px] text-slate-400">
                             Durum: <span className="text-emerald-400">Kritik Android istismarı engellendi</span>
                           </div>
+
+                          {(quark?.threat_level !== 'Clean' || quark?.high_risk_crimes?.length > 0) && (
+                            <button
+                              type="button"
+                              onClick={() => handleAskJobAiSecurityFix('Quark-Engine', quark)}
+                              disabled={aiJobFixLoading['Quark-Engine']}
+                              className="mt-1 w-full text-[10px] font-semibold py-1.5 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 flex items-center justify-center gap-1 transition"
+                            >
+                              {aiJobFixLoading['Quark-Engine'] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-rose-400" />}
+                              <span>{aiJobFixResults['Quark-Engine'] ? 'Smali Diff Hazır' : 'AI ile Decompile Smali Düzelt'}</span>
+                            </button>
+                          )}
                         </div>
 
                         {/* 4. ClamAV */}
@@ -1263,8 +1346,107 @@ export default function JobsPage() {
                           <div className="text-[11px] text-slate-400">
                             Tarayıcı: <span className="text-slate-200">Arşiv ve bayt imzası onaylandı</span>
                           </div>
+
+                          {clam?.status !== 'clean' && (
+                            <button
+                              type="button"
+                              onClick={() => handleAskJobAiSecurityFix('ClamAV', clam)}
+                              disabled={aiJobFixLoading['ClamAV']}
+                              className="mt-1 w-full text-[10px] font-semibold py-1.5 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 flex items-center justify-center gap-1 transition"
+                            >
+                              {aiJobFixLoading['ClamAV'] ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-rose-400" />}
+                              <span>{aiJobFixResults['ClamAV'] ? 'Düzeltme Hazır' : 'AI ile Betiği Temizle'}</span>
+                            </button>
+                          )}
                         </div>
                       </div>
+
+                      {/* AI Security Remediation Results for Jobs */}
+                      {Object.keys(aiJobFixResults).length > 0 && (
+                        <div className="space-y-3 pt-3 border-t border-purple-500/20">
+                          {Object.entries(aiJobFixResults).map(([eng, fix]: [string, any]) => (
+                            <div
+                              key={eng}
+                              className="p-4 rounded-xl bg-gradient-to-br from-purple-950/70 via-slate-950/90 to-slate-900 border border-purple-500/30 text-xs space-y-2.5 shadow-lg"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                  <Bot className="w-4 h-4 text-purple-400" />
+                                  <span className="font-bold text-white text-xs">
+                                    FCC-Claude Decompile Düzeltme Planı ({eng})
+                                  </span>
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                                    {fix.threat_severity || 'HIGH'}
+                                  </span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                                    Çökme Riski: {fix.verify_error_risk || 'SIFIR'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCopyJobDiff(fix.smali_diff || fix.manifest_fix || '', eng)}
+                                    className="text-[10px] px-2.5 py-1 rounded bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 transition"
+                                  >
+                                    <Copy className="w-3 h-3 text-purple-300" />
+                                    <span>{copiedJobSnippet === eng ? 'Kopyalandı!' : "Diff'i Kopyala"}</span>
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="text-[11px] text-slate-300 leading-relaxed">
+                                <strong className="text-purple-300">Teşhis & Kök Neden:</strong> {fix.root_cause}
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-4 text-[11px] bg-black/50 p-2 rounded-lg border border-white/5 font-mono">
+                                <div>
+                                  <span className="text-slate-500">Hedef Dosya:</span>{' '}
+                                  <span className="text-emerald-300 font-semibold">{fix.target_file}</span>
+                                </div>
+                                <div>
+                                  <span className="text-slate-500">Satır / Metot:</span>{' '}
+                                  <span className="text-amber-300">{fix.target_method} ({fix.approx_line})</span>
+                                </div>
+                              </div>
+
+                              <div className="text-[11px] text-slate-300 leading-relaxed">
+                                <strong className="text-emerald-300">Güvenli Düzeltme Stratejisi:</strong> {fix.safe_remediation_strategy}
+                              </div>
+
+                              {fix.smali_diff && (
+                                <div className="relative rounded-lg bg-black/80 border border-white/10 p-2.5 overflow-x-auto font-mono text-[10px] leading-relaxed max-h-52">
+                                  <pre>
+                                    {fix.smali_diff.split('\n').map((line: string, idx: number) => {
+                                      const isAdd = line.startsWith('+');
+                                      const isDel = line.startsWith('-');
+                                      return (
+                                        <div
+                                          key={idx}
+                                          className={`${
+                                            isAdd
+                                              ? 'text-emerald-400 bg-emerald-500/10 font-bold'
+                                              : isDel
+                                                ? 'text-rose-400 bg-rose-500/10'
+                                                : 'text-slate-400'
+                                          }`}
+                                        >
+                                          {line}
+                                        </div>
+                                      );
+                                    })}
+                                  </pre>
+                                </div>
+                              )}
+
+                              {fix.verification_tip && (
+                                <div className="text-[10px] text-slate-400 italic">
+                                  💡 İpucu: {fix.verification_tip}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   );
                 }

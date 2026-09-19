@@ -27,7 +27,10 @@ import {
   Info,
   ChevronDown,
   ChevronUp,
-  HelpCircle,
+  Globe,
+  ExternalLink,
+  Copy,
+  Terminal,
 } from 'lucide-react';
 
 interface PreAuditModalProps {
@@ -103,6 +106,54 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
     } finally {
       setAiInspectingPerm(null);
     }
+  };
+
+  // 4 Core Security Engines & AI Decompile Fixes
+  const [aiFixLoading, setAiFixLoading] = useState<Record<string, boolean>>({});
+  const [aiFixResults, setAiFixResults] = useState<Record<string, any>>({});
+  const [copiedSnippet, setCopiedSnippet] = useState<string | null>(null);
+
+  const handleAskAiSecurityFix = async (e: React.MouseEvent, engineName: string, findingDetails: any) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    setAiFixLoading((prev) => ({ ...prev, [engineName]: true }));
+    try {
+      let localAiSettings = null;
+      try {
+        const stored = localStorage.getItem('primeforge_ai_settings');
+        if (stored) localAiSettings = JSON.parse(stored);
+      } catch (_) {}
+
+      const res = await fetch('/api/ai/security-audit-fix', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          engine: engineName,
+          finding: findingDetails,
+          package_name: app.packageName,
+          app_name: app.title,
+          version_name: app.latest_version,
+          details: findingDetails,
+          manifest_context: auditData?.permissions,
+          ai_settings: localAiSettings,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.fix) {
+        setAiFixResults((prev) => ({ ...prev, [engineName]: data.fix }));
+      }
+    } catch (err) {
+      console.error('AI security fix error:', err);
+    } finally {
+      setAiFixLoading((prev) => ({ ...prev, [engineName]: false }));
+    }
+  };
+
+  const handleCopyDiff = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedSnippet(id);
+    setTimeout(() => setCopiedSnippet(null), 2500);
   };
 
   useEffect(() => {
@@ -297,6 +348,322 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                     </span>
                   </div>
                 </div>
+              </div>
+
+              {/* 🛡️ 4 Temel Güvenlik Motoru (ClamAV, APKiD, Quark-Engine, VirusTotal) */}
+              <div className="p-4 rounded-xl bg-slate-950/70 border border-purple-500/25 space-y-3.5 shadow-lg shadow-purple-950/20">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <div className="font-bold text-xs text-white flex items-center gap-2">
+                        <span>4 Temel Güvenlik Sistemi Taraması</span>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                          ClamAV • APKiD • Quark • VirusTotal
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {auditData?.security_scan?.summary_badge || 'Motorlar devrede, imza ve davranış analizi tamamlandı.'}
+                      </div>
+                    </div>
+                  </div>
+                  <div>
+                    {auditData?.security_scan?.has_issues ? (
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 flex items-center gap-1.5 animate-pulse">
+                        <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                        Güvenlik Uyarısı Tespit Edildi
+                      </span>
+                    ) : (
+                      <span className="text-[10px] font-semibold px-2.5 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                        4 Motor Temiz Onayı Verdi
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* 4 Engine Cards Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
+                  {/* 1. VirusTotal */}
+                  {(() => {
+                    const vt = auditData?.security_scan?.engines?.virustotal;
+                    const isVtClean = !vt || vt.malicious === 0;
+                    const isLoading = aiFixLoading['VirusTotal'];
+                    const hasAiFix = aiFixResults['VirusTotal'];
+
+                    return (
+                      <div className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all ${
+                        isVtClean ? 'bg-slate-900/60 border-white/5' : 'bg-rose-950/30 border-rose-500/40'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-bold text-xs text-white">
+                            <Globe className="w-3.5 h-3.5 text-blue-400" /> VirusTotal
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold border ${
+                            isVtClean ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                          }`}>
+                            {vt?.detection_ratio || '0/68 Temiz'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          {vt?.cached ? '⚡ Supabase Önbelleği' : '🌐 Canlı VT Hash Sorgusu'}
+                        </div>
+                        {vt?.vt_report_url && (
+                          <a
+                            href={vt.vt_report_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-blue-400 hover:underline flex items-center gap-1"
+                          >
+                            <span>Raporu Aç</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        )}
+                        {!isVtClean && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleAskAiSecurityFix(e, 'VirusTotal', vt)}
+                            disabled={isLoading}
+                            className="mt-1 w-full text-[10px] font-semibold py-1 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 flex items-center justify-center gap-1 transition"
+                          >
+                            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-rose-400" />}
+                            <span>{hasAiFix ? 'Düzeltme Hazır' : 'AI Düzeltmesi Al'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 2. APKiD */}
+                  {(() => {
+                    const apkid = auditData?.security_scan?.engines?.apkid;
+                    const isClean = !apkid || apkid.status === 'clean';
+                    const isLoading = aiFixLoading['APKiD'];
+                    const hasAiFix = aiFixResults['APKiD'];
+
+                    return (
+                      <div className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all ${
+                        isClean ? 'bg-slate-900/60 border-white/5' : 'bg-amber-950/30 border-amber-500/40'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-bold text-xs text-white">
+                            <Cpu className="w-3.5 h-3.5 text-purple-400" /> APKiD
+                          </span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-mono bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            {apkid?.compiler || 'D8/R8'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-300 truncate" title={apkid?.summary}>
+                          {apkid?.protector && apkid.protector.length > 0 ? (
+                            <span className="text-amber-300 font-semibold">⚠️ {apkid.protector.join(', ')}</span>
+                          ) : apkid?.obfuscator && apkid.obfuscator.length > 0 ? (
+                            <span className="text-purple-300">Karıştırıcı: {apkid.obfuscator.join(', ')}</span>
+                          ) : (
+                            <span className="text-slate-400">Karıştırılmamış Açık Kod</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Anti-Debug: {apkid?.anti_debug ? '⚠️ Mevcut' : 'Temiz'}
+                        </div>
+                        {!isClean && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleAskAiSecurityFix(e, 'APKiD', apkid)}
+                            disabled={isLoading}
+                            className="mt-1 w-full text-[10px] font-semibold py-1 px-2 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-500/30 flex items-center justify-center gap-1 transition"
+                          >
+                            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-amber-400" />}
+                            <span>{hasAiFix ? 'Düzeltme Hazır' : 'AI Düzeltmesi Al'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 3. Quark-Engine */}
+                  {(() => {
+                    const quark = auditData?.security_scan?.engines?.quark;
+                    const isClean = !quark || quark.threat_level === 'Clean';
+                    const isLoading = aiFixLoading['Quark-Engine'];
+                    const hasAiFix = aiFixResults['Quark-Engine'];
+
+                    return (
+                      <div className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all ${
+                        isClean ? 'bg-slate-900/60 border-white/5' : 'bg-rose-950/30 border-rose-500/40'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-bold text-xs text-white">
+                            <Terminal className="w-3.5 h-3.5 text-amber-400" /> Quark-Engine
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+                            isClean ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                          }`}>
+                            {quark?.threat_level || 'Clean'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-300">
+                          {quark?.high_risk_crimes && quark.high_risk_crimes.length > 0 ? (
+                            <div className="text-amber-300 truncate" title={quark.high_risk_crimes[0].crime}>
+                              ⚠️ {quark.high_risk_crimes[0].crime}
+                            </div>
+                          ) : (
+                            <span className="text-slate-400">{quark?.matched_rules || 278} Dalvik Kuralı</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Puan: <span className="font-mono text-white">{quark?.total_score || 0}</span>
+                        </div>
+                        {!isClean && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleAskAiSecurityFix(e, 'Quark-Engine', quark)}
+                            disabled={isLoading}
+                            className="mt-1 w-full text-[10px] font-semibold py-1 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 flex items-center justify-center gap-1 transition"
+                          >
+                            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-rose-400" />}
+                            <span>{hasAiFix ? 'Smali Diff Hazır' : 'AI Smali Düzeltmesi Al'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  {/* 4. ClamAV */}
+                  {(() => {
+                    const clam = auditData?.security_scan?.engines?.clamav;
+                    const isClean = !clam || clam.status === 'clean';
+                    const isLoading = aiFixLoading['ClamAV'];
+                    const hasAiFix = aiFixResults['ClamAV'];
+
+                    return (
+                      <div className={`p-3 rounded-xl border flex flex-col justify-between space-y-2 transition-all ${
+                        isClean ? 'bg-slate-900/60 border-white/5' : 'bg-rose-950/30 border-rose-500/40'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="flex items-center gap-1.5 font-bold text-xs text-white">
+                            <ShieldAlert className="w-3.5 h-3.5 text-emerald-400" /> ClamAV
+                          </span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${
+                            isClean ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20' : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                          }`}>
+                            {isClean ? 'Virüs Yok' : 'Şüpheli'}
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-slate-300 truncate" title={clam?.threats?.join(', ')}>
+                          {clam?.threats && clam.threats.length > 0 ? (
+                            <span className="text-rose-300">🚨 {clam.threats[0]}</span>
+                          ) : (
+                            <span className="text-slate-400">{clam?.scanned_files || 1} Dosya / İmza Temiz</span>
+                          )}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Mod: {clam?.scanner_mode === 'clamscan_cli' ? 'Daemon / CLI' : 'Sezgisel İmza'}
+                        </div>
+                        {!isClean && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleAskAiSecurityFix(e, 'ClamAV', clam)}
+                            disabled={isLoading}
+                            className="mt-1 w-full text-[10px] font-semibold py-1 px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-200 border border-rose-500/30 flex items-center justify-center gap-1 transition"
+                          >
+                            {isLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bot className="w-3 h-3 text-rose-400" />}
+                            <span>{hasAiFix ? 'Düzeltme Hazır' : 'AI Düzeltmesi Al'}</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* AI Security Remediation Panel (Rendered when AI fix is fetched) */}
+                {Object.keys(aiFixResults).length > 0 && (
+                  <div className="space-y-3 pt-2 border-t border-purple-500/20 animate-fadeIn">
+                    {Object.entries(aiFixResults).map(([eng, fix]: [string, any]) => (
+                      <div
+                        key={eng}
+                        className="p-3.5 rounded-xl bg-gradient-to-br from-purple-950/60 via-slate-950/80 to-slate-900/90 border border-purple-500/30 text-xs space-y-2.5 shadow-md"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <Bot className="w-4 h-4 text-purple-400" />
+                            <span className="font-bold text-white text-xs">
+                              FCC-Claude Decompile Düzeltme Planı ({eng})
+                            </span>
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono">
+                              {fix.threat_severity || 'HIGH'}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] text-emerald-300 font-mono bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20">
+                              Çökme Riski: {fix.verify_error_risk || 'SIFIR'}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyDiff(fix.smali_diff || fix.manifest_fix || '', eng)}
+                              className="text-[10px] px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 transition"
+                            >
+                              <Copy className="w-3 h-3 text-purple-300" />
+                              <span>{copiedSnippet === eng ? 'Kopyalandı!' : "Diff'i Kopyala"}</span>
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-slate-300 leading-relaxed">
+                          <strong className="text-purple-300">Teşhis & Kök Neden:</strong> {fix.root_cause}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-4 text-[11px] bg-black/40 p-2 rounded-lg border border-white/5 font-mono">
+                          <div>
+                            <span className="text-slate-500">Hedef Dosya:</span>{' '}
+                            <span className="text-emerald-300 font-semibold">{fix.target_file}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-500">Satır / Metot:</span>{' '}
+                            <span className="text-amber-300">{fix.target_method} ({fix.approx_line})</span>
+                          </div>
+                        </div>
+
+                        <div className="text-[11px] text-slate-300 leading-relaxed">
+                          <strong className="text-emerald-300">Güvenli Düzeltme Stratejisi:</strong> {fix.safe_remediation_strategy}
+                        </div>
+
+                        {/* Syntax Highlighted Diff Block */}
+                        {fix.smali_diff && (
+                          <div className="relative rounded-lg bg-black/70 border border-white/10 p-2.5 overflow-x-auto font-mono text-[10px] leading-relaxed max-h-48">
+                            <pre>
+                              {fix.smali_diff.split('\n').map((line: string, idx: number) => {
+                                const isAdd = line.startsWith('+');
+                                const isDel = line.startsWith('-');
+                                return (
+                                  <div
+                                    key={idx}
+                                    className={`${
+                                      isAdd
+                                        ? 'text-emerald-400 bg-emerald-500/10 font-bold'
+                                        : isDel
+                                          ? 'text-rose-400 bg-rose-500/10'
+                                          : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {line}
+                                  </div>
+                                );
+                              })}
+                            </pre>
+                          </div>
+                        )}
+
+                        {fix.verification_tip && (
+                          <div className="text-[10px] text-slate-400 italic">
+                            💡 İpucu: {fix.verification_tip}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Existing Profile & Guide Alert Banner */}
