@@ -109,6 +109,19 @@ export async function POST(req: Request) {
                 },
               }),
             });
+
+            // Update job state in Supabase so frontend immediately reflects active execution
+            await supabase
+              .from('forge_jobs')
+              .update({
+                status: 'pending',
+                action,
+                error_message: null,
+                github_run_id: null,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', jobId);
+
             await answerCallbackQuery(cb.id, 'İşlem tetiklendi!');
             await sendTelegramMessage(chatId, `⚡ GitHub Actions başlatıldı: <b>${action}</b>`);
           }

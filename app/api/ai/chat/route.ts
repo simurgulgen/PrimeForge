@@ -40,7 +40,38 @@ function isRestartCommand(text: string): boolean {
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages = [], settings = DEFAULT_AI_SETTINGS, job_id } = body;
+    const { messages = [], job_id } = body;
+
+    // Fetch persistent settings from Supabase forge_settings
+    let resolvedSettings: AISettings = DEFAULT_AI_SETTINGS;
+    try {
+      const { data: dbSettings } = await supabase
+        .from('forge_settings')
+        .select('value')
+        .eq('key', 'ai_studio_settings')
+        .maybeSingle();
+
+      if (dbSettings?.value) {
+        resolvedSettings = { ...DEFAULT_AI_SETTINGS, ...dbSettings.value };
+      }
+    } catch (dbErr) {
+      console.warn('Failed to load persistent AI settings from db:', dbErr);
+    }
+
+    // Merge client-provided settings if any
+    if (body.settings && typeof body.settings === 'object') {
+      resolvedSettings = {
+        ...resolvedSettings,
+        ...body.settings,
+        keys: {
+          ...(resolvedSettings.keys || {}),
+          ...(body.settings.keys || {}),
+        },
+      };
+      if (body.settings.apiKey) resolvedSettings.apiKey = body.settings.apiKey;
+    }
+
+    const settings = resolvedSettings;
 
     if (!Array.isArray(messages) || messages.length === 0) {
       return NextResponse.json({ error: 'Mesaj listesi boş olamaz.' }, { status: 400 });

@@ -23,6 +23,7 @@ import {
   Split,
 } from 'lucide-react';
 import SmaliDiffViewer from '@/app/components/SmaliDiffViewer';
+import { AISettings } from '@/lib/ai-service';
 
 interface AIMessage {
   role: 'user' | 'assistant' | 'system';
@@ -33,6 +34,7 @@ export default function AiCopilotSidebar() {
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'chat' | 'audit'>('chat');
   const [diffModalOpen, setDiffModalOpen] = useState(false);
+  const [copilotSettings, setCopilotSettings] = useState<AISettings | null>(null);
   const [messages, setMessages] = useState<AIMessage[]>([
     {
       role: 'assistant',
@@ -68,17 +70,24 @@ Aşağıdaki hızlı butonları kullanabilir veya doğrudan incelemek istediğin
       setIsOpen(true);
     }
 
-    // Ping AI Server
+    // Ping AI Server & Load Settings
     const checkServer = async () => {
       try {
         const start = Date.now();
-        const res = await fetch('/api/ai/server');
-        const data = await res.json();
+        const [serverRes, settingsRes] = await Promise.all([
+          fetch('/api/ai/server'),
+          fetch('/api/ai/settings'),
+        ]);
+        const data = await serverRes.json();
+        const settingsData = await settingsRes.json();
         setServerPing(Date.now() - start);
         if (data.success) {
           setServerStatus('online');
         } else {
           setServerStatus('standby');
+        }
+        if (settingsData?.settings) {
+          setCopilotSettings(settingsData.settings);
         }
       } catch (_) {
         setServerStatus('error');
@@ -125,6 +134,7 @@ Aşağıdaki hızlı butonları kullanabilir veya doğrudan incelemek istediğin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: newMessages,
+          settings: copilotSettings || undefined,
         }),
       });
 
@@ -246,7 +256,7 @@ Aşağıdaki hızlı butonları kullanabilir veya doğrudan incelemek istediğin
                   </span>
                 </div>
                 <div className="text-[10px] text-slate-400 font-mono">
-                  Nemotron 120B / Claude 3.5 {serverPing ? `• ${serverPing}ms` : ''}
+                  {copilotSettings?.model || 'Gemini 3.6 Flash'} {serverPing ? `• ${serverPing}ms` : ''}
                 </div>
               </div>
             </div>

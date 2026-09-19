@@ -18,6 +18,8 @@ export interface AISettings {
   systemPrompt: string;
 }
 
+export type AIProvider = AISettings['provider'];
+
 export const MANDATORY_TURKISH_INSTRUCTION = `[KATI VE ZORUNLU DİL KURALI: %100 TÜRKÇE CEVAP]
 Kullanıcı ile HER ZAMAN ve İSTİSNASIZ TÜRKÇE konuşacaksın.
 Teknik smali opcodeları, Java kod blokları veya AndroidManifest XML etiketleri haricinde; tüm açıklamaların, analizlerin, soru yanıtların ve rehberlerin daima akıcı, net, profesyonel ve eksiksiz Türkçe olacaktır.
@@ -300,14 +302,14 @@ export async function sendAIChatRequest(
   messages: AIMessage[],
   settings: AISettings
 ): Promise<{ text: string; modelUsed: string }> {
-  const provider = settings.provider || 'nvidia_nim';
-  const model = settings.model;
+  let provider = settings.provider || 'nvidia_nim';
+  let model = settings.model;
   const temp = typeof settings.temperature === 'number' ? settings.temperature : 0.4;
   const maxTokens = settings.maxTokens || 3000;
   const system = settings.systemPrompt || DEFAULT_AI_SETTINGS.systemPrompt;
 
   // Resolve API Key: per-provider keys map, or generic apiKey, or env
-  let apiKey = settings.keys?.[provider]?.trim() || settings.apiKey?.trim();
+  let apiKey = settings.keys?.[provider]?.trim() || (provider === settings.provider ? settings.apiKey?.trim() : undefined);
   if (!apiKey) {
     if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
     else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
@@ -315,6 +317,37 @@ export async function sendAIChatRequest(
     else if (provider === 'opencodezen') apiKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN || process.env.OPENCODE_TOKEN;
     else if (provider === 'groq') apiKey = process.env.GROQ_API_KEY;
     else if (provider === 'deepseek') apiKey = process.env.DEEPSEEK_API_KEY;
+  }
+
+  // If primary provider key is missing, auto-switch to any configured provider key
+  if (!apiKey) {
+    const availableProviders: Array<{ id: AIProvider; defaultModel: string; key: string }> = [];
+    if (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY) {
+      availableProviders.push({ id: 'gemini', defaultModel: 'gemini-3.6-flash', key: (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY)! });
+    }
+    if (settings.keys?.groq?.trim() || process.env.GROQ_API_KEY) {
+      availableProviders.push({ id: 'groq', defaultModel: 'llama-3.3-70b-versatile', key: (settings.keys?.groq?.trim() || process.env.GROQ_API_KEY)! });
+    }
+    if (settings.keys?.anthropic?.trim() || process.env.ANTHROPIC_API_KEY) {
+      availableProviders.push({ id: 'anthropic', defaultModel: 'claude-3-5-sonnet-20241022', key: (settings.keys?.anthropic?.trim() || process.env.ANTHROPIC_API_KEY)! });
+    }
+    if (settings.keys?.nvidia_nim?.trim() || process.env.NVIDIA_NIM_API_KEY) {
+      availableProviders.push({ id: 'nvidia_nim', defaultModel: 'nvidia/nemotron-3-super-120b-a12b', key: (settings.keys?.nvidia_nim?.trim() || process.env.NVIDIA_NIM_API_KEY)! });
+    }
+    if (settings.keys?.deepseek?.trim() || process.env.DEEPSEEK_API_KEY) {
+      availableProviders.push({ id: 'deepseek', defaultModel: 'deepseek-chat', key: (settings.keys?.deepseek?.trim() || process.env.DEEPSEEK_API_KEY)! });
+    }
+    if (settings.apiKey?.trim()) {
+      availableProviders.push({ id: 'gemini', defaultModel: 'gemini-3.6-flash', key: settings.apiKey.trim() });
+    }
+
+    if (availableProviders.length > 0) {
+      const fb = availableProviders[0];
+      provider = fb.id;
+      model = fb.defaultModel;
+      apiKey = fb.key;
+      console.log(`[AI Service] Auto-switched to configured provider: ${provider} (${model})`);
+    }
   }
 
   try {
