@@ -12,10 +12,14 @@ from engine.supabase_client import update_job, find_listing_by_package, update_l
 
 
 def publish():
+    if os.environ.get("PIPELINE_PAUSED") == "true":
+        print("⏸️ Pipeline is paused waiting for decision. Skipping publish step.")
+        sys.exit(0)
+
     result_path = os.path.join("output", "result.json")
     if not os.path.exists(result_path):
-        print("❌ No result.json found.")
-        sys.exit(1)
+        print("⚠️ No result.json found. Pipeline was either paused, cancelled or analyze-only.")
+        sys.exit(0)
 
     with open(result_path, "r", encoding="utf-8") as f:
         result = json.load(f)

@@ -27,7 +27,7 @@ from engine.analyzer import full_analysis
 from engine.sanitizer import sanitize_manifest, bump_version
 from engine.patcher import apply_profile_patches
 from engine.signer import build_and_sign
-from engine.supabase_client import create_job, update_job, get_profile
+from engine.supabase_client import create_job, update_job, get_profile, get_job
 
 PROFILES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "profiles")
 DECOMPILED_DIR = "decompiled"
@@ -200,6 +200,29 @@ def run_pipeline(apk_path, action=None, profile_name=None):
         print(f"🤖 Kayıtlı Rehber ile Otonom Modlama Devrede: '{profile.get('name', package_name)}'")
         profile["auto_apply"] = True
 
+    # If action is sanitize_only, direct_sign or rebuild_only: we do NOT need a smali modding profile.
+    # We only clean requested manifest permissions.
+    if action in ["sanitize_only", "direct_sign", "rebuild_only"]:
+        if not profile:
+            profile = {
+                "name": f"{package_name} Temizlik & İzin Profili",
+                "package": package_name,
+                "auto_apply": True,
+                "manifest_cleanup": {
+                    "remove_permissions": []
+                }
+            }
+        else:
+            profile["auto_apply"] = True
+
+    # Check if user explicitly disabled emulator test in mod_options
+    if requested_mod_opts.get("run_emulator_test") is False:
+        print("📱 Kullanıcı tercihi doğrultusunda emülatör testi atlanıyor.")
+        github_env = os.environ.get("GITHUB_ENV")
+        if github_env:
+            with open(github_env, "a") as f:
+                f.write("SKIP_EMULATOR=true\n")
+
     # Merge user-selected permissions into profile if provided
     if profile:
         strip_danger = requested_mod_opts.get("strip_dangerous_permissions") or []
@@ -283,6 +306,7 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             if github_env:
                 with open(github_env, "a") as f:
                     f.write("SKIP_EMULATOR=true\n")
+                    f.write("PIPELINE_PAUSED=true\n")
             print("⏸️ Pipeline paused. Waiting for Telegram decision.")
             sys.exit(0)
 

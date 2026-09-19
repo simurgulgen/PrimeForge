@@ -167,7 +167,7 @@ jobs:
           python engine/forge_runner.py input.apk
 
       - name: Android Emulator Test & Multi-Device Screenshot Capture
-        if: env.SKIP_EMULATOR != 'true'
+        if: env.SKIP_EMULATOR != 'true' && env.PIPELINE_PAUSED != 'true'
         uses: reactivecircus/android-emulator-runner@v2
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
@@ -193,7 +193,7 @@ jobs:
 
 
       - name: Post-test Catbox Publish & Telegram Approval
-        if: success() && (github.event.client_payload.action != 'analyze_only') && (inputs.action != 'analyze_only')
+        if: success() && env.PIPELINE_PAUSED != 'true' && (github.event.client_payload.action != 'analyze_only') && (inputs.action != 'analyze_only')
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || secrets.SUPABASE_KEY }}

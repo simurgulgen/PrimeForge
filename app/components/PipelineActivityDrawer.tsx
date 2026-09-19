@@ -31,7 +31,7 @@ interface JobItem {
   package_name: string | null;
   app_name: string | null;
   version_name: string | null;
-  status: 'pending' | 'in_progress' | 'running' | 'completed' | 'failed' | 'cancelled';
+  status: 'pending' | 'in_progress' | 'running' | 'completed' | 'failed' | 'cancelled' | 'waiting_decision' | 'waiting_approval' | string;
   action: string;
   created_at: string;
   error_message?: string | null;
@@ -258,6 +258,26 @@ export default function PipelineActivityDrawer() {
     // Status-based fallback
     if (job.status === 'completed') {
       return defaultSteps.map((s) => ({ ...s, status: 'completed' }));
+    }
+
+    if (job.status === 'waiting_approval') {
+      defaultSteps[0].status = 'completed';
+      defaultSteps[1].status = 'completed';
+      defaultSteps[2].status = 'completed';
+      defaultSteps[3].status = 'completed';
+      defaultSteps[5].status = 'completed';
+      defaultSteps[5].detail = 'Yayınlandı. Telegram onayınız bekleniyor.';
+      return defaultSteps;
+    }
+
+    if (job.status === 'waiting_decision') {
+      defaultSteps[0].status = 'completed';
+      defaultSteps[1].status = 'completed';
+      defaultSteps[2].status = 'in_progress';
+      defaultSteps[2].detail = 'Telegram üzerinden modlama kararı bekleniyor.';
+      defaultSteps[4].status = 'skipped';
+      defaultSteps[5].status = 'pending';
+      return defaultSteps;
     }
 
     if (job.status === 'failed') {
