@@ -156,6 +156,32 @@ export async function GET(req: Request) {
               : null,
           };
 
+          // Auto-sync GitHub run conclusion to Supabase forge_jobs if finished
+          if (
+            parsedRun.status === 'completed' &&
+            (selectedJob.status === 'pending' || selectedJob.status === 'in_progress' || selectedJob.status === 'running')
+          ) {
+            const finalStatus = parsedRun.conclusion === 'success' ? 'completed' : 'failed';
+            const failedStep = parsedJob?.steps?.find((s: any) => s.conclusion === 'failure');
+            const failureReason = failedStep
+              ? `Adım ${failedStep.number} (${failedStep.name}) başarısız oldu.`
+              : (parsedRun.conclusion === 'failure' ? 'GitHub Actions işi başarısız oldu.' : null);
+
+            try {
+              await supabase
+                .from('forge_jobs')
+                .update({
+                  status: finalStatus,
+                  error_message: failureReason || selectedJob.error_message,
+                })
+                .eq('id', selectedJob.id);
+              selectedJob.status = finalStatus;
+              if (failureReason) selectedJob.error_message = failureReason;
+            } catch (syncErr) {
+              console.warn('Failed to sync job status to Supabase:', syncErr);
+            }
+          }
+
           // Canlı veya tamamlanmış logları çek
           if (parsedJob?.id) {
             try {

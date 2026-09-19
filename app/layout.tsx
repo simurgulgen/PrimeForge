@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal, RefreshCw } from 'lucide-react';
 
 import AiCopilotSidebar from '@/app/components/AiCopilotSidebar';
+import PipelineActivityDrawer from '@/app/components/PipelineActivityDrawer';
 
 export const metadata = {
   title: 'PrimeForge – APK Modlama & Test Pipeline',
@@ -115,6 +116,9 @@ export default function RootLayout({
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           {children}
         </main>
+
+        {/* Persistent Left-Docked Pipeline Monitor (Live Steps & Logs) */}
+        <PipelineActivityDrawer />
 
         {/* Persistent Right-Docked AI Copilot (FCC-Claude) */}
         <AiCopilotSidebar />

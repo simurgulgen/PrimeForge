@@ -22,6 +22,9 @@ import {
   Loader2,
   Check,
   BookOpen,
+  Activity,
+  XCircle,
+  Terminal,
 } from 'lucide-react';
 import PreAuditModal from '@/app/components/PreAuditModal';
 import GuideModal from '@/app/components/GuideModal';
@@ -75,6 +78,43 @@ export default function UpdatesPage() {
   const [runningAutonomousId, setRunningAutonomousId] = useState<string | null>(null);
   const [runningAutonomousAll, setRunningAutonomousAll] = useState(false);
 
+  // Live in-card job tracking states
+  const [recentJobs, setRecentJobs] = useState<Record<string, any>>({});
+  const [expandedCards, setExpandedCards] = useState<Record<string, boolean>>({});
+
+  const fetchRecentJobs = async () => {
+    try {
+      const res = await fetch('/api/job-status');
+      const data = await res.json();
+      if (data.jobs && Array.isArray(data.jobs)) {
+        const map: Record<string, any> = {};
+        for (const job of data.jobs) {
+          if (job.package_name && !map[job.package_name]) {
+            map[job.package_name] = job;
+          }
+        }
+        setRecentJobs(map);
+      }
+    } catch (_) {}
+  };
+
+  const toggleCardExpansion = (listingId: string) => {
+    setExpandedCards((prev) => ({
+      ...prev,
+      [listingId]: !prev[listingId],
+    }));
+  };
+
+  const openLeftPipelineDrawer = (jobId?: string) => {
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(
+        new CustomEvent('primeforge:open_pipeline', {
+          detail: { jobId },
+        })
+      );
+    }
+  };
+
   const fetchUpdates = async () => {
     setLoading(true);
     try {
@@ -98,6 +138,11 @@ export default function UpdatesPage() {
 
   useEffect(() => {
     fetchUpdates();
+    fetchRecentJobs();
+    const interval = setInterval(() => {
+      fetchRecentJobs();
+    }, 4000);
+    return () => clearInterval(interval);
   }, []);
 
   const showToast = (title: string, message: string, type: 'success' | 'error') => {
@@ -165,6 +210,19 @@ export default function UpdatesPage() {
           'success'
         );
         setSelectedAppForGuide(null);
+        setExpandedCards((prev) => ({ ...prev, [item.listing_id]: true }));
+        if (typeof window !== 'undefined' && data.job_id) {
+          window.dispatchEvent(
+            new CustomEvent('primeforge:job_started', {
+              detail: {
+                jobId: data.job_id,
+                appName: item.title,
+                packageName: item.packageName,
+              },
+            })
+          );
+        }
+        fetchRecentJobs();
       } else {
         showToast('Hata', data.error || 'Otonom güncelleme başlatılamadı.', 'error');
       }
@@ -496,162 +554,301 @@ export default function UpdatesPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {filteredAvailable.map((app) => (
-              <div
-                key={app.listing_id}
-                className="glass-panel p-5 rounded-2xl border border-amber-500/20 hover:border-amber-500/40 transition-all flex flex-col justify-between group shadow-xl bg-slate-900/60"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex items-center gap-3">
-                      {app.logoUrl ? (
-                        <img
-                          src={app.logoUrl}
-                          alt={app.title}
-                          className="w-12 h-12 rounded-xl object-cover border border-white/10 bg-slate-800"
-                        />
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
-                          {app.title.charAt(0)}
-                        </div>
-                      )}
-                      <div>
-                        <h4 className="font-semibold text-white text-base group-hover:text-amber-300 transition-colors">
-                          {app.title}
-                        </h4>
-                        <div className="text-xs text-slate-400 font-mono mt-0.5">
-                          {app.packageName || 'Paket adı yok'}
-                        </div>
-                      </div>
-                    </div>
+            {filteredAvailable.map((app) => {
+              const activeJob = app.packageName ? recentJobs[app.packageName] : null;
+              const isExpanded =
+                expandedCards[app.listing_id] ||
+                (activeJob &&
+                  (activeJob.status === 'in_progress' ||
+                    activeJob.status === 'running' ||
+                    activeJob.status === 'pending' ||
+                    activeJob.status === 'failed'));
 
-                    {/* Badges */}
-                    <div className="flex items-center gap-1.5 flex-wrap justify-end">
-                      {app.has_guide && (
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-mono border bg-emerald-500/15 border-emerald-500/40 text-emerald-300 flex items-center gap-1 font-semibold shadow-sm">
-                          <Sparkles className="w-3 h-3 text-emerald-400" />
-                          Rehber Var
-                        </span>
-                      )}
-                      <span
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-mono border uppercase flex items-center gap-1 ${
-                          app.source_type === 'WEB_SCRAPER'
-                            ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
-                            : app.source_type === 'GITHUB_REPO_APK'
-                            ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
-                            : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
-                        }`}
-                      >
-                        {app.source_type === 'WEB_SCRAPER' ? (
-                          <Globe className="w-3 h-3" />
+              return (
+                <div
+                  key={app.listing_id}
+                  className="glass-panel p-5 rounded-2xl border border-amber-500/20 hover:border-amber-500/40 transition-all flex flex-col justify-between group shadow-xl bg-slate-900/60"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        {app.logoUrl ? (
+                          <img
+                            src={app.logoUrl}
+                            alt={app.title}
+                            className="w-12 h-12 rounded-xl object-cover border border-white/10 bg-slate-800"
+                          />
                         ) : (
-                          <Github className="w-3 h-3" />
+                          <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                            {app.title.charAt(0)}
+                          </div>
                         )}
-                        {app.source_name}
-                      </span>
+                        <div>
+                          <h4 className="font-semibold text-white text-base group-hover:text-amber-300 transition-colors">
+                            {app.title}
+                          </h4>
+                          <div className="text-xs text-slate-400 font-mono mt-0.5">
+                            {app.packageName || 'Paket adı yok'}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Badges */}
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        {app.has_guide && (
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-mono border bg-emerald-500/15 border-emerald-500/40 text-emerald-300 flex items-center gap-1 font-semibold shadow-sm">
+                            <Sparkles className="w-3 h-3 text-emerald-400" />
+                            Rehber Var
+                          </span>
+                        )}
+                        <span
+                          className={`px-2.5 py-1 rounded-full text-[10px] font-mono border uppercase flex items-center gap-1 ${
+                            app.source_type === 'WEB_SCRAPER'
+                              ? 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                              : app.source_type === 'GITHUB_REPO_APK'
+                              ? 'bg-amber-500/10 border-amber-500/30 text-amber-300'
+                              : 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+                          }`}
+                        >
+                          {app.source_type === 'WEB_SCRAPER' ? (
+                            <Globe className="w-3 h-3" />
+                          ) : (
+                            <Github className="w-3 h-3" />
+                          )}
+                          {app.source_name}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Version Comparison Card */}
+                    <div className="mt-4 p-3 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between">
+                      <div className="flex items-center gap-3 text-xs">
+                        <div>
+                          <span className="text-slate-500 block text-[10px]">Mevcut</span>
+                          <span className="font-mono text-slate-300 font-medium">
+                            v{app.current_version}
+                          </span>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-slate-600" />
+                        <div>
+                          <span className="text-amber-400 block text-[10px] font-semibold">
+                            Yeni Sürüm
+                          </span>
+                          <span className="font-mono text-amber-300 font-bold">
+                            v{app.latest_version}
+                          </span>
+                        </div>
+                      </div>
+
+                      <a
+                        href={app.download_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1 border border-white/5"
+                        title="APK İndir"
+                      >
+                        <Download className="w-3.5 h-3.5 text-blue-400" />
+                        APK
+                      </a>
+                    </div>
+
+                    {app.release_notes && (
+                      <div className="mt-3 text-xs text-slate-400 line-clamp-2 italic bg-white/5 p-2 rounded-lg">
+                        "{app.release_notes}"
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Bottom Action */}
+                  <div className="mt-5 pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
+                    <div className="text-[11px] text-slate-500">
+                      {app.variants_needing_update?.length || 1} varyant güncellenecek
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap justify-end">
+                      {/* Live Stage Progress Indicator Button */}
+                      {activeJob && (
+                        <button
+                          type="button"
+                          onClick={() => toggleCardExpansion(app.listing_id)}
+                          className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 shadow-md ${
+                            activeJob.status === 'failed'
+                              ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse'
+                              : activeJob.status === 'completed'
+                              ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                              : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 animate-pulse'
+                          }`}
+                          title="Aşama durumunu ve hata ayrıntılarını aç/kapat"
+                        >
+                          {activeJob.status === 'failed' ? (
+                            <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          ) : activeJob.status === 'completed' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : (
+                            <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
+                          )}
+                          {activeJob.status === 'failed'
+                            ? 'Hata Detayı & Aşamalar'
+                            : activeJob.status === 'completed'
+                            ? 'Aşamalar (Tamamlandı)'
+                            : 'Aşamalar (Çalışıyor)'}
+                        </button>
+                      )}
+
+                      {app.has_guide && (
+                        <button
+                          type="button"
+                          onClick={() => handleOpenGuide(app)}
+                          className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-medium transition-all flex items-center gap-1"
+                          title="Daha önce uygulanan modlama rehberini ve YAML reçetesini incele"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                          Rehber
+                        </button>
+                      )}
+
+                      {app.has_guide && (
+                        <button
+                          type="button"
+                          onClick={() => handleAutonomousUpdate(app)}
+                          disabled={runningAutonomousId === app.listing_id}
+                          className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          title="Kayıtlı rehber kurallarını doğrudan yeni sürüme sıfır eforla uygular"
+                        >
+                          {runningAutonomousId === app.listing_id ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Zap className="w-3.5 h-3.5 text-amber-300" />
+                          )}
+                          Otonom Güncelle
+                        </button>
+                      )}
+
+                      {/* Open Pre-Audit Security Modal for user to choose options before heavy decompile */}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAppForAudit(app)}
+                        className="px-3 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-lg shadow-purple-600/10"
+                        title="Decompile yapmadan önce güvenlik izinlerini ve mod seçeneklerini incele"
+                      >
+                        <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
+                        Güvenlik & Seçenekler
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleApplyUpdate(app)}
+                        disabled={applyingId === app.listing_id}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium border border-white/10 transition-all flex items-center gap-1.5 disabled:opacity-50"
+                        title="Yalnızca katalogdaki versiyon numarasını günceller"
+                      >
+                        {applyingId === app.listing_id ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        Hızlı Uygula
+                      </button>
                     </div>
                   </div>
 
-                  {/* Version Comparison Card */}
-                  <div className="mt-4 p-3 rounded-xl bg-slate-950/60 border border-white/5 flex items-center justify-between">
-                    <div className="flex items-center gap-3 text-xs">
-                      <div>
-                        <span className="text-slate-500 block text-[10px]">Mevcut</span>
-                        <span className="font-mono text-slate-300 font-medium">
-                          v{app.current_version}
-                        </span>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-slate-600" />
-                      <div>
-                        <span className="text-amber-400 block text-[10px] font-semibold">
-                          Yeni Sürüm
-                        </span>
-                        <span className="font-mono text-amber-300 font-bold">
-                          v{app.latest_version}
-                        </span>
-                      </div>
-                    </div>
+                  {/* In-Card Live Progress & Stage Drawer */}
+                  {isExpanded && activeJob && (
+                    <div className="mt-4 pt-3 border-t border-white/10 rounded-xl bg-slate-950/80 p-3.5 space-y-3 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          {activeJob.status === 'completed' ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                          ) : activeJob.status === 'failed' ? (
+                            <XCircle className="w-4 h-4 text-rose-400" />
+                          ) : (
+                            <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
+                          )}
+                          <div>
+                            <span className="text-xs font-bold text-white block">
+                              {activeJob.status === 'completed'
+                                ? '✅ Pipeline Başarıyla Tamamlandı'
+                                : activeJob.status === 'failed'
+                                ? '❌ Pipeline Başarısız Oldu!'
+                                : '⚡ Modlama Pipeline Çalışıyor...'}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              İş #{activeJob.id.substring(0, 8)} • {activeJob.action}
+                            </span>
+                          </div>
+                        </div>
 
-                    <a
-                      href={app.download_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white transition-all text-xs flex items-center gap-1 border border-white/5"
-                      title="APK İndir"
-                    >
-                      <Download className="w-3.5 h-3.5 text-blue-400" />
-                      APK
-                    </a>
-                  </div>
+                        <button
+                          type="button"
+                          onClick={() => openLeftPipelineDrawer(activeJob.id)}
+                          className="px-2.5 py-1.5 rounded-lg bg-cyan-600/20 hover:bg-cyan-600/30 border border-cyan-500/40 text-cyan-300 text-[11px] font-medium flex items-center gap-1.5 transition-all shadow-sm"
+                        >
+                          <Activity className="w-3.5 h-3.5" />
+                          Sol Monitörde Canlı İzle
+                        </button>
+                      </div>
 
-                  {app.release_notes && (
-                    <div className="mt-3 text-xs text-slate-400 line-clamp-2 italic bg-white/5 p-2 rounded-lg">
-                      "{app.release_notes}"
+                      {/* Failure Message */}
+                      {activeJob.status === 'failed' && (
+                        <div className="p-2.5 rounded-lg bg-rose-950/50 border border-rose-500/40 text-rose-200 text-xs font-mono space-y-1">
+                          <div className="font-bold flex items-center gap-1.5 text-rose-400">
+                            <AlertTriangle className="w-3.5 h-3.5" /> Hata Açıklaması:
+                          </div>
+                          <div className="text-[11px] leading-relaxed">
+                            {activeJob.error_message ||
+                              'Derleme veya araç kurulumu sırasında hata oluştu.'}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 6-Step Visual Stepper */}
+                      <div className="space-y-1.5 pt-1">
+                        <div className="text-[10px] uppercase tracking-wider font-semibold text-slate-400">
+                          Aşama Takip Çizelgesi
+                        </div>
+                        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5">
+                          {[
+                            { step: 1, name: 'İndirme' },
+                            { step: 2, name: 'Decompile' },
+                            { step: 3, name: 'Smali Hook' },
+                            { step: 4, name: 'İmzalama' },
+                            { step: 5, name: 'Emülatör' },
+                            { step: 6, name: 'Yayınlama' },
+                          ].map((s) => {
+                            const isDone = activeJob.status === 'completed';
+                            const isErr =
+                              activeJob.status === 'failed' && (s.step === 1 || s.step === 2);
+                            const isCurrent =
+                              (activeJob.status === 'in_progress' ||
+                                activeJob.status === 'running' ||
+                                activeJob.status === 'pending') &&
+                              s.step === 2;
+
+                            return (
+                              <div
+                                key={s.step}
+                                className={`p-1.5 rounded-lg text-center border text-[10px] ${
+                                  isDone
+                                    ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300'
+                                    : isErr
+                                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
+                                    : isCurrent
+                                    ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 animate-pulse font-bold'
+                                    : 'bg-slate-900 border-white/5 text-slate-500'
+                                }`}
+                              >
+                                <div className="font-mono text-[9px]">{s.step}</div>
+                                <div className="truncate text-[9px]">{s.name}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
                     </div>
                   )}
                 </div>
-
-                {/* Bottom Action */}
-                <div className="mt-5 pt-4 border-t border-white/5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-[11px] text-slate-500">
-                    {app.variants_needing_update?.length || 1} varyant güncellenecek
-                  </div>
-
-                  <div className="flex items-center gap-2 flex-wrap justify-end">
-                    {app.has_guide && (
-                      <button
-                        onClick={() => handleOpenGuide(app)}
-                        className="px-2.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-white/10 text-slate-200 text-xs font-medium transition-all flex items-center gap-1"
-                        title="Daha önce uygulanan modlama rehberini ve YAML reçetesini incele"
-                      >
-                        <BookOpen className="w-3.5 h-3.5 text-amber-400" />
-                        Rehber
-                      </button>
-                    )}
-
-                    {app.has_guide && (
-                      <button
-                        onClick={() => handleAutonomousUpdate(app)}
-                        disabled={runningAutonomousId === app.listing_id}
-                        className="px-3 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 text-white text-xs font-semibold shadow-lg shadow-emerald-600/20 transition-all flex items-center gap-1.5 disabled:opacity-50"
-                        title="Kayıtlı rehber kurallarını doğrudan yeni sürüme sıfır eforla uygular"
-                      >
-                        {runningAutonomousId === app.listing_id ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Zap className="w-3.5 h-3.5 text-amber-300" />
-                        )}
-                        Otonom Güncelle
-                      </button>
-                    )}
-
-                    {/* Open Pre-Audit Security Modal for user to choose options before heavy decompile */}
-                    <button
-                      onClick={() => setSelectedAppForAudit(app)}
-                      className="px-3 py-2 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/30 text-purple-300 text-xs font-semibold transition-all flex items-center gap-1.5 shadow-lg shadow-purple-600/10"
-                      title="Decompile yapmadan önce güvenlik izinlerini ve mod seçeneklerini incele"
-                    >
-                      <ShieldCheck className="w-3.5 h-3.5 text-purple-400" />
-                      Güvenlik & Seçenekler
-                    </button>
-
-                    <button
-                      onClick={() => handleApplyUpdate(app)}
-                      disabled={applyingId === app.listing_id}
-                      className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-medium border border-white/10 transition-all flex items-center gap-1.5 disabled:opacity-50"
-                      title="Yalnızca katalogdaki versiyon numarasını günceller"
-                    >
-                      {applyingId === app.listing_id ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      ) : (
-                        <Check className="w-3.5 h-3.5" />
-                      )}
-                      Hızlı Uygula
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )
       ) : activeTab === 'uptodate' ? (
@@ -712,6 +909,22 @@ export default function UpdatesPage() {
           onClose={() => setSelectedAppForAudit(null)}
           onSuccess={(res) => {
             showToast('Pipeline Başlatıldı! 🛡️', res.message, 'success');
+            setExpandedCards((prev) => ({
+              ...prev,
+              [selectedAppForAudit.listing_id]: true,
+            }));
+            if (typeof window !== 'undefined' && res.jobId) {
+              window.dispatchEvent(
+                new CustomEvent('primeforge:job_started', {
+                  detail: {
+                    jobId: res.jobId,
+                    appName: selectedAppForAudit.title,
+                    packageName: selectedAppForAudit.packageName,
+                  },
+                })
+              );
+            }
+            fetchRecentJobs();
             setSelectedAppForAudit(null);
           }}
         />
