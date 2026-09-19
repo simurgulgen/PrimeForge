@@ -27,6 +27,7 @@ import {
   Maximize2,
   Radio,
   FileCode2,
+  UploadCloud,
 } from 'lucide-react';
 
 interface PipelineStep {
@@ -126,6 +127,33 @@ export default function ConsolePage() {
       setActionMsg({ type: 'error', text: err.message || 'Bağlantı hatası oluştu.' });
     } finally {
       setIsCancelling(false);
+    }
+  };
+
+  const [isPublishing, setIsPublishing] = useState(false);
+
+  // Publish job to PrimeStore
+  const handlePublishJob = async () => {
+    if (!selectedJobId) return;
+    setIsPublishing(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch('/api/job-action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', jobId: selectedJobId }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg({ type: 'success', text: '🎉 ' + (data.message || 'Başarıyla PrimeStore\'da yayına alındı!') });
+        fetchConsoleData(selectedJobId);
+      } else {
+        setActionMsg({ type: 'error', text: data.error || 'Yayınlanamadı.' });
+      }
+    } catch (err: any) {
+      setActionMsg({ type: 'error', text: err.message || 'Bağlantı hatası oluştu.' });
+    } finally {
+      setIsPublishing(false);
     }
   };
 
@@ -413,6 +441,23 @@ export default function ConsolePage() {
           </div>
 
           <div className="flex items-center gap-2">
+            {selectedJob.status === 'published' ? (
+              <span className="px-3 py-1.5 rounded-lg bg-emerald-500/20 border border-emerald-500/30 text-emerald-300 font-semibold text-xs flex items-center gap-1.5 shadow-sm">
+                <CheckCircle2 className="w-3.5 h-3.5" /> PrimeStore'da Yayında
+              </span>
+            ) : selectedJob.modded_apk_url ? (
+              <button
+                type="button"
+                onClick={handlePublishJob}
+                disabled={isPublishing}
+                className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-emerald-900/30 cursor-pointer disabled:opacity-50"
+                title="Modlanmış APK'yı PrimeStore Mağaza Kataloğuna Yayınla"
+              >
+                <UploadCloud className="w-3.5 h-3.5" />
+                {isPublishing ? 'Yayınlanıyor...' : "PrimeStore'da Yayınla"}
+              </button>
+            ) : null}
+
             {selectedJob.modded_apk_url && (
               <a
                 href={selectedJob.modded_apk_url}

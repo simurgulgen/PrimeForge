@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { publishJobToPrimeStore } from '@/lib/store-publish';
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8209993669:AAHAF0HMUMKbfKNV2EdOnSvFUeroxIY1aU4';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8901088416:AAG3u11MrrgUZrjWoXHwL1IhnX5cfVx-BZM';
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 
@@ -44,39 +45,16 @@ export async function POST(req: Request) {
         const jobId = parts[2];
 
         if (action === 'publish') {
-          // Fetch job
-          const { data: job } = await supabase.from('forge_jobs').select('*').eq('id', jobId).single();
-          if (job) {
-            const pkg = job.package_name;
-            const url = job.modded_apk_url;
-            const ver = job.version_name;
-
-            // Update listings if match exists
-            if (pkg) {
-              await supabase
-                .from('listings')
-                .update({
-                  fileUrl: url,
-                  version: `${ver} (Prime Mod)`,
-                  status: 'published',
-                })
-                .eq('packageName', pkg);
-            }
-
-            await supabase
-              .from('forge_jobs')
-              .update({ status: 'published', decision: 'approved' })
-              .eq('id', jobId);
-
-            await answerCallbackQuery(cb.id, 'Yayınlandı!');
-            await sendTelegramMessage(
-              chatId,
-              `🚀 <b>Yayınlama Başarılı!</b>\n\n📦 <b>${pkg}</b> v${ver}\n🔗 ${url}`
-            );
+          const res = await publishJobToPrimeStore(jobId);
+          if (res.success) {
+            await answerCallbackQuery(cb.id, '🎉 PrimeStore\'da Yayınlandı!');
           } else {
-            await answerCallbackQuery(cb.id, 'İş bulunamadı');
+            await answerCallbackQuery(cb.id, `Hata: ${res.error || 'Yayınlanamadı'}`);
+            if (chatId) {
+              await sendTelegramMessage(chatId, `⚠️ <b>Yayınlama Hatası:</b> ${res.error || 'İş kaydı veya APK bulunamadı'}`);
+            }
           }
-          return NextResponse.json({ ok: true });
+          return NextResponse.json({ ok: true, ...res });
         }
 
         if (action === 'cancel') {

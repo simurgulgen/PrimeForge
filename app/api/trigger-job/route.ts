@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8209993669:AAHAF0HMUMKbfKNV2EdOnSvFUeroxIY1aU4';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8901088416:AAG3u11MrrgUZrjWoXHwL1IhnX5cfVx-BZM';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '761864148';
 
 export async function POST(req: Request) {

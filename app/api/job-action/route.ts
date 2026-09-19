@@ -1,9 +1,10 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { publishJobToPrimeStore } from '@/lib/store-publish';
 
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8209993669:AAHAF0HMUMKbfKNV2EdOnSvFUeroxIY1aU4';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8901088416:AAG3u11MrrgUZrjWoXHwL1IhnX5cfVx-BZM';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '761864148';
 
 async function sendTelegramAlert(text: string, replyMarkup?: any) {
@@ -143,75 +144,19 @@ export async function POST(req: Request) {
     // ACTION 2: PUBLISH TO PRIMESTORE (MANUAL APPROVAL)
     // ==========================================
     if (action === 'publish') {
-      const moddedUrl = job.modded_apk_url;
-      if (!moddedUrl) {
-        return NextResponse.json({
-          error: 'Bu göreve ait hazır modlanmış APK indirme bağlantısı bulunamadı.',
-        }, { status: 400 });
+      const res = await publishJobToPrimeStore(jobId);
+      if (!res.success) {
+        return NextResponse.json({ error: res.error || 'Yayınlama başarısız oldu.' }, { status: 400 });
       }
-
-      const versionString = job.version_name ? `${job.version_name} (Prime Mod)` : 'Prime Mod';
-
-      // 2a. Update listings table if matching package exists
-      let listingUpdated = false;
-      let listingId = null;
-
-      if (pkg && pkg !== 'Bilinmiyor') {
-        const { data: existingListings } = await supabase
-          .from('listings')
-          .select('id, title, version, "packageName"')
-          .eq('packageName', pkg);
-
-        if (existingListings && existingListings.length > 0) {
-          const target = existingListings[0];
-          listingId = target.id;
-          const { error: listErr } = await supabase
-            .from('listings')
-            .update({
-              fileUrl: moddedUrl,
-              version: versionString,
-              status: 'published',
-            })
-            .eq('id', target.id);
-
-          if (!listErr) {
-            listingUpdated = true;
-          }
-        }
-      }
-
-      // 2b. Mark job as published & approved
-      const { error: jobUpdateErr } = await supabase
-        .from('forge_jobs')
-        .update({
-          status: 'published',
-          decision: 'approved',
-          updated_at: new Date().toISOString(),
-        })
-        .eq('id', jobId);
-
-      if (jobUpdateErr) {
-        return NextResponse.json({ error: jobUpdateErr.message }, { status: 500 });
-      }
-
-      // 2c. Send Telegram celebration announcement
-      await sendTelegramAlert(
-        `🎉 <b>PrimeStore'da Yayına Alındı!</b>\n\n` +
-        `📱 <b>Uygulama:</b> <b>${appTitle}</b>\n` +
-        `📦 <b>Paket:</b> <code>${pkg}</code>\n` +
-        `🏷️ <b>Sürüm:</b> <code>${versionString}</code>\n` +
-        `🔗 <b>APK İndir:</b> <a href="${moddedUrl}">Doğrudan İndirme Bağlantısı</a>\n` +
-        `🏪 <b>Mağaza Durumu:</b> ${listingUpdated ? '✅ PrimeStore Kataloğu Güncellendi' : '✅ Modlanmış APK Yayında'}\n` +
-        `🆔 <b>Job ID:</b> <code>#${shortId}</code>`
-      );
 
       return NextResponse.json({
         success: true,
         message: 'Modlu APK PrimeStore kataloğunda başarıyla yayına alındı.',
-        job_id: jobId,
+        job_id: res.job_id,
         status: 'published',
-        listing_updated: listingUpdated,
-        listing_id: listingId,
+        listing_updated: res.listing_status === 'updated',
+        listing_created: res.listing_status === 'created',
+        listing_id: res.listing_id,
       });
     }
 
