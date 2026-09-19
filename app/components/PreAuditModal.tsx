@@ -23,6 +23,11 @@ import {
   Cloud,
   Smartphone,
   Tv,
+  Bot,
+  Info,
+  ChevronDown,
+  ChevronUp,
+  HelpCircle,
 } from 'lucide-react';
 
 interface PreAuditModalProps {
@@ -58,6 +63,47 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
   const [enableTvDpad, setEnableTvDpad] = useState(false);
   const [enableAdBlocker, setEnableAdBlocker] = useState(true);
   const [enableSelfHealing, setEnableSelfHealing] = useState(true);
+
+  // Permission Intelligence & AI Inspection
+  const [expandedPerms, setExpandedPerms] = useState<Record<string, boolean>>({});
+  const [aiInspectingPerm, setAiInspectingPerm] = useState<string | null>(null);
+  const [aiInspectResults, setAiInspectResults] = useState<Record<string, any>>({});
+
+  const toggleExpandPerm = (permName: string) => {
+    setExpandedPerms((prev) => ({ ...prev, [permName]: !prev[permName] }));
+  };
+
+  const handleAskAiAboutPerm = async (e: React.MouseEvent, permName: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (aiInspectResults[permName]) {
+      setExpandedPerms((prev) => ({ ...prev, [permName]: true }));
+      return;
+    }
+
+    setAiInspectingPerm(permName);
+    try {
+      const res = await fetch('/api/ai/permission-inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          package_name: app.packageName,
+          app_name: app.title,
+          permission_name: permName,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.data) {
+        setAiInspectResults((prev) => ({ ...prev, [permName]: data.data }));
+        setExpandedPerms((prev) => ({ ...prev, [permName]: true }));
+      }
+    } catch (err) {
+      console.error('AI inspect error:', err);
+    } finally {
+      setAiInspectingPerm(null);
+    }
+  };
 
   useEffect(() => {
     const fetchPreAudit = async () => {
@@ -367,32 +413,62 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                 </div>
               </div>
 
-              {/* IAP / Premium Recipe Transfer Option */}
-              {auditData?.detected_features?.has_billing && (
-                <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-200 flex items-start gap-3">
-                  <input
-                    type="checkbox"
-                    id="transferRecipe"
-                    checked={transferModRecipe}
-                    onChange={(e) => setTransferModRecipe(e.target.checked)}
-                    className="mt-0.5 rounded text-amber-500 focus:ring-0"
-                  />
-                  <div>
-                    <label htmlFor="transferRecipe" className="font-semibold text-xs text-white cursor-pointer">
-                      Mevcut Mod Bağımlılıklarını & VIP Reçetesini Yeni Sürüme Aktar
-                    </label>
-                    <div className="text-[11px] text-amber-300/80 mt-0.5">
-                      Uygulamada önceden yapılmış olan VIP bayraklarını ve Billing metot bağımlılıklarını tespit eder, çökme yaratmadan yeni APK sürümüne bağlar.
-                    </div>
-                  </div>
+              {/* Real-time APK Manifest Inspection Badge */}
+              {auditData?.is_real_time_parsed && (
+                <div className="flex items-center gap-2 text-[11px] text-emerald-300 bg-emerald-950/40 border border-emerald-500/30 px-3 py-2 rounded-xl">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span><strong>Gerçek APK İncelemesi:</strong> Bu uygulamanın indirme dosyasındaki ikili AndroidManifest taranarak yalnızca bu APK&apos;ya özel gerçek izinler çıkarıldı.</span>
                 </div>
               )}
 
+              {/* Premium & Licensing Status Box (Always visible!) */}
+              <div className={`p-3.5 rounded-xl border transition-all ${
+                auditData?.premium_summary?.has_billing
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
+                  : auditData?.premium_summary?.is_open_source_pro
+                    ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                    : 'bg-purple-500/10 border-purple-500/30 text-purple-200'
+              }`}>
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 p-1 rounded-lg bg-black/40 shrink-0">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="flex flex-wrap items-center justify-between gap-1">
+                      <span className="font-semibold text-xs text-white">
+                        {auditData?.premium_summary?.status_title || '💎 Premium / VIP Lisans Durumu'}
+                      </span>
+                      <span className="text-[10px] px-2 py-0.5 rounded-full font-mono bg-white/10 text-white border border-white/10">
+                        {auditData?.premium_summary?.billing_type || 'Analiz Edildi'}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                      {auditData?.premium_summary?.status_description}
+                    </div>
+
+                    {auditData?.premium_summary?.has_billing && (
+                      <div className="mt-2.5 pt-2 border-t border-amber-500/20 flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id="transferRecipe"
+                          checked={transferModRecipe}
+                          onChange={(e) => setTransferModRecipe(e.target.checked)}
+                          className="rounded text-amber-500 focus:ring-0"
+                        />
+                        <label htmlFor="transferRecipe" className="text-[11px] text-white font-medium cursor-pointer">
+                          Billing metot bağımlılıklarını (isPurchased -&gt; true) yeni sürüme otomatik aktar
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               {/* Dangerous Permissions Checkboxes */}
               {auditData?.permissions?.dangerous?.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="font-semibold text-white flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-rose-300">
+                    <span className="flex items-center gap-1.5 text-rose-300 text-xs">
                       <ShieldAlert className="w-3.5 h-3.5 text-rose-400" />
                       Kaldırılacak Riskli İzinler ({selectedDangerousPerms.length}/{auditData.permissions.dangerous.length})
                     </span>
@@ -410,55 +486,159 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                       {selectedDangerousPerms.length === auditData.permissions.dangerous.length ? 'Seçimi Kaldır' : 'Tümünü Seç'}
                     </button>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-36 overflow-y-auto p-1">
-                    {auditData.permissions.dangerous.map((perm: any) => (
-                      <label
-                        key={perm.name}
-                        className="flex items-start gap-2 p-2 rounded-lg bg-slate-950/40 border border-white/5 hover:border-white/10 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedDangerousPerms.includes(perm.name)}
-                          onChange={() => toggleDangerousPerm(perm.name)}
-                          className="mt-0.5 rounded text-rose-500 focus:ring-0"
-                        />
-                        <div className="overflow-hidden">
-                          <div className="font-medium text-white truncate text-[11px]">{perm.description}</div>
-                          <div className="text-[9px] text-slate-500 font-mono truncate">{perm.name}</div>
+                  <div className="grid grid-cols-1 gap-2.5 max-h-72 overflow-y-auto pr-1">
+                    {auditData.permissions.dangerous.map((perm: any) => {
+                      const isSelected = selectedDangerousPerms.includes(perm.name);
+                      const isAiInspecting = aiInspectingPerm === perm.name;
+                      const aiResult = aiInspectResults[perm.name];
+
+                      return (
+                        <div
+                          key={perm.name}
+                          className={`p-3 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'bg-slate-900/80 border-rose-500/30 shadow-sm shadow-rose-500/5'
+                              : 'bg-slate-950/40 border-white/5 opacity-80'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <label className="flex items-start gap-2.5 cursor-pointer flex-1 overflow-hidden">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleDangerousPerm(perm.name)}
+                                className="mt-1 rounded text-rose-500 focus:ring-0"
+                              />
+                              <div className="overflow-hidden">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="font-semibold text-xs text-white">{perm.description}</span>
+                                  {perm.safety_label && (
+                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                                      perm.safety === 'safe'
+                                        ? 'bg-emerald-500/10 text-emerald-300 border-emerald-500/20'
+                                        : 'bg-amber-500/10 text-amber-300 border-amber-500/20'
+                                    }`}>
+                                      {perm.safety_label}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono truncate mt-0.5">{perm.name}</div>
+                              </div>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleAskAiAboutPerm(e, perm.name)}
+                              disabled={isAiInspecting}
+                              className="shrink-0 text-[10px] font-medium text-purple-400 hover:text-purple-300 bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/25 px-2 py-1 rounded-lg flex items-center gap-1 transition-all"
+                              title="Yapay zekaya bu iznin decompile smali kodundaki yerini ve kullanım amacını sor"
+                            >
+                              {isAiInspecting ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin text-purple-400" />
+                                  <span>Taranıyor...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Bot className="w-3 h-3 text-purple-400" />
+                                  <span>{aiResult ? 'Koddaki Yeri (AI)' : 'Koddaki Yeri?'}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          {/* Purpose & Impact Explanations */}
+                          <div className="mt-2 pt-2 border-t border-white/5 space-y-1 text-[11px]">
+                            <div className="flex items-start gap-1.5 text-slate-300">
+                              <span className="text-purple-400 font-semibold shrink-0">🎯 Neden Kullanılır:</span>
+                              <span className="text-slate-300/90 leading-tight">{perm.purpose}</span>
+                            </div>
+                            <div className="flex items-start gap-1.5 text-slate-300">
+                              <span className="text-amber-400 font-semibold shrink-0">⚡ Kaldırılırsa:</span>
+                              <span className="text-slate-400 leading-tight">{perm.impact}</span>
+                            </div>
+                          </div>
+
+                          {/* Live AI Code Inspection Result Card */}
+                          {aiResult && (
+                            <div className="mt-2.5 p-2.5 rounded-lg bg-gradient-to-br from-purple-950/60 to-slate-950/80 border border-purple-500/30 text-[11px] text-purple-200 space-y-1.5">
+                              <div className="flex items-center justify-between font-semibold text-purple-300 text-xs">
+                                <span className="flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                                  FCC-Claude Smali Kod İçi Teftişi
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  Çökme Riski: {aiResult.crash_risk || 'SIFIR'}
+                                </span>
+                              </div>
+                              <div className="text-slate-300 text-[11px] leading-relaxed">
+                                <strong className="text-purple-300">Koddaki Yeri:</strong> {aiResult.usage_purpose}
+                              </div>
+                              <div className="text-amber-300/90 text-[11px] leading-relaxed">
+                                <strong className="text-amber-300">Etki & Tavsiye:</strong> {aiResult.removal_impact}
+                              </div>
+                              {aiResult.code_references?.length > 0 && (
+                                <div className="font-mono text-[9px] text-purple-300/70 bg-black/40 p-1.5 rounded border border-purple-500/15">
+                                  İlgili Sınıflar: {aiResult.code_references.join(', ')}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
 
               {/* Ad & Tracker Permissions Checkboxes */}
               {auditData?.permissions?.ad_related?.length > 0 && (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="font-semibold text-white flex items-center justify-between">
-                    <span className="flex items-center gap-1.5 text-amber-300">
+                    <span className="flex items-center gap-1.5 text-amber-300 text-xs">
                       <Ban className="w-3.5 h-3.5 text-amber-400" />
                       Reklam & Takipçi İzinleri ({selectedAdPerms.length}/{auditData.permissions.ad_related.length})
                     </span>
                   </div>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-28 overflow-y-auto p-1">
-                    {auditData.permissions.ad_related.map((perm: any) => (
-                      <label
-                        key={perm.name}
-                        className="flex items-start gap-2 p-2 rounded-lg bg-slate-950/40 border border-white/5 hover:border-white/10 cursor-pointer"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedAdPerms.includes(perm.name)}
-                          onChange={() => toggleAdPerm(perm.name)}
-                          className="mt-0.5 rounded text-amber-500 focus:ring-0"
-                        />
-                        <div className="overflow-hidden">
-                          <div className="font-medium text-white truncate text-[11px]">{perm.description}</div>
-                          <div className="text-[9px] text-slate-500 font-mono truncate">{perm.name}</div>
+                  <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
+                    {auditData.permissions.ad_related.map((perm: any) => {
+                      const isSelected = selectedAdPerms.includes(perm.name);
+
+                      return (
+                        <div
+                          key={perm.name}
+                          className={`p-2.5 rounded-xl border transition-all ${
+                            isSelected
+                              ? 'bg-slate-900/70 border-amber-500/30'
+                              : 'bg-slate-950/40 border-white/5 opacity-80'
+                          }`}
+                        >
+                          <label className="flex items-start gap-2.5 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleAdPerm(perm.name)}
+                              className="mt-0.5 rounded text-amber-500 focus:ring-0"
+                            />
+                            <div className="overflow-hidden flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="font-semibold text-xs text-white">{perm.description}</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                                  {perm.safety_label || '✅ Sıfır Çökme Riski'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono truncate">{perm.name}</div>
+                              <div className="mt-1 text-[11px] text-slate-400">
+                                <span className="text-purple-400 font-medium">🎯 Amaç:</span> {perm.purpose}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                <span className="text-amber-400 font-medium">⚡ Kaldırılırsa:</span> {perm.impact}
+                              </div>
+                            </div>
+                          </label>
                         </div>
-                      </label>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}

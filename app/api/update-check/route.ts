@@ -82,6 +82,11 @@ function parseOwnerAndRepo(url: string): [string, string] | null {
   return null;
 }
 
+function sanitizeRegex(str: string | null | undefined): string {
+  if (!str) return '';
+  return str.replace(/\(\?[imsuy]+\)/gi, '').trim();
+}
+
 // Scrape dynamic web rules (from scraper_rules table)
 async function checkWithScraperRule(rule: any): Promise<{ new_version: string; download_url: string } | null> {
   const targetUrl = rule.target_url;
@@ -91,17 +96,22 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
     const res = await fetch(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
       },
       cache: 'no-store',
       redirect: 'follow',
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!res.ok) return null;
     const html = await res.text();
 
-    const linkRegexStr = rule.link_regex || 'href=["\']([^"\']+\\.apk[^"\']*)["\']';
-    const linkRegex = new RegExp(linkRegexStr, 'i');
-    const linkMatch = html.match(linkRegex);
+    const linkRegexStr = sanitizeRegex(rule.link_regex) || 'href=["\']([^"\']+\\.apk[^"\']*)["\']';
+    let linkMatch: RegExpMatchArray | null = null;
+    try {
+      const linkRegex = new RegExp(linkRegexStr, 'i');
+      linkMatch = html.match(linkRegex);
+    } catch (_) {}
 
     if (!linkMatch) return null;
     let rawUrl = linkMatch[1] || linkMatch[0];
@@ -117,20 +127,26 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
       downloadUrl = new URL(rawUrl, targetUrl).toString();
     }
 
-    // Version regex
-    const versionRegexStr = rule.version_regex || '(?:v|sürüm|version)?\\s*([0-9]+(?:\\.[0-9]+)+)';
-    const versionRegex = new RegExp(versionRegexStr, 'i');
-    
-    // Clean html of scripts/styles for version check
-    const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
-    const verMatch = cleanHtml.match(versionRegex) || downloadUrl.match(/([0-9]+(?:\.[0-9]+)+)/);
+    // Version match: APK filename first (most reliable)
+    let newVersion: string | null = null;
+    const fn = downloadUrl.split('?')[0].split('/').pop() || '';
+    const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
+    if (fnMatch) {
+      newVersion = fnMatch[1];
+    }
 
-    let newVersion = verMatch ? verMatch[1] : null;
+    // Version regex fallback on HTML
     if (!newVersion) {
-      const fn = downloadUrl.split('?')[0].split('/').pop() || '';
-      const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
-      newVersion = fnMatch ? fnMatch[1] : null;
+      const versionRegexStr = sanitizeRegex(rule.version_regex) || '(?:v|sürüm|version)?\\s*([0-9]+(?:\\.[0-9]+)+)';
+      try {
+        const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+        const versionRegex = new RegExp(versionRegexStr, 'i');
+        const verMatch = cleanHtml.match(versionRegex);
+        if (verMatch) {
+          newVersion = verMatch[1] || verMatch[0];
+        }
+      } catch (_) {}
     }
 
     if (newVersion) {
@@ -259,11 +275,17 @@ export async function GET(req: Request) {
       // -------------------------------------------------------------
       // STRATEGY 1: Check dynamic scraper rules (Web scraper)
       // -------------------------------------------------------------
-      const matchedRule = scraperRules.find(
-        (r) =>
-          (pkg && r.package_name && r.package_name.toLowerCase() === pkg.toLowerCase()) ||
-          (r.domain_pattern && (fileUrl.toLowerCase().includes(r.domain_pattern.toLowerCase()) || ghRepoRaw.toLowerCase().includes(r.domain_pattern.toLowerCase())))
-      );
+      const matchedRule = scraperRules.find((r) => {
+        if (pkg && r.package_name && r.package_name.toLowerCase() === pkg.toLowerCase()) return true;
+        if (r.domain_pattern && (fileUrl.toLowerCase().includes(r.domain_pattern.toLowerCase()) || ghRepoRaw.toLowerCase().includes(r.domain_pattern.toLowerCase()))) return true;
+        if (r.target_url) {
+          try {
+            const host = new URL(r.target_url).hostname.replace(/^www\./, '').toLowerCase();
+            if (host && (fileUrl.toLowerCase().includes(host) || ghRepoRaw.toLowerCase().includes(host))) return true;
+          } catch (_) {}
+        }
+        return false;
+      });
 
       if (matchedRule) {
         const scrapeRes = await checkWithScraperRule(matchedRule);

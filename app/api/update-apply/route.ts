@@ -89,16 +89,32 @@ export async function POST(req: Request) {
       updatedAt: now,
     };
 
-    const { data: updated, error: updateErr } = await supabase
-      .from('listings')
-      .update(updatePayload)
-      .eq('id', listing_id)
-      .select('id, title, version, fileUrl, updatedAt')
-      .single();
+    // 4. Update in Supabase via SECURITY DEFINER RPC to bypass RLS
+    const { data: updatedRpc, error: rpcErr } = await supabase.rpc('primeforge_update_listing', {
+      p_listing_id: listing_id,
+      p_new_version: new_version,
+      p_download_url: download_url,
+      p_variants: finalVariants,
+      p_version_history: vh,
+      p_updated_at: now,
+    });
 
-    if (updateErr) {
-      console.error('Update error in Supabase:', updateErr);
-      return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    let updated = updatedRpc;
+
+    if (rpcErr) {
+      console.warn('RPC update failed, falling back to direct update:', rpcErr);
+      const { data: directUpdated, error: directErr } = await supabase
+        .from('listings')
+        .update(updatePayload)
+        .eq('id', listing_id)
+        .select('id, title, version, fileUrl, updatedAt')
+        .single();
+
+      if (directErr) {
+        console.error('Direct update error in Supabase:', directErr);
+        return NextResponse.json({ error: directErr.message }, { status: 500 });
+      }
+      updated = directUpdated;
     }
 
     return NextResponse.json({

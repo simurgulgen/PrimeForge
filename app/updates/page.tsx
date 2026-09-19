@@ -25,9 +25,13 @@ import {
   Activity,
   XCircle,
   Terminal,
+  Settings,
+  Plus,
+  Play,
 } from 'lucide-react';
 import PreAuditModal from '@/app/components/PreAuditModal';
 import GuideModal from '@/app/components/GuideModal';
+import ScraperRuleModal from '@/app/components/ScraperRuleModal';
 
 interface UpdateItem {
   listing_id: string;
@@ -65,8 +69,17 @@ export default function UpdatesPage() {
   const [checkFailed, setCheckFailed] = useState<any[]>([]);
   const [checkedAt, setCheckedAt] = useState<string | null>(null);
 
+  // Web Scraper specific states
+  const [scraperApps, setScraperApps] = useState<any[]>([]);
+  const [scraperRules, setScraperRules] = useState<any[]>([]);
+  const [loadingScrapers, setLoadingScrapers] = useState(false);
+  const [selectedAppForScraperRule, setSelectedAppForScraperRule] = useState<any | null>(null);
+  const [scrapingAppId, setScrapingAppId] = useState<string | null>(null);
+  const [scrapingAll, setScrapingAll] = useState(false);
+  const [scraperResults, setScraperResults] = useState<Record<string, any>>({});
+
   // Filters & Search
-  const [activeTab, setActiveTab] = useState<'available' | 'uptodate' | 'untracked' | 'all'>('available');
+  const [activeTab, setActiveTab] = useState<'available' | 'scrapers' | 'uptodate' | 'untracked'>('available');
   const [searchQuery, setSearchQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'ALL' | 'GITHUB' | 'SCRAPER'>('ALL');
   const [toast, setToast] = useState<{ title: string; message: string; type: 'success' | 'error' } | null>(null);
@@ -115,6 +128,22 @@ export default function UpdatesPage() {
     }
   };
 
+  const fetchScrapers = async () => {
+    setLoadingScrapers(true);
+    try {
+      const res = await fetch('/api/scrapers');
+      const data = await res.json();
+      if (data.success) {
+        setScraperApps(data.scraper_apps || []);
+        setScraperRules(data.rules || []);
+      }
+    } catch (err: any) {
+      console.error('Error fetching scraper apps:', err);
+    } finally {
+      setLoadingScrapers(false);
+    }
+  };
+
   const fetchUpdates = async () => {
     setLoading(true);
     try {
@@ -136,8 +165,143 @@ export default function UpdatesPage() {
     }
   };
 
+  const handleRunScraper = async (app: any) => {
+    setScrapingAppId(app.listing_id);
+    setScraperResults((prev) => ({
+      ...prev,
+      [app.listing_id]: { status: 'loading' },
+    }));
+
+    try {
+      const res = await fetch('/api/scrapers/run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          listing_id: app.listing_id,
+          rule_id: app.matched_rule?.id,
+        }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        if (data.has_update && data.update_item) {
+          setUpdatesAvailable((prev) => {
+            const exists = prev.some((u) => u.listing_id === app.listing_id);
+            if (exists) {
+              return prev.map((u) => (u.listing_id === app.listing_id ? data.update_item : u));
+            }
+            return [data.update_item, ...prev];
+          });
+          setScraperResults((prev) => ({
+            ...prev,
+            [app.listing_id]: {
+              status: 'success',
+              message: `🚀 Yeni Sürüm Tespit Edildi: v${data.latest_version}`,
+              update_item: data.update_item,
+            },
+          }));
+          showToast(
+            'Güncelleme Bulundu! 🚀',
+            `${app.title} için yeni sürüm (v${data.latest_version}) bulundu!`,
+            'success'
+          );
+        } else {
+          setScraperResults((prev) => ({
+            ...prev,
+            [app.listing_id]: {
+              status: 'up_to_date',
+              message: `✅ Uygulama güncel (v${data.latest_version || app.current_version})`,
+            },
+          }));
+          showToast('Uygulama Güncel', `${app.title} son sürümde.`, 'success');
+        }
+      } else {
+        setScraperResults((prev) => ({
+          ...prev,
+          [app.listing_id]: {
+            status: 'failed',
+            message: data.error || 'Scraper çalıştırılamadı.',
+          },
+        }));
+        showToast('Scraper Hatası', data.error || 'Sürüm tespit edilemedi.', 'error');
+      }
+    } catch (err: any) {
+      setScraperResults((prev) => ({
+        ...prev,
+        [app.listing_id]: {
+          status: 'failed',
+          message: err.message,
+        },
+      }));
+      showToast('Bağlantı Hatası', err.message, 'error');
+    } finally {
+      setScrapingAppId(null);
+    }
+  };
+
+  const handleRunAllScrapers = async () => {
+    const appsWithRules = scraperApps.filter((a) => a.matched_rule);
+    if (appsWithRules.length === 0) {
+      showToast('Bilgi', 'Taranabilecek aktif scraper kuralı bulunamadı.', 'error');
+      return;
+    }
+    setScrapingAll(true);
+    let foundCount = 0;
+    for (const app of appsWithRules) {
+      try {
+        const res = await fetch('/api/scrapers/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            listing_id: app.listing_id,
+            rule_id: app.matched_rule?.id,
+          }),
+        });
+        const data = await res.json();
+        if (data.success && data.has_update && data.update_item) {
+          foundCount++;
+          setUpdatesAvailable((prev) => {
+            const exists = prev.some((u) => u.listing_id === app.listing_id);
+            if (exists) {
+              return prev.map((u) => (u.listing_id === app.listing_id ? data.update_item : u));
+            }
+            return [data.update_item, ...prev];
+          });
+          setScraperResults((prev) => ({
+            ...prev,
+            [app.listing_id]: {
+              status: 'success',
+              message: `🚀 Yeni Sürüm: v${data.latest_version}`,
+              update_item: data.update_item,
+            },
+          }));
+        } else if (data.success) {
+          setScraperResults((prev) => ({
+            ...prev,
+            [app.listing_id]: {
+              status: 'up_to_date',
+              message: `✅ Güncel (v${data.latest_version})`,
+            },
+          }));
+        }
+      } catch (_) {}
+    }
+    setScrapingAll(false);
+    showToast(
+      'Web Scraper Taraması Tamamlandı! 🌐',
+      `${appsWithRules.length} uygulama tarandı, ${foundCount} yeni güncelleme tespit edildi!`,
+      'success'
+    );
+  };
+
+  const handleScraperRuleSaved = () => {
+    fetchScrapers();
+    showToast('Başarılı', 'Scraper kuralı kaydedildi.', 'success');
+  };
+
   useEffect(() => {
     fetchUpdates();
+    fetchScrapers();
     fetchRecentJobs();
     const interval = setInterval(() => {
       fetchRecentJobs();
@@ -355,6 +519,14 @@ export default function UpdatesPage() {
     return matchesSearch && matchesSource;
   });
 
+  const filteredScraperApps = scraperApps.filter((it) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      it.title.toLowerCase().includes(q) ||
+      (it.packageName && it.packageName.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div className="space-y-8 animate-fadeIn">
       {/* Toast Notification */}
@@ -404,6 +576,16 @@ export default function UpdatesPage() {
               {loading ? 'Taranıyor...' : 'Tümünü Kontrol Et'}
             </button>
 
+            <button
+              onClick={handleRunAllScrapers}
+              disabled={scrapingAll || loading}
+              className="px-4 py-2.5 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 border border-purple-500/40 text-purple-300 text-sm font-medium transition-all flex items-center gap-2 shadow-lg shadow-purple-600/10 disabled:opacity-50"
+              title="Resmi web sitelerinden APK indiren tüm scraper kurallarını sırayla çalıştır"
+            >
+              <Globe className={`w-4 h-4 text-purple-400 ${scrapingAll ? 'animate-spin' : ''}`} />
+              {scrapingAll ? 'Scraperlar Taranıyor...' : 'Tüm Scraperları Tara'}
+            </button>
+
             {updatesAvailable.filter((u) => u.has_guide).length > 0 && (
               <button
                 onClick={handleAutonomousAll}
@@ -445,16 +627,22 @@ export default function UpdatesPage() {
               {updatesAvailable.length}
             </div>
           </div>
+          <div
+            onClick={() => setActiveTab('scrapers')}
+            className="bg-slate-900/40 rounded-xl p-3 border border-purple-500/20 cursor-pointer hover:border-purple-500/40 transition-all"
+          >
+            <div className="text-xs text-purple-300 flex items-center gap-1">
+              <Globe className="w-3 h-3 text-purple-400" />
+              Web Scraper Takibi
+            </div>
+            <div className="text-2xl font-bold text-purple-300 mt-0.5">
+              {scraperApps.length}
+            </div>
+          </div>
           <div className="bg-slate-900/40 rounded-xl p-3 border border-white/5">
             <div className="text-xs text-slate-400">Güncel Uygulamalar</div>
             <div className="text-2xl font-bold text-emerald-400 mt-0.5">
               {upToDate.length}
-            </div>
-          </div>
-          <div className="bg-slate-900/40 rounded-xl p-3 border border-white/5">
-            <div className="text-xs text-slate-400">Takip Dışı / Repo Yok</div>
-            <div className="text-2xl font-bold text-slate-400 mt-0.5">
-              {untracked.length}
             </div>
           </div>
           <div className="bg-slate-900/40 rounded-xl p-3 border border-white/5">
@@ -480,6 +668,17 @@ export default function UpdatesPage() {
           >
             <ArrowUpCircle className="w-3.5 h-3.5" />
             Güncelleme Var ({updatesAvailable.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('scrapers')}
+            className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-2 ${
+              activeTab === 'scrapers'
+                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30 font-semibold'
+                : 'text-slate-400 hover:text-white'
+            }`}
+          >
+            <Globe className="w-3.5 h-3.5 text-purple-400" />
+            Web Scraper Takibi ({scraperApps.length})
           </button>
           <button
             onClick={() => setActiveTab('uptodate')}
@@ -851,6 +1050,213 @@ export default function UpdatesPage() {
             })}
           </div>
         )
+      ) : activeTab === 'scrapers' ? (
+        <div className="space-y-4">
+          <div className="p-4 rounded-xl bg-purple-950/30 border border-purple-500/20 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-purple-200 flex items-center gap-2">
+                <Globe className="w-4 h-4 text-purple-400" />
+                Web Scraper Gerektiren Uygulamalar ({filteredScraperApps.length})
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                GitHub deposu olmayan veya resmi web sitelerinden doğrudan APK sunan uygulamalar. İstediğiniz uygulamanın yanındaki &quot;Scraper İle Tara&quot; butonuna basarak anında kontrol edebilir veya &quot;Kuralı Düzenle&quot; ile ayarlarını değiştirebilirsiniz.
+              </p>
+            </div>
+            <button
+              onClick={handleRunAllScrapers}
+              disabled={scrapingAll}
+              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shrink-0 transition-all flex items-center gap-2 shadow-lg shadow-purple-600/20 disabled:opacity-50"
+            >
+              {scrapingAll ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+              {scrapingAll ? 'Tüm Scraperlar Taranıyor...' : 'Tüm Scraperları Çalıştır'}
+            </button>
+          </div>
+
+          {loadingScrapers ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-3">
+              <Loader2 className="w-7 h-7 text-purple-400 animate-spin" />
+              <div className="text-xs text-slate-400">Scraper uygulamaları ve kuralları yükleniyor...</div>
+            </div>
+          ) : filteredScraperApps.length === 0 ? (
+            <div className="text-center py-16 glass-panel rounded-2xl border border-white/5">
+              <Globe className="w-10 h-10 text-slate-600 mx-auto mb-2" />
+              <div className="text-sm text-slate-300 font-medium">Scraper Uygulaması Bulunamadı</div>
+              <div className="text-xs text-slate-500 mt-1">Arama filtresini temizleyin veya katalogdan uygulama ekleyin.</div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {filteredScraperApps.map((app) => {
+                const isScraping = scrapingAppId === app.listing_id;
+                const result = scraperResults[app.listing_id];
+                const rule = app.matched_rule;
+
+                return (
+                  <div
+                    key={app.listing_id}
+                    className="glass-panel p-5 rounded-2xl border border-purple-500/20 hover:border-purple-500/40 transition-all flex flex-col justify-between group shadow-xl bg-slate-900/60"
+                  >
+                    <div>
+                      {/* Top Header */}
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          {app.logoUrl ? (
+                            <img
+                              src={app.logoUrl}
+                              alt={app.title}
+                              className="w-12 h-12 rounded-xl object-cover border border-white/10 bg-slate-800"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center text-white font-bold text-lg">
+                              {app.title.charAt(0)}
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-semibold text-white text-base group-hover:text-purple-300 transition-colors">
+                              {app.title}
+                            </h4>
+                            <div className="text-xs text-slate-400 font-mono mt-0.5">
+                              {app.packageName || 'Paket adı yok'}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Status badge */}
+                        <div>
+                          {rule ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-mono border bg-emerald-500/10 border-emerald-500/30 text-emerald-300 flex items-center gap-1 font-semibold">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                              Kural Tanımlı
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-mono border bg-amber-500/10 border-amber-500/30 text-amber-300 flex items-center gap-1 font-semibold">
+                              <AlertTriangle className="w-3 h-3 text-amber-400" />
+                              Kural Yok
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Rule & Target info */}
+                      <div className="mt-4 p-3 rounded-xl bg-slate-950/60 border border-white/5 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">Mevcut Versiyon:</span>
+                          <span className="font-mono text-slate-200 font-semibold">v{app.current_version || '1.0'}</span>
+                        </div>
+                        {rule ? (
+                          <>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-400">Kural Adı:</span>
+                              <span className="font-medium text-purple-300 truncate max-w-[200px]">{rule.name}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="text-slate-400">Hedef URL:</span>
+                              <a
+                                href={rule.target_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-mono text-cyan-400 hover:underline truncate max-w-[220px] flex items-center gap-1"
+                              >
+                                {rule.target_url}
+                                <ExternalLink className="w-3 h-3 shrink-0" />
+                              </a>
+                            </div>
+                          </>
+                        ) : (
+                          <div className="text-[11px] text-amber-400/90 italic pt-1">
+                            Bu uygulama için otomatik scraper kuralı tanımlanmamış. &quot;Kural Ekle&quot; ile web adresini ve indirme linki desenini ekleyebilirsiniz.
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Live Scrape Result Display */}
+                      {result && (
+                        <div className="mt-3">
+                          {result.status === 'loading' ? (
+                            <div className="p-3 rounded-xl bg-purple-950/40 border border-purple-500/30 text-xs text-purple-300 flex items-center gap-2 animate-pulse">
+                              <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                              Web sitesi taranıyor ve APK bağlantısı aranıyor...
+                            </div>
+                          ) : result.status === 'success' ? (
+                            <div className="p-3 rounded-xl bg-emerald-950/40 border border-emerald-500/30 space-y-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                                  <Sparkles className="w-4 h-4 text-emerald-400" />
+                                  {result.message}
+                                </span>
+                                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">
+                                  v{result.update_item?.latest_version}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedAppForAudit(result.update_item)}
+                                  className="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/30 text-purple-200 text-[11px] font-semibold flex items-center gap-1"
+                                >
+                                  <ShieldCheck className="w-3 h-3 text-purple-400" />
+                                  Güvenlik & Ön Denetim
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleApplyUpdate(result.update_item)}
+                                  className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/30 text-emerald-200 text-[11px] font-semibold flex items-center gap-1"
+                                >
+                                  <Check className="w-3 h-3 text-emerald-400" />
+                                  Hızlı Uygula
+                                </button>
+                              </div>
+                            </div>
+                          ) : result.status === 'up_to_date' ? (
+                            <div className="p-2.5 rounded-xl bg-slate-950/60 border border-emerald-500/20 text-xs text-emerald-300 flex items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                              {result.message}
+                            </div>
+                          ) : (
+                            <div className="p-2.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-xs text-rose-300 flex items-center gap-2">
+                              <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                              {result.message}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Bottom Actions */}
+                    <div className="mt-5 pt-4 border-t border-white/5 flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAppForScraperRule(app)}
+                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white text-xs font-medium border border-white/10 transition-all flex items-center gap-1.5"
+                      >
+                        <Settings className="w-3.5 h-3.5 text-purple-400" />
+                        {rule ? 'Kuralı Düzenle' : 'Kural Tanımla'}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleRunScraper(app)}
+                        disabled={isScraping || !rule}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shadow-lg ${
+                          rule
+                            ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/20'
+                            : 'bg-slate-800 text-slate-500 border border-white/5 cursor-not-allowed'
+                        } disabled:opacity-50`}
+                        title={rule ? 'Web sitesine bağlanıp en son APK ve sürümü sorgular' : 'Önce kural ekleyin'}
+                      >
+                        {isScraping ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Search className="w-3.5 h-3.5" />
+                        )}
+                        {isScraping ? 'Taranıyor...' : 'Scraper İle Tara'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       ) : activeTab === 'uptodate' ? (
         <div className="glass-panel rounded-2xl border border-white/5 overflow-hidden">
           <div className="p-4 border-b border-white/5 text-xs font-semibold text-slate-300">
@@ -939,6 +1345,19 @@ export default function UpdatesPage() {
           successCount={guideModalData?.successCount}
           onClose={() => setSelectedAppForGuide(null)}
           onRunAutonomous={(app) => handleAutonomousUpdate(app)}
+        />
+      )}
+
+      {/* Scraper Rule Definition & Test Modal */}
+      {selectedAppForScraperRule && (
+        <ScraperRuleModal
+          app={selectedAppForScraperRule}
+          initialRule={selectedAppForScraperRule.matched_rule}
+          onClose={() => setSelectedAppForScraperRule(null)}
+          onSaved={() => {
+            handleScraperRuleSaved();
+            setSelectedAppForScraperRule(null);
+          }}
         />
       )}
     </div>

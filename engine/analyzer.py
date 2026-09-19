@@ -284,16 +284,119 @@ def trace_billing_and_mod_dependencies(decompiled_dir: str) -> dict:
     }
 
 
+def scan_permission_code_usage(decompiled_dir: str, permissions: list) -> dict:
+    """Scan decompiled smali code to identify where permissions are used and their impact."""
+    results = {}
+    smali_dirs = [d for d in os.listdir(decompiled_dir) if d.startswith("smali")]
 
-def full_analysis(apk_path: str, output_dir: str = "decompiled") -> dict:
-    """Run full static analysis on an APK."""
-    decompile_apk(apk_path, output_dir)
+    perm_signatures = {
+        "android.permission.ACCESS_FINE_LOCATION": {
+            "keywords": ["LocationManager", "getLastKnownLocation", "requestLocationUpdates", "FusedLocationProviderClient"],
+            "probable_purpose": "Bölgesel reklam hedefleme, yerel gün doğumu/batımı veya hava durumu saat tespiti.",
+            "impact_on_removal": "Kitap okuma ve dosya açma kesinlikle etkilenmez. Yalnızca konum tabanlı reklamlar ve otomatik yerel saat teması engellenir.",
+            "crash_risk": "SIFIR (İzin manifestten kaldırılırsa Android güvenli varsayılan döner).",
+        },
+        "android.permission.ACCESS_COARSE_LOCATION": {
+            "keywords": ["LocationManager", "getLastKnownLocation"],
+            "probable_purpose": "Baz istasyonu ve Wi-Fi üzerinden kaba şehir/bölge tespiti.",
+            "impact_on_removal": "Uygulamanın temel işlevlerini asla bozmaz. Reklam takipçilerinin konumunuzu izlemesini durdurur.",
+            "crash_risk": "SIFIR",
+        },
+        "android.permission.RECEIVE_BOOT_COMPLETED": {
+            "keywords": ["BOOT_COMPLETED", "RECEIVE_BOOT_COMPLETED", "BroadcastReceiver"],
+            "probable_purpose": "Cihaz açılışında otomatik hatırlatıcı alarmlarını ve güncelleme servislerini tetiklemek.",
+            "impact_on_removal": "Açılışta arkada RAM/pil tüketimi engellenir. Manuel açtığınızda her şey normal çalışır.",
+            "crash_risk": "SIFIR",
+        },
+        "android.permission.SYSTEM_ALERT_WINDOW": {
+            "keywords": ["TYPE_APPLICATION_OVERLAY", "TYPE_SYSTEM_ALERT", "canDrawOverlays"],
+            "probable_purpose": "Kayan mini sözlük balonu, okuma penceresi veya hızlı not alma widget'ı açmak.",
+            "impact_on_removal": "Ekranda asılı kalan kayan mini pencere/widget kapanır. Tam ekran okuma deneyimi aynen sürer.",
+            "crash_risk": "DÜŞÜK",
+        },
+        "android.permission.RECORD_AUDIO": {
+            "keywords": ["AudioRecord", "MediaRecorder", "AudioTrack"],
+            "probable_purpose": "Sesli arama, sesli komutla sayfa çevirme veya sesli not alma.",
+            "impact_on_removal": "Sesli özellikler durur. Dokunmatik ve kumandayla okuma/çevirme aynen çalışır.",
+            "crash_risk": "SIFIR",
+        },
+        "android.permission.CAMERA": {
+            "keywords": ["CameraDevice", "android.hardware.camera", "CameraController"],
+            "probable_purpose": "Kapak fotoğrafı çekmek, QR kod okutmak veya kitap taramak (OCR).",
+            "impact_on_removal": "Uygulama içi kamera çekimi kapanır. Hafızadaki PDF/resimleri açmada sorun olmaz.",
+            "crash_risk": "SIFIR",
+        },
+        "android.permission.QUERY_ALL_PACKAGES": {
+            "keywords": ["getInstalledPackages", "queryIntentActivities"],
+            "probable_purpose": "Cihazdaki diğer e-kitap, sözlük veya özel uygulamaları tarayıp telemetri toplamak.",
+            "impact_on_removal": "Gözetleme durdurulur. Temel işlevler aynen çalışır.",
+            "crash_risk": "SIFIR",
+        },
+        "com.google.android.gms.permission.AD_ID": {
+            "keywords": ["AdvertisingIdClient", "AdvertisingId"],
+            "probable_purpose": "Cihazınıza özel reklam kimliği üreterek reklam sunucularına profil raporlamak.",
+            "impact_on_removal": "Reklam izleyicileri körleştirilir. Uygulama tertemiz çalışır.",
+            "crash_risk": "SIFIR",
+        },
+    }
 
-    manifest_info = parse_manifest(output_dir)
-    ad_networks = detect_ad_networks(output_dir)
-    drm_systems = detect_drm(output_dir)
-    architectures = detect_architectures(output_dir)
-    obfuscation = detect_obfuscation(output_dir)
+    all_perms = set(permissions)
+    for perm, meta in perm_signatures.items():
+        if perm in all_perms or any(k in perm for k in ["LOCATION", "BOOT", "ALERT", "CAMERA", "AUDIO", "AD_ID"]):
+            found_classes = []
+            for sdir in smali_dirs:
+                sdir_path = os.path.join(decompiled_dir, sdir)
+                for smali_file in Path(sdir_path).rglob("*.smali"):
+                    try:
+                        with open(smali_file, "r", encoding="utf-8", errors="ignore") as sf:
+                            content = sf.read()
+                            if any(kw in content for kw in meta["keywords"]):
+                                rel_path = str(smali_file.relative_to(sdir_path)).replace("\\", "/")
+                                found_classes.append(rel_path)
+                                if len(found_classes) >= 5:
+                                    break
+                    except Exception:
+                        continue
+                if len(found_classes) >= 5:
+                    break
+
+            results[perm] = {
+                "permission": perm,
+                "probable_purpose": meta["probable_purpose"],
+                "impact_on_removal": meta["impact_on_removal"],
+                "crash_risk": meta["crash_risk"],
+                "referenced_classes": found_classes[:5],
+            }
+
+    return results
+
+
+def full_analysis(apk_path: str, output_dir: str = None) -> dict:
+    """Run complete static analysis on an APK."""
+    if output_dir is None:
+        output_dir = os.path.join("output", "decompiled")
+
+    # Step 1: Decompile
+    decompiled_dir = decompile_apk(apk_path, output_dir)
+
+    # Step 2: Parse manifest
+    manifest_info = parse_manifest(decompiled_dir)
+
+    # Step 3: Detect ad networks
+    ad_networks = detect_ad_networks(decompiled_dir)
+
+    # Step 4: Detect DRM / licensing
+    drm_systems = detect_drm(decompiled_dir)
+
+    # Step 5: Detect architectures
+    architectures = detect_architectures(decompiled_dir)
+
+    # Step 6: Detect obfuscation
+    obfuscation = detect_obfuscation(decompiled_dir)
+
+    # Step 7: Scan permission code usage in smali
+    all_declared_perms = manifest_info.get("permissions", {}).get("all", [])
+    permission_code_usage = scan_permission_code_usage(decompiled_dir, all_declared_perms)
 
     # Extract assets (logo, banner, precise metadata)
     asset_info = {}
@@ -324,6 +427,7 @@ def full_analysis(apk_path: str, output_dir: str = "decompiled") -> dict:
         "billing_and_mods": billing_mod_info,
         "architectures": architectures,
         "obfuscation": obfuscation,
+        "permission_code_usage": permission_code_usage,
         "update_mechanism": update_info,
         "apk_path": apk_path,
         "decompiled_dir": output_dir,
