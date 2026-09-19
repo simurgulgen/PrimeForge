@@ -422,18 +422,19 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
               )}
 
               {/* Premium & Licensing Status Box (Always visible!) */}
-              <div className={`p-3.5 rounded-xl border transition-all ${
+              {/* Premium & Licensing Status Box (Always visible!) */}
+              <div className={`p-4 rounded-xl border transition-all ${
                 auditData?.premium_summary?.has_billing
                   ? 'bg-amber-500/10 border-amber-500/30 text-amber-200'
                   : auditData?.premium_summary?.is_open_source_pro
                     ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
                     : 'bg-purple-500/10 border-purple-500/30 text-purple-200'
               }`}>
-                <div className="flex items-start gap-2.5">
-                  <div className="mt-0.5 p-1 rounded-lg bg-black/40 shrink-0">
+                <div className="flex items-start gap-3">
+                  <div className="mt-0.5 p-1.5 rounded-lg bg-black/40 shrink-0">
                     <Sparkles className="w-4 h-4 text-amber-400" />
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-1">
                       <span className="font-semibold text-xs text-white">
                         {auditData?.premium_summary?.status_title || '💎 Premium / VIP Lisans Durumu'}
@@ -442,9 +443,66 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                         {auditData?.premium_summary?.billing_type || 'Analiz Edildi'}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-300 mt-1 leading-relaxed">
+                    <div className="text-[11px] text-slate-300 leading-relaxed">
                       {auditData?.premium_summary?.status_description}
                     </div>
+
+                    {/* Detected Billing Frameworks & SDKs */}
+                    {auditData?.detected_features?.billing_frameworks?.length > 0 && (
+                      <div className="pt-2 border-t border-white/10">
+                        <div className="text-[10px] font-semibold text-amber-300 mb-1">
+                          Tespit Edilen Ödeme / IAP Bağımlılıkları:
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {auditData.detected_features.billing_frameworks.map((fw: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-200 border border-amber-500/30 font-mono text-[10px]"
+                            >
+                              📦 {fw}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Detected VIP / Subscription Methods */}
+                    {auditData?.detected_features?.vip_methods?.length > 0 && (
+                      <div className="pt-1.5">
+                        <div className="text-[10px] font-semibold text-emerald-300 mb-1">
+                          Koruması Baypas Edilecek VIP / Lisans Metotları:
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {auditData.detected_features.vip_methods.map((m: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono text-[10px]"
+                            >
+                              ⚡ {m} ➔ const/4 0x1 (return true)
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Ad Networks Detected */}
+                    {auditData?.detected_features?.ad_networks?.length > 0 && (
+                      <div className="pt-1.5">
+                        <div className="text-[10px] font-semibold text-rose-300 mb-1">
+                          Engellenecek Reklam SDK Bağımlılıkları:
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {auditData.detected_features.ad_networks.map((ad: string, idx: number) => (
+                            <span
+                              key={idx}
+                              className="px-2 py-0.5 rounded-md bg-rose-500/20 text-rose-300 border border-rose-500/30 font-mono text-[10px]"
+                            >
+                              🚫 {ad}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {auditData?.premium_summary?.has_billing && (
                       <div className="mt-2.5 pt-2 border-t border-amber-500/20 flex items-center gap-2">

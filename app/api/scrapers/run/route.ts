@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { sanitizeRegex, cleanSemver, parseVersion, isNewerVersion } from '@/lib/scraper-utils';
+import { sanitizeRegex, cleanSemver, parseVersion, isNewerVersion, validateDownloadUrlSafety, parseLiteApksPage } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -66,16 +66,24 @@ export async function POST(req: Request) {
       });
     }
 
-    // Scrape target site
+    const isLiteApks = targetUrl.includes('liteapks') || targetListing?.fileUrl?.includes('liteapks');
+
+    // Scrape target site with browser headers
+    const reqHeaders: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+      'Accept-Language': 'tr,en-US;q=0.9,en;q=0.8',
+    };
+    if (isLiteApks) {
+      reqHeaders['Referer'] = 'https://liteapks.com/';
+    }
+
     const res = await fetch(targetUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
+      headers: reqHeaders,
       cache: 'no-store',
       redirect: 'follow',
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(10000),
     });
 
     if (!res.ok) {
@@ -86,6 +94,16 @@ export async function POST(req: Request) {
     }
 
     const html = await res.text();
+    let newVersion: string | null = null;
+    let downloadUrl: string | null = null;
+
+    if (isLiteApks) {
+      const parsedLite = parseLiteApksPage(html);
+      if (parsedLite.version) {
+        newVersion = parsedLite.version;
+      }
+    }
+
     const linkRegexStr = sanitizeRegex(targetRule.link_regex) || 'href=["\']([^"\']+\\.apk[^"\']*)["\']';
     let linkMatch: RegExpMatchArray | null = null;
     try {
@@ -95,30 +113,47 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: false, error: `Link Regex Hatası: ${e.message}` });
     }
 
-    if (!linkMatch) {
+    if (linkMatch) {
+      let rawUrl = linkMatch[1] || linkMatch[0];
+      if (rawUrl.startsWith('//')) {
+        downloadUrl = 'https:' + rawUrl;
+      } else if (rawUrl.startsWith('/')) {
+        const u = new URL(targetUrl);
+        downloadUrl = `${u.protocol}//${u.host}${rawUrl}`;
+      } else if (!rawUrl.startsWith('http')) {
+        downloadUrl = new URL(rawUrl, targetUrl).toString();
+      } else {
+        downloadUrl = rawUrl;
+      }
+    } else if (targetListing?.fileUrl) {
+      // Fallback to existing fileUrl if version changed on page
+      downloadUrl = targetListing.fileUrl;
+    }
+
+    if (!downloadUrl) {
       return NextResponse.json({
         success: false,
         error: 'Sayfada belirtilen regex deseni ile eşleşen APK indirme bağlantısı bulunamadı.',
       });
     }
 
-    let rawUrl = linkMatch[1] || linkMatch[0];
-    let downloadUrl = rawUrl;
-    if (rawUrl.startsWith('//')) {
-      downloadUrl = 'https:' + rawUrl;
-    } else if (rawUrl.startsWith('/')) {
-      const u = new URL(targetUrl);
-      downloadUrl = `${u.protocol}//${u.host}${rawUrl}`;
-    } else if (!rawUrl.startsWith('http')) {
-      downloadUrl = new URL(rawUrl, targetUrl).toString();
+    // 🛡️ STRICT SECURITY CHECK: Reject malware, fake buttons, and adware redirects
+    const safetyCheck = validateDownloadUrlSafety(downloadUrl);
+    if (!safetyCheck.safe) {
+      return NextResponse.json({
+        success: false,
+        error: safetyCheck.reason || 'Güvenlik engeli: İndirme bağlantısı şüpheli reklam/virüs sitesine yönlendiriyor.',
+        is_security_blocked: true,
+      });
     }
 
-    // Version match: APK filename first
-    let newVersion: string | null = null;
-    const fn = downloadUrl.split('?')[0].split('/').pop() || '';
-    const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
-    if (fnMatch) {
-      newVersion = fnMatch[1];
+    // Version match: APK filename first if not found yet
+    if (!newVersion) {
+      const fn = downloadUrl.split('?')[0].split('/').pop() || '';
+      const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
+      if (fnMatch) {
+        newVersion = fnMatch[1];
+      }
     }
 
     if (!newVersion) {

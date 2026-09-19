@@ -93,18 +93,38 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
   if (!targetUrl) return null;
 
   try {
+    const isLiteApks = targetUrl.includes('liteapks');
+    const reqHeaders: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    };
+    if (isLiteApks) {
+      reqHeaders['Referer'] = 'https://liteapks.com/';
+    }
+
     const res = await fetch(targetUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      },
+      headers: reqHeaders,
       cache: 'no-store',
       redirect: 'follow',
-      signal: AbortSignal.timeout(6000),
+      signal: AbortSignal.timeout(8000),
     });
 
     if (!res.ok) return null;
     const html = await res.text();
+
+    let newVersion: string | null = null;
+    let downloadUrl: string | null = null;
+
+    if (isLiteApks) {
+      // Use structured LiteAPKs extractor (H1 or specs table)
+      const h1Match = html.match(/<h1[^>]*>.*?v([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?)/i);
+      if (h1Match) newVersion = h1Match[1];
+      if (!newVersion) {
+        const specMatch = html.match(/<th[^>]*>\s*VERSION\s*<\/th>\s*<td[^>]*>\s*([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?)/i);
+        if (specMatch) newVersion = specMatch[1];
+      }
+    }
 
     const linkRegexStr = sanitizeRegex(rule.link_regex) || 'href=["\']([^"\']+\\.apk[^"\']*)["\']';
     let linkMatch: RegExpMatchArray | null = null;
@@ -113,34 +133,46 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
       linkMatch = html.match(linkRegex);
     } catch (_) {}
 
-    if (!linkMatch) return null;
-    let rawUrl = linkMatch[1] || linkMatch[0];
+    if (linkMatch) {
+      let rawUrl = linkMatch[1] || linkMatch[0];
+      if (rawUrl.startsWith('//')) {
+        downloadUrl = 'https:' + rawUrl;
+      } else if (rawUrl.startsWith('/')) {
+        const u = new URL(targetUrl);
+        downloadUrl = `${u.protocol}//${u.host}${rawUrl}`;
+      } else if (!rawUrl.startsWith('http')) {
+        downloadUrl = new URL(rawUrl, targetUrl).toString();
+      } else {
+        downloadUrl = rawUrl;
+      }
+    }
 
-    // Build absolute URL
-    let downloadUrl = rawUrl;
-    if (rawUrl.startsWith('//')) {
-      downloadUrl = 'https:' + rawUrl;
-    } else if (rawUrl.startsWith('/')) {
-      const u = new URL(targetUrl);
-      downloadUrl = `${u.protocol}//${u.host}${rawUrl}`;
-    } else if (!rawUrl.startsWith('http')) {
-      downloadUrl = new URL(rawUrl, targetUrl).toString();
+    if (!downloadUrl) return null;
+
+    // Security check: reject adware redirects or fake buttons
+    const suspiciousKeywords = ['adsterra', 'monetag', 'propeller', 'clicknupload', 'ouo.io', 'track', 'affiliate', 'traffic', 'bonus', 'virus'];
+    const dlLower = downloadUrl.toLowerCase();
+    if (suspiciousKeywords.some((k) => dlLower.includes(k))) {
+      console.warn(`Blocked suspicious download URL for ${rule.name}:`, downloadUrl);
+      return null;
     }
 
     // Version match: APK filename first (most reliable)
-    let newVersion: string | null = null;
-    const fn = downloadUrl.split('?')[0].split('/').pop() || '';
-    const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
-    if (fnMatch) {
-      newVersion = fnMatch[1];
+    if (!newVersion) {
+      const fn = downloadUrl.split('?')[0].split('/').pop() || '';
+      const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
+      if (fnMatch) {
+        newVersion = fnMatch[1];
+      }
     }
 
     // Version regex fallback on HTML
     if (!newVersion) {
       const versionRegexStr = sanitizeRegex(rule.version_regex) || '(?:v|sürüm|version)?\\s*([0-9]+(?:\\.[0-9]+)+)';
       try {
-        const cleanHtml = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-                              .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+        const cleanHtml = html
+          .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+          .replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
         const versionRegex = new RegExp(versionRegexStr, 'i');
         const verMatch = cleanHtml.match(versionRegex);
         if (verMatch) {

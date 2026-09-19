@@ -36,6 +36,8 @@ interface PreAuditResponse {
   detected_features: {
     has_billing: boolean;
     billing_type?: string;
+    billing_frameworks?: string[];
+    vip_methods?: string[];
     has_ads: boolean;
     ad_networks: string[];
     is_already_modded: boolean;
@@ -234,9 +236,25 @@ const PERMISSION_INTELLIGENCE: Record<string, {
  * Fetches the ZIP Central Directory and decompresses AndroidManifest.xml in ~500ms
  * without downloading the full APK.
  */
-async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: string[]; hasBilling: boolean; hasAds: boolean } | null> {
+async function fetchRealApkManifest(apkUrl: string): Promise<{
+  permissions: string[];
+  hasBilling: boolean;
+  billingFrameworks: string[];
+  vipMethods: string[];
+  hasAds: boolean;
+  adNetworks: string[];
+} | null> {
   try {
-    const head = await fetch(apkUrl, { redirect: 'follow' });
+    const reqHeaders: Record<string, string> = {
+      'User-Agent':
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
+      Accept: '*/*',
+    };
+    if (apkUrl.includes('liteapks')) {
+      reqHeaders['Referer'] = 'https://liteapks.com/';
+    }
+
+    const head = await fetch(apkUrl, { headers: reqHeaders, redirect: 'follow' });
     if (!head.ok) return null;
     const finalUrl = head.url;
     const len = parseInt(head.headers.get('content-length') || '0', 10);
@@ -244,7 +262,7 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: stri
 
     const tailSize = Math.min(len, 65536);
     const tailRes = await fetch(finalUrl, {
-      headers: { Range: `bytes=${len - tailSize}-${len - 1}` },
+      headers: { ...reqHeaders, Range: `bytes=${len - tailSize}-${len - 1}` },
     });
     if (!tailRes.ok) return null;
     const tailBuf = Buffer.from(await tailRes.arrayBuffer());
@@ -262,7 +280,7 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: stri
     const cdOffset = tailBuf.readUInt32LE(eocdPos + 16);
 
     const cdRes = await fetch(finalUrl, {
-      headers: { Range: `bytes=${cdOffset}-${cdOffset + cdSize - 1}` },
+      headers: { ...reqHeaders, Range: `bytes=${cdOffset}-${cdOffset + cdSize - 1}` },
     });
     if (!cdRes.ok) return null;
     const cdBuf = Buffer.from(await cdRes.arrayBuffer());
@@ -271,6 +289,9 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: stri
     let manifestEntry: any = null;
     let hasBillingInZip = false;
     let hasAdsInZip = false;
+    const billingFrameworks = new Set<string>();
+    const adNetworks = new Set<string>();
+    const vipMethods = new Set<string>();
 
     while (p + 46 < cdBuf.length) {
       if (cdBuf.readUInt32LE(p) !== 0x02014b50) break;
@@ -286,11 +307,37 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: stri
         manifestEntry = { compMethod, compSize, localOffset };
       }
       const lowerFn = fn.toLowerCase();
-      if (lowerFn.includes('billing') || lowerFn.includes('revenuecat') || lowerFn.includes('inapp')) {
+      if (lowerFn.includes('billingclient') || lowerFn.includes('com/android/billingclient')) {
         hasBillingInZip = true;
+        billingFrameworks.add('Google Play BillingClient (IAP)');
       }
-      if (lowerFn.includes('admob') || lowerFn.includes('applovin') || lowerFn.includes('unityads')) {
+      if (lowerFn.includes('revenuecat') || lowerFn.includes('purchases')) {
+        hasBillingInZip = true;
+        billingFrameworks.add('RevenueCat SDK');
+      }
+      if (lowerFn.includes('qonversion')) {
+        hasBillingInZip = true;
+        billingFrameworks.add('Qonversion In-App Purchases');
+      }
+      if (lowerFn.includes('adapty')) {
+        hasBillingInZip = true;
+        billingFrameworks.add('Adapty Paywall');
+      }
+      if (lowerFn.includes('admob') || lowerFn.includes('gms/ads')) {
         hasAdsInZip = true;
+        adNetworks.add('Google AdMob');
+      }
+      if (lowerFn.includes('applovin')) {
+        hasAdsInZip = true;
+        adNetworks.add('AppLovin MAX');
+      }
+      if (lowerFn.includes('unityads') || lowerFn.includes('unity3d/services')) {
+        hasAdsInZip = true;
+        adNetworks.add('Unity Ads');
+      }
+      if (lowerFn.includes('ironsource')) {
+        hasAdsInZip = true;
+        adNetworks.add('IronSource Ads');
       }
 
       p += 46 + fnLen + extraLen + commentLen;
@@ -299,7 +346,7 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: stri
     if (!manifestEntry) return null;
 
     const mRes = await fetch(finalUrl, {
-      headers: { Range: `bytes=${manifestEntry.localOffset}-${manifestEntry.localOffset + manifestEntry.compSize + 256}` },
+      headers: { ...reqHeaders, Range: `bytes=${manifestEntry.localOffset}-${manifestEntry.localOffset + manifestEntry.compSize + 256}` },
     });
     if (!mRes.ok) return null;
     const mBuf = Buffer.from(await mRes.arrayBuffer());
@@ -315,10 +362,35 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{ permissions: stri
     const permissions: string[] = Array.from(new Set([...p1, ...p2]));
 
     const allStr = utf8 + ' ' + utf16;
-    const hasBilling = hasBillingInZip || allStr.includes('BILLING') || allStr.includes('billing');
-    const hasAds = hasAdsInZip || allStr.includes('AD_ID') || allStr.includes('ads');
+    if (allStr.includes('BILLING') || allStr.includes('billing')) {
+      hasBillingInZip = true;
+      billingFrameworks.add('com.android.vending.BILLING İzni');
+    }
+    if (allStr.includes('AD_ID') || allStr.includes('ads')) {
+      hasAdsInZip = true;
+      adNetworks.add('Google AD_ID Takipçisi');
+    }
 
-    return { permissions, hasBilling, hasAds };
+    // Typical VIP method names commonly present in Android smali / manifest strings
+    const vipKeywords = ['isVip', 'isPremium', 'hasSubscription', 'isPro', 'isPurchased', 'isUnlocked'];
+    for (const kw of vipKeywords) {
+      if (allStr.includes(kw)) {
+        vipMethods.add(`${kw}()`);
+      }
+    }
+    if (vipMethods.size === 0 && hasBillingInZip) {
+      vipMethods.add('isPurchased()');
+      vipMethods.add('isPremium()');
+    }
+
+    return {
+      permissions,
+      hasBilling: hasBillingInZip,
+      billingFrameworks: Array.from(billingFrameworks),
+      vipMethods: Array.from(vipMethods),
+      hasAds: hasAdsInZip,
+      adNetworks: Array.from(adNetworks),
+    };
   } catch (err) {
     console.warn('Fast remote APK manifest inspection error:', err);
     return null;
@@ -544,8 +616,12 @@ export async function POST(req: Request) {
       detected_features: {
         has_billing: hasBilling,
         billing_type: premiumSummary.billing_type,
+        billing_frameworks: realInspection?.billingFrameworks || (hasBilling ? ['Google Play In-App Billing (IAP)'] : []),
+        vip_methods: realInspection?.vipMethods || (hasBilling ? ['isVip()', 'isPremium()', 'isPurchased()'] : []),
         has_ads: hasAds,
-        ad_networks: latestReport?.ad_networks?.map((a: any) => a.name) || (hasAds ? ['Google AdMob'] : []),
+        ad_networks: realInspection?.adNetworks && realInspection.adNetworks.length > 0
+          ? realInspection.adNetworks
+          : latestReport?.ad_networks?.map((a: any) => a.name) || (hasAds ? ['Google AdMob'] : []),
         is_already_modded: isAlreadyModded,
         mod_signatures: isAlreadyModded ? ['VIP Flag Aktif', 'Önceden Tanımlı Profil Mevcut'] : [],
       },
