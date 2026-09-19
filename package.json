@@ -4,8 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build && node -e \"const fs=require('fs'); if(!fs.existsSync('web')) fs.mkdirSync('web'); fs.cpSync('.next', 'web/.next', {recursive: true});\"",
-    "postbuild": "node -e \"const fs=require('fs'); if(!fs.existsSync('web')) fs.mkdirSync('web'); fs.cpSync('.next', 'web/.next', {recursive: true});\"",
+    "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
