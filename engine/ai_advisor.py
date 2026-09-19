@@ -92,7 +92,7 @@ def get_available_ai_config() -> dict:
         config["api_key"] = config["keys"].get(active_prov) or config["api_key"]
         if not config["model"]:
             defaults = {
-                "gemini": "gemini-2.0-flash",
+                "gemini": "gemini-3.6-flash",
                 "groq": "llama-3.3-70b-versatile",
                 "deepseek": "deepseek-chat",
                 "nvidia_nim": "nvidia/nemotron-3-super-120b-a12b",
@@ -100,7 +100,7 @@ def get_available_ai_config() -> dict:
                 "anthropic": "claude-3-5-sonnet-20241022",
                 "custom_openai": "gpt-4o-mini",
             }
-            config["model"] = defaults.get(active_prov, "gemini-2.0-flash")
+            config["model"] = defaults.get(active_prov, "gemini-3.6-flash")
 
     return config
 
@@ -112,25 +112,44 @@ def is_ai_available() -> bool:
 
 
 def _call_gemini_api(model: str, api_key: str, prompt: str, system: str, max_tokens: int = 3000, temp: float = 0.3) -> str:
-    """Execute request against Google Gemini REST API."""
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": temp,
-            "maxOutputTokens": max_tokens,
-        },
-    }
-    if system:
-        payload["systemInstruction"] = {"parts": [{"text": system}]}
+    """Execute request against Google Gemini REST API with fallback models."""
+    candidate_models = [model]
+    for m in ["gemini-3.6-flash", "gemini-flash-latest", "gemini-2.5-pro"]:
+        if m not in candidate_models:
+            candidate_models.append(m)
 
-    data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(req, timeout=45, context=_ctx) as resp:
-        res = json.loads(resp.read().decode("utf-8"))
-        candidate = res.get("candidates", [{}])[0]
-        parts = candidate.get("content", {}).get("parts", [{}])
-        return parts[0].get("text", "")
+    last_err = None
+    for cur_model in candidate_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{cur_model}:generateContent?key={api_key}"
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": {
+                "temperature": temp,
+                "maxOutputTokens": max_tokens,
+            },
+        }
+        if system:
+            payload["systemInstruction"] = {"parts": [{"text": system}]}
+
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=45, context=_ctx) as resp:
+                res = json.loads(resp.read().decode("utf-8"))
+                candidate = res.get("candidates", [{}])[0]
+                parts = candidate.get("content", {}).get("parts", [{}])
+                return parts[0].get("text", "")
+        except urllib.error.HTTPError as e:
+            last_err = e
+            if e.code in [404, 503]:
+                continue
+            raise e
+        except Exception as e:
+            last_err = e
+            raise e
+    if last_err:
+        raise last_err
+    return ""
 
 
 def _call_openai_compatible_api(endpoint: str, model: str, api_key: str, prompt: str, system: str, max_tokens: int = 3000, temp: float = 0.3) -> str:

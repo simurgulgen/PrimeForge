@@ -82,12 +82,12 @@ export const PROVIDER_CATALOG = [
     name: 'Google Gemini',
     badge: '100% Ücretsiz Tier (1M Context)',
     models: [
-      { id: 'gemini-1.5-flash', name: 'Gemini 1.5 Flash (En Hızlı / Ücretsiz)' },
-      { id: 'gemini-1.5-pro', name: 'Gemini 1.5 Pro (Gelişmiş Akıl Yürütme)' },
-      { id: 'gemini-2.0-flash', name: 'Gemini 2.0 Flash (Yeni Nesil)' },
+      { id: 'gemini-3.6-flash', name: 'Gemini 3.6 Flash (En Güncel / Tavsiye Edilen)' },
+      { id: 'gemini-flash-latest', name: 'Gemini Flash Latest' },
+      { id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro (Gelişmiş Akıl Yürütme)' },
     ],
-    defaultModel: 'gemini-1.5-flash',
-    keyPlaceholder: 'AIzaSy...',
+    defaultModel: 'gemini-3.6-flash',
+    keyPlaceholder: 'AQ... veya AIzaSy...',
     keyUrl: 'https://aistudio.google.com/app/apikey',
   },
   {
