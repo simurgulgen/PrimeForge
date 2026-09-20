@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { publishJobToPrimeStore } from '@/lib/store-publish';
+import { publishJobToPrimeStore, publishAllVariantsForPackage } from '@/lib/store-publish';
 
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
@@ -165,6 +165,28 @@ export async function POST(req: Request) {
         listing_updated: res.listing_status === 'updated',
         listing_created: res.listing_status === 'created',
         listing_id: res.listing_id,
+      });
+    }
+
+    // ==========================================
+    // ACTION 3: BATCH PUBLISH ALL READY VARIANTS
+    // ==========================================
+    if (action === 'publish_all') {
+      const targetPkg = (job as any)?.package_name;
+      if (!targetPkg) {
+        return NextResponse.json({ error: 'Paket adı belirlenemedi.' }, { status: 400 });
+      }
+
+      const res = await publishAllVariantsForPackage(targetPkg);
+      if (!res.success) {
+        return NextResponse.json({ error: res.error || 'Toplu yayınlama başarısız oldu.' }, { status: 400 });
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `${res.total_published} varyant başarıyla PrimeStore kataloğunda yayına alındı.`,
+        total_published: res.total_published,
+        results: res.results,
       });
     }
 
