@@ -194,6 +194,9 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             print(f"⚠️ Job options lookup note: {e}")
 
     profile = load_profile(profile_name or package_name)
+    preserved_smali_patches = []
+    if profile and profile.get("smali_patches"):
+        preserved_smali_patches = list(profile.get("smali_patches", []))
 
     # If action is rebuild_guide or user requested to update/recreate guide: do not reuse stale single-variant profile
     if action == "rebuild_guide" or requested_mod_opts.get("update_guide") or requested_mod_opts.get("overwrite_guide"):

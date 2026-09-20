@@ -1440,13 +1440,27 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                             <div className="mt-2.5 p-2.5 rounded-lg bg-gradient-to-br from-purple-950/60 to-slate-950/80 border border-purple-500/30 text-[11px] text-purple-200 space-y-1.5">
                               <div className="flex items-center justify-between font-semibold text-purple-300 text-xs">
                                 <span className="flex items-center gap-1.5">
-                                  <Sparkles className="w-3.5 h-3.5 text-purple-400" />
-                                  FCC-Claude Smali Kod İçi Teftişi
+                                  {aiResult.is_fallback ? (
+                                    <>
+                                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                                      <span className="text-amber-300">Çevrimdışı Güvenlik Rehberi (Canlı AI Çevrimdışı)</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="w-3.5 h-3.5 text-purple-400" />
+                                      <span>Canlı AI Smali Kod Teftişi</span>
+                                    </>
+                                  )}
                                 </span>
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                                   Çökme Riski: {aiResult.crash_risk || 'SIFIR'}
                                 </span>
                               </div>
+                              {aiResult.is_fallback && (
+                                <div className="text-[10px] text-amber-400/90 bg-amber-500/10 p-1.5 rounded border border-amber-500/20">
+                                  ⚠️ Canlı AI yanıt vermedi ({aiResult.fallback_reason?.includes('429') ? 'Gemini API günlük kotası doldu' : 'API Hatası'}). Çevrimdışı güvenlik şablonu gösteriliyor.
+                                </div>
+                              )}
                               <div className="text-slate-300 text-[11px] leading-relaxed">
                                 <strong className="text-purple-300">Koddaki Yeri:</strong> {aiResult.usage_purpose}
                               </div>
@@ -1563,13 +1577,27 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                             <div className="mt-2.5 p-2.5 rounded-lg bg-gradient-to-br from-amber-950/40 via-purple-950/40 to-slate-950/80 border border-amber-500/30 text-[11px] text-amber-200 space-y-1.5">
                               <div className="flex items-center justify-between font-semibold text-amber-300 text-xs">
                                 <span className="flex items-center gap-1.5">
-                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                                  Takipçi & Reklam Smali Teftişi
+                                  {aiResult.is_fallback ? (
+                                    <>
+                                      <AlertTriangle className="w-3.5 h-3.5 text-amber-400" />
+                                      <span>Çevrimdışı Güvenlik Rehberi (Canlı AI Çevrimdışı)</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                      <span>Canlı AI Takipçi & Reklam Smali Teftişi</span>
+                                    </>
+                                  )}
                                 </span>
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                                   Çökme Riski: {aiResult.crash_risk || 'SIFIR'}
                                 </span>
                               </div>
+                              {aiResult.is_fallback && (
+                                <div className="text-[10px] text-amber-400/90 bg-amber-500/10 p-1.5 rounded border border-amber-500/20">
+                                  ⚠️ Canlı AI yanıt vermedi ({aiResult.fallback_reason?.includes('429') ? 'Gemini API günlük kotası doldu' : 'API Hatası'}). Çevrimdışı güvenlik şablonu gösteriliyor.
+                                </div>
+                              )}
                               <div className="text-slate-300 text-[11px] leading-relaxed">
                                 <strong className="text-amber-300">Koddaki Yeri:</strong> {aiResult.usage_purpose}
                               </div>

@@ -268,12 +268,15 @@ Lütfen doğrudan aşağıdaki JSON formatında yanıt ver:
     } catch (aiErr: any) {
       console.warn('AI call failed, falling back to built-in knowledge base:', aiErr.message);
       // Seamless heuristic fallback: NEVER leave the user with an empty screen or error!
+      const fallbackReason = aiErr.message || 'AI servisi yanıt vermedi';
       if (knownData) {
         parsed = {
           permission: permission_name,
           ...knownData,
+          is_fallback: true,
+          fallback_reason: fallbackReason,
         };
-        modelUsed = 'PrimeForge Security Heuristics (Offline Fallback)';
+        modelUsed = 'PrimeForge Güvenlik Sezgisi (Çevrimdışı Rehber)';
       } else {
         parsed = {
           permission: permission_name,
@@ -282,11 +285,13 @@ Lütfen doğrudan aşağıdaki JSON formatında yanıt ver:
           crash_risk: 'DUSUK',
           recommendation: 'ISTEGE_BAGLI',
           recommendation_badge: '⚠️ İhtiyaca Göre Tut',
+          is_fallback: true,
+          fallback_reason: fallbackReason,
           code_references: [
             `AndroidManifest.xml -> <uses-permission android:name="${permission_name}" />`
           ],
         };
-        modelUsed = 'PrimeForge Security Heuristics (Offline Fallback)';
+        modelUsed = 'PrimeForge Güvenlik Sezgisi (Çevrimdışı Şablon)';
       }
     }
 

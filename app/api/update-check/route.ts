@@ -123,6 +123,124 @@ function parseOwnerAndRepo(url: string): [string, string] | null {
   return null;
 }
 
+function repoMatchesApp(repoName: string, pkg: string, title: string): boolean {
+  const r = repoName.toLowerCase();
+  const pkgParts = pkg.toLowerCase().split('.').filter((p) => p.length >= 3 && !['com', 'org', 'net', 'app', 'android', 'pro', 'plus', 'client'].includes(p));
+  for (const part of pkgParts) {
+    if (r.includes(part)) return true;
+  }
+  const titleWords = title.toLowerCase().replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((w) => w.length >= 4 && !['pro', 'mod', 'apk', 'oynatıcı', 'player', 'resmi', 'official', 'client', 'istemci'].includes(w));
+  for (const tw of titleWords) {
+    if (r.includes(tw)) return true;
+  }
+  return false;
+}
+
+function doesReleaseOrAssetBelongToApp(
+  release: any,
+  listing: any,
+  isSharedRepo: boolean
+): { belongs: boolean; matchingAssets: any[]; versionFromAsset?: string } {
+  const pkg = (listing.packageName || '').toLowerCase().trim();
+  const title = (listing.title || '').toLowerCase().trim();
+
+  const pkgParts = pkg.split('.').filter((p: string) => p.length >= 3 && !['com', 'org', 'net', 'app', 'android', 'pro', 'plus', 'client'].includes(p));
+  
+  const knownAliases: Record<string, string[]> = {
+    'com.foobnix.pdf.reader': ['librera', 'foobnix'],
+    'com.foobnix.pro.pdf.reader': ['librera', 'foobnix'],
+    'com.frontrow.vlog': ['vn-editor', 'vn_editor', 'frontrow', 'vn'],
+    'com.axonplayer.app': ['axon', 'axonplayer'],
+    'org.smarttube.stable': ['smarttube', 'smarttubanext'],
+    'org.smarttube.beta': ['smarttube', 'smarttubanext'],
+    'com.crunchyroll.crunchyroid': ['crunchyroll'],
+    'com.letterboxd.letterboxd': ['letterboxd'],
+    'com.hevy': ['hevy'],
+    'com.bytesong.missionalarm': ['alarmo', 'bytesong'],
+    'com.wixsite.ut_app.utalarm': ['utalarm', 'earphone'],
+    'org.languageapp.lingory': ['lingory'],
+    'com.avocards': ['avocards'],
+    'com.celestron.skybox': ['starsense', 'skybox', 'celestron'],
+    'com.lumina.wallpapers': ['lumina'],
+    'com.nomone.resolution_changer': ['nomone'],
+    'app.ttmikstories.android': ['ttmik', 'stories'],
+    'com.mirinae.mirinae': ['mirinae'],
+    'cn.ommiao.iconpacker': ['iconpacker', 'ommiao'],
+    'com.amazon.avod.thirdpartyclient': ['primevideo', 'amazon', 'avod'],
+    'com.snorelab.app': ['snorelab'],
+    'net.teuida.teuida': ['teuida'],
+    'com.mxtech.videoplayer.ad': ['mxplayer', 'mxtech', 'mx_player', 'mx-player'],
+    'org.videolan.vlc': ['vlc', 'videolan'],
+    'com.brouken.player': ['just.player', 'justplayer', 'just_player', 'brouken'],
+    'org.fdroid.fdroid': ['f-droid', 'fdroid'],
+    'com.beemdevelopment.aegis': ['aegis'],
+    'org.quantumbadger.redreader': ['redreader'],
+    'org.briarproject.briar.android': ['briar'],
+    'com.lingodeer': ['lingodeer'],
+  };
+
+  const appTokens = new Set<string>();
+  if (pkg) appTokens.add(pkg);
+  for (const part of pkgParts) appTokens.add(part);
+  if (knownAliases[pkg]) {
+    for (const a of knownAliases[pkg]) appTokens.add(a);
+  }
+
+  const titleWords = title.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((w: string) => w.length >= 4 && !['pro', 'mod', 'apk', 'oynatıcı', 'player', 'resmi', 'official', 'client', 'istemci', 'iptv', 'video', 'audio', 'music', 'media', 'editor', 'reader', 'manager', 'tools', 'plus', 'kitap', 'çizgi', 'roman'].includes(w));
+  for (const tw of titleWords) appTokens.add(tw);
+
+  const apkAssets = (release.assets || []).filter((a: any) =>
+    a && a.name && a.name.toLowerCase().endsWith('.apk')
+  );
+
+  // If this is NOT a shared multi-app repo, all APK assets belong to this app
+  if (!isSharedRepo) {
+    return { belongs: true, matchingAssets: apkAssets };
+  }
+
+  // SHARED REPO: Filter APK assets strictly by app tokens
+  const matchingAssets: any[] = [];
+  for (const asset of apkAssets) {
+    const assetName = asset.name.toLowerCase();
+    const matchesToken = Array.from(appTokens).some((token) => assetName.includes(token));
+    if (matchesToken) {
+      matchingAssets.push(asset);
+    }
+  }
+
+  // Check release tag or title for PrimeForge style "mod-com.axonplayer.app-v3.4.1"
+  const tag = (release.tag_name || '').toLowerCase();
+  const relName = (release.name || '').toLowerCase();
+  const releaseMatchesApp = Array.from(appTokens).some((token) => tag.includes(token) || relName.includes(token));
+
+  // If release tag/name explicitly matches, but asset names are generic (e.g. app-release.apk), include them
+  if (releaseMatchesApp && matchingAssets.length === 0 && apkAssets.length > 0) {
+    matchingAssets.push(...apkAssets);
+  }
+
+  if (matchingAssets.length === 0 && !releaseMatchesApp) {
+    return { belongs: false, matchingAssets: [] };
+  }
+
+  // If assets matched, check if version can be extracted from asset name (e.g. for Morphe monorepo)
+  let versionFromAsset: string | undefined = undefined;
+  if (matchingAssets.length > 0) {
+    for (const ma of matchingAssets) {
+      const vm = ma.name.match(/[-_]v?([0-9]+(?:\.[0-9]+)+)/i);
+      if (vm && vm[1]) {
+        versionFromAsset = vm[1];
+        break;
+      }
+    }
+  }
+
+  return {
+    belongs: true,
+    matchingAssets: matchingAssets.length > 0 ? matchingAssets : apkAssets,
+    versionFromAsset,
+  };
+}
+
 function matchAssetToVariant(assets: any[], variant: { architecture?: string; platform?: string }): any | null {
   if (!assets || assets.length === 0) return null;
   const apkAssets = assets.filter((a: any) => a && a.name && a.name.toLowerCase().endsWith('.apk'));
@@ -480,30 +598,43 @@ export async function GET(req: Request) {
             ghReleasesCache.set(cacheKey, releasesList);
           }
 
-          // Case 2A: Releases found with APK assets
-          const validReleases = (releasesList || []).filter((r: any) => {
-            if (!r || !r.tag_name) return false;
-            const apkAssets = (r.assets || []).filter((a: any) =>
-              a.name && a.name.toLowerCase().endsWith('.apk')
-            );
-            return apkAssets.length > 0;
-          });
+          // Determine if this repository contains multiple applications
+          const isSharedRepo =
+            !repoMatchesApp(repo, pkg, listing.title || '') ||
+            (owner.toLowerCase() === 'simurgulgen' && repo.toLowerCase() === 'primeforge') ||
+            repo.toLowerCase().includes('morphe') ||
+            repo.toLowerCase().includes('orion') ||
+            repo.toLowerCase().includes('autobuild');
 
-          if (validReleases.length > 0) {
+          // Case 2A: Filter releases and APK assets that strictly belong to THIS app
+          const appReleases: any[] = [];
+          for (const r of releasesList || []) {
+            if (!r || !r.tag_name) continue;
+            const matchInfo = doesReleaseOrAssetBelongToApp(r, listing, isSharedRepo);
+            if (matchInfo.belongs && matchInfo.matchingAssets.length > 0) {
+              appReleases.push({
+                ...r,
+                assets: matchInfo.matchingAssets,
+                _versionOverride: matchInfo.versionFromAsset,
+              });
+            }
+          }
+
+          if (appReleases.length > 0) {
             const isBetaRel = (r: any) =>
               Boolean(r.prerelease) ||
               /beta|alpha|rc|nightly|preview/i.test(`${r.tag_name} ${r.name || ''}`);
 
-            const stableReleases = validReleases.filter((r: any) => !isBetaRel(r));
-            const betaReleases = validReleases.filter((r: any) => isBetaRel(r));
+            const stableReleases = appReleases.filter((r: any) => !isBetaRel(r));
+            const betaReleases = appReleases.filter((r: any) => isBetaRel(r));
 
             const latestStable = stableReleases[0] || null;
             const latestBeta = betaReleases[0] || null;
-            const latestAny = validReleases[0];
+            const latestAny = appReleases[0];
 
             const primaryRelease = latestStable || latestAny;
             const primaryTag = primaryRelease.tag_name;
-            const primaryVer = extractReleaseVersion(primaryRelease);
+            const primaryVer = primaryRelease._versionOverride || extractReleaseVersion(primaryRelease);
 
             // Detailed variant evaluation
             let hasAnyVariantUpdate = false;
@@ -518,7 +649,7 @@ export async function GET(req: Request) {
                 if (!targetRel) continue;
 
                 const targetTag = targetRel.tag_name;
-                const targetVer = extractReleaseVersion(targetRel);
+                const targetVer = targetRel._versionOverride || extractReleaseVersion(targetRel);
                 const vCurVer = cleanSemver(v.version || currentVer);
                 const isNewer = isNewerVersion(vCurVer, targetVer);
 
