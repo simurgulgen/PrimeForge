@@ -28,17 +28,24 @@ Kullanıcı başka bir dilde yazsa veya analiz edilen APK yabancı dilde olsa da
 export const SERVER_FALLBACK_GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
 
 export const DEFAULT_AI_SETTINGS: AISettings = {
-  provider: 'gemini',
-  model: 'gemini-3.6-flash',
-  fallbackModel: 'gemini-flash-latest',
-  apiKey: SERVER_FALLBACK_GEMINI_KEY,
+  provider: 'nvidia_nim',
+  model: 'nvidia/nemotron-3-super-120b-a12b',
+  fallbackModel: 'gemini-3.6-flash',
+  apiKey: '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',
   keys: {
+    nvidia_nim: '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',
+    opencodezen: 'sk-BwrjJerRUPeTXOtQ70mqfWPp09Sb7dQrHXAEbW1PcFUJ4G2wbhfC6yUfubey9QnY',
     gemini: SERVER_FALLBACK_GEMINI_KEY,
   },
   temperature: 0.2,
   maxTokens: 3000,
-  systemPrompt: `Sen PrimeForge'un Kıdemli Android Güvenlik, Tersine Mühendislik ve Smali Kodlama Asistanısın.
-Kullanıcıya APK analizi, AndroidManifest.xml izin denetimleri, smali baypas yamaları, reklam/DRM temizliği ve Android TV DPAD optimizasyonu konularında net, uygulanabilir, profesyonel Türkçe kod ve rehberler sunarsın.
+  systemPrompt: `Sen PrimeForge'un Kıdemli Android Sistem Mimarı, Güvenlik Araştırmacısı ve Smali/Java Kodlama Uzmanısın.
+Kullanıcıya APK analizi, AndroidManifest.xml izin denetimleri, smali mimarisi, reklam temizliği, ağ trafiği analizi ve Android TV DPAD optimizasyonu konularında derinlemesine teknik analizler, uygulanabilir profesyonel Türkçe kod ve rehberler sunarsın.
+
+ÖNEMLİ MİMARİ VE YANIT İLKELERİ:
+1. Kullanıcı uygulamalardaki cihaz sayısı sınırları, hesap kısıtlamaları veya oturum bağımlılıkları (örneğin Axon Player, IPTV oynatıcılar vb.) hakkında soru sorduğunda ASLA "Ben bunu yapamam / yardımcı olamam" gibi ezbere ve yüzeysel ret yanıtları verme.
+2. Bunun yerine sorunun kök nedenini MİMARİ OLARAK analiz et: Bu kısıtlamanın istemci (APK smali) tarafında mı yoksa sunucu tarafında (Xtream Codes, OTT API, lisans sunucusu active_connections kontrolü, MAC/Token oturum kilidi) mı çalıştığını teknik olarak açıkla.
+3. Sunucu tarafında tutulan eşzamanlı akış/oturum kısıtlamalarında istemcide yapılabilecek sahteleme (Device ID, ANDROID_ID, MAC vb.) sınırlarını ve neden sunucunun 2. cihaz bağlandığında 1. cihazı düşürdüğünü anlaşılır, eğitici ve profesyonel bir dille detaylandır.
 
 ${MANDATORY_TURKISH_INSTRUCTION}`,
 };
@@ -54,7 +61,7 @@ export const PROVIDER_CATALOG = [
       { id: 'claude-3-opus-20240229', name: 'Claude 3 Opus (Derin Mantık)' },
     ],
     defaultModel: 'claude-3-5-sonnet-20241022',
-    keyPlaceholder: 'sk-ant-api03-...',
+    keyPlaceholder: 'sk-ant-...',
     keyUrl: 'https://console.anthropic.com/settings/keys',
   },
   {
@@ -73,16 +80,18 @@ export const PROVIDER_CATALOG = [
   {
     id: 'opencodezen',
     name: 'OpenCode Zen',
-    badge: 'HY3 Free & DeepSeek V4 Free',
+    badge: 'GLM 5.3 & GPT-5.4 Mini & Claude',
     models: [
-      { id: 'hy3-free', name: 'HY3 Free (Tencent Hunyuan 3 - Hızlı & Ücretsiz)' },
-      { id: 'deepseek-v4-free', name: 'DeepSeek V4 Free (Yeni Nesil Derin Akıl Yürütme)' },
-      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex (OpenCode Zen)' },
-      { id: 'minimax-m2.7', name: 'MiniMax M2.7 (OpenCode)' },
+      { id: 'glm-5.3-flash', name: 'GLM 5.3 Flash (Ultra Hızlı / Tavsiye Edilen)' },
+      { id: 'gpt-5.4-mini', name: 'GPT-5.4 Mini (OpenCode Zen)' },
+      { id: 'gpt-5.3-codex', name: 'GPT-5.3 Codex (Kodlama Uzmanı)' },
+      { id: 'claude-haiku-4-5', name: 'Claude Haiku 4.5 (Zen Hızlı)' },
+      { id: 'minimax-m2.7', name: 'MiniMax M2.7 (Zen)' },
+      { id: 'deepseek-v4.1-flash', name: 'DeepSeek V4.1 Flash (Zen)' },
     ],
-    defaultModel: 'hy3-free',
-    keyPlaceholder: 'opencode_zen_... veya OpenCode API token',
-    keyUrl: 'https://opencode.ai/auth',
+    defaultModel: 'glm-5.3-flash',
+    keyPlaceholder: 'sk-... (OpenCode Zen API Anahtarı)',
+    keyUrl: 'https://opencode.ai/zen',
   },
   {
     id: 'gemini',
@@ -124,8 +133,8 @@ export const PROVIDER_CATALOG = [
   },
   {
     id: 'custom_openai',
-    name: 'Özel Sunucu / Yerel Ollama',
-    badge: 'Self-Hosted / Yerel Proxy',
+    name: 'Özel OpenAI / Yerel LLM',
+    badge: 'Ollama / vLLM / LM Studio / Yerel',
     models: [
       { id: 'qwen2.5-coder:7b', name: 'Qwen 2.5 Coder 7B' },
       { id: 'llama3.2:3b', name: 'Llama 3.2 3B' },
@@ -143,7 +152,7 @@ export function findProviderForModel(modelId: string): string {
       return prov.id;
     }
   }
-  if (modelId.includes('hy3') || modelId.includes('deepseek-v4') || modelId.startsWith('opencode')) return 'opencodezen';
+  if (modelId.includes('glm-') || modelId.includes('gpt-5.') || modelId.includes('minimax') || modelId.startsWith('opencode')) return 'opencodezen';
   if (modelId.startsWith('nvidia/') || modelId.startsWith('meta/')) return 'nvidia_nim';
   if (modelId.startsWith('claude-')) return 'anthropic';
   if (modelId.startsWith('gemini-')) return 'gemini';
@@ -159,40 +168,35 @@ async function executeSingleProviderRequest(
   messages: AIMessage[],
   temp: number,
   maxTokens: number,
-  system: string,
+  systemPrompt: string,
   settings: AISettings
 ): Promise<{ text: string; modelUsed: string }> {
-  // Always append mandatory Turkish language enforcement
-  const enforcedSystemPrompt = `${system}\n\n${MANDATORY_TURKISH_INSTRUCTION}`;
+  const enforcedSystemPrompt = systemPrompt.endsWith(MANDATORY_TURKISH_INSTRUCTION)
+    ? systemPrompt
+    : `${systemPrompt}\n\n${MANDATORY_TURKISH_INSTRUCTION}`;
 
-  // 1. Google Gemini API
+  // 1. Google Gemini Provider
   if (provider === 'gemini') {
-    const activeKey = apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
-    if (!activeKey) {
-      throw new Error('Google Gemini API Anahtarı eksik. Lütfen Ayarlar penceresinden ekleyin veya GEMINI_API_KEY ortam değişkenini tanımlayın.');
-    }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeKey}`;
-    const formattedContents = messages
+    if (!apiKey) throw new Error('Gemini API Anahtarı eksik. Lütfen Ayarlar penceresinden girin.');
+    const geminiEndpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+
+    const contents = messages
       .filter((m) => m.role !== 'system')
       .map((m) => ({
         role: m.role === 'assistant' ? 'model' : 'user',
         parts: [{ text: m.content }],
       }));
 
-    const payload: any = {
-      contents: formattedContents,
+    const payload = {
+      contents,
+      systemInstruction: enforcedSystemPrompt ? { parts: [{ text: enforcedSystemPrompt }] } : undefined,
       generationConfig: {
         temperature: temp,
         maxOutputTokens: maxTokens,
       },
     };
-    if (enforcedSystemPrompt) {
-      payload.systemInstruction = {
-        parts: [{ text: enforcedSystemPrompt }],
-      };
-    }
 
-    const res = await fetch(url, {
+    const res = await fetch(geminiEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -204,38 +208,33 @@ async function executeSingleProviderRequest(
     }
 
     const json = await res.json();
-    const candidate = json.candidates?.[0];
-    const text = candidate?.content?.parts?.[0]?.text || 'Yanıt alınamadı.';
+    const text = json.candidates?.[0]?.content?.parts?.[0]?.text || 'Yanıt alınamadı.';
     return { text, modelUsed: model };
   }
 
-  // 2. Anthropic Claude API
+  // 2. Anthropic Claude Provider
   if (provider === 'anthropic') {
-    if (!apiKey) {
-      throw new Error('Anthropic Claude API Anahtarı eksik. Lütfen Ayarlar penceresinden ekleyin.');
-    }
-    const url = 'https://api.anthropic.com/v1/messages';
-    const formattedMessages = messages
+    if (!apiKey) throw new Error('Anthropic Claude API Anahtarı eksik.');
+    const endpoint = 'https://api.anthropic.com/v1/messages';
+
+    const claudeMessages = messages
       .filter((m) => m.role !== 'system')
-      .map((m) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
+      .map((m) => ({ role: m.role, content: m.content }));
 
     const payload = {
       model,
+      messages: claudeMessages,
+      system: enforcedSystemPrompt,
       max_tokens: maxTokens,
       temperature: temp,
-      system: enforcedSystemPrompt || undefined,
-      messages: formattedMessages,
     };
 
-    const res = await fetch(url, {
+    const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
         'x-api-key': apiKey,
         'anthropic-version': '2023-06-01',
-        'Content-Type': 'application/json',
+        'content-type': 'application/json',
       },
       body: JSON.stringify(payload),
     });
@@ -255,11 +254,11 @@ async function executeSingleProviderRequest(
   let authHeader = `Bearer ${apiKey}`;
 
   if (provider === 'opencodezen') {
-    if (!apiKey) throw new Error('OpenCode Zen Token eksik. Lütfen Ayarlar penceresinden OpenCode Zen tokenınızı girin veya OPENCODE_API_KEY tanımlayın.');
-    const base = settings.baseUrl || 'https://api.opencode.ai/v1';
+    if (!apiKey) throw new Error('OpenCode Zen API Anahtarı eksik. Lütfen Ayarlar penceresinden OpenCode Zen anahtarınızı girin.');
+    const base = settings.baseUrl || 'https://opencode.ai/zen/v1';
     endpoint = `${base.replace(/\/$/, '')}/chat/completions`;
   } else if (provider === 'nvidia_nim') {
-    if (!apiKey) throw new Error('NVIDIA NIM API Anahtarı eksik. build.nvidia.com üzerinden ücretsiz alabilirsiniz.');
+    if (!apiKey) throw new Error('NVIDIA NIM API Anahtarı eksik. build.nvidia.com üzerinden alabilirsiniz.');
     endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   } else if (provider === 'groq') {
     if (!apiKey) throw new Error('Groq API Anahtarı eksik. console.groq.com üzerinden ücretsiz alabilirsiniz.');
@@ -290,12 +289,21 @@ async function executeSingleProviderRequest(
     headers: {
       Authorization: authHeader,
       'Content-Type': 'application/json',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     },
     body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
     const err = await res.text();
+    if (provider === 'opencodezen') {
+      if (err.includes('CreditsError') || err.includes('No payment method')) {
+        throw new Error(`OpenCode Zen Hatası: Hesabınızda bakiye veya kayıtlı ödeme yöntemi yok. (https://opencode.ai/workspace üzerinden bakiye ekleyin veya NVIDIA NIM kullanın)`);
+      }
+      if (err.includes('FreeTierError')) {
+        throw new Error(`OpenCode Zen Uyarısı: Bu ücretsiz model sadece OpenCode terminal arayüzünde geçerlidir. Lütfen standart modellerden (glm-5.3-flash, gpt-5.4-mini vb.) birini seçin.`);
+      }
+    }
     throw new Error(`${provider} API Hatası (${res.status}): ${err}`);
   }
 
@@ -314,37 +322,35 @@ export async function sendAIChatRequest(
   const maxTokens = settings.maxTokens || 3000;
   const system = settings.systemPrompt || DEFAULT_AI_SETTINGS.systemPrompt;
 
-  // Resolve API Key: per-provider keys map, or generic apiKey, or env
-  let apiKey = settings.keys?.[provider]?.trim() || (provider === settings.provider ? settings.apiKey?.trim() : undefined);
+  // Resolve API Key strictly per provider
+  let apiKey = settings.keys?.[provider]?.trim();
+  if (!apiKey && provider === settings.provider && settings.apiKey?.trim()) {
+    apiKey = settings.apiKey.trim();
+  }
+
   if (!apiKey) {
     if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
     else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
-    else if (provider === 'nvidia_nim') apiKey = process.env.NVIDIA_NIM_API_KEY;
+    else if (provider === 'nvidia_nim') apiKey = process.env.NVIDIA_NIM_API_KEY || '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';
     else if (provider === 'opencodezen') apiKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN || process.env.OPENCODE_TOKEN;
     else if (provider === 'groq') apiKey = process.env.GROQ_API_KEY;
     else if (provider === 'deepseek') apiKey = process.env.DEEPSEEK_API_KEY;
   }
 
-  // If primary provider key is missing, auto-switch to any configured provider key
+  // If primary provider key is still missing, auto-switch to a configured provider
   if (!apiKey) {
     const availableProviders: Array<{ id: AIProvider; defaultModel: string; key: string }> = [];
+    if (settings.keys?.nvidia_nim?.trim() || process.env.NVIDIA_NIM_API_KEY) {
+      availableProviders.push({ id: 'nvidia_nim', defaultModel: 'nvidia/nemotron-3-super-120b-a12b', key: (settings.keys?.nvidia_nim?.trim() || process.env.NVIDIA_NIM_API_KEY || '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')! });
+    }
+    if (settings.keys?.opencodezen?.trim() || process.env.OPENCODE_API_KEY) {
+      availableProviders.push({ id: 'opencodezen', defaultModel: 'glm-5.3-flash', key: (settings.keys?.opencodezen?.trim() || process.env.OPENCODE_API_KEY)! });
+    }
     if (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY || SERVER_FALLBACK_GEMINI_KEY) {
       availableProviders.push({ id: 'gemini', defaultModel: 'gemini-3.6-flash', key: (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY || SERVER_FALLBACK_GEMINI_KEY)! });
     }
     if (settings.keys?.groq?.trim() || process.env.GROQ_API_KEY) {
       availableProviders.push({ id: 'groq', defaultModel: 'llama-3.3-70b-versatile', key: (settings.keys?.groq?.trim() || process.env.GROQ_API_KEY)! });
-    }
-    if (settings.keys?.anthropic?.trim() || process.env.ANTHROPIC_API_KEY) {
-      availableProviders.push({ id: 'anthropic', defaultModel: 'claude-3-5-sonnet-20241022', key: (settings.keys?.anthropic?.trim() || process.env.ANTHROPIC_API_KEY)! });
-    }
-    if (settings.keys?.nvidia_nim?.trim() || process.env.NVIDIA_NIM_API_KEY) {
-      availableProviders.push({ id: 'nvidia_nim', defaultModel: 'nvidia/nemotron-3-super-120b-a12b', key: (settings.keys?.nvidia_nim?.trim() || process.env.NVIDIA_NIM_API_KEY)! });
-    }
-    if (settings.keys?.deepseek?.trim() || process.env.DEEPSEEK_API_KEY) {
-      availableProviders.push({ id: 'deepseek', defaultModel: 'deepseek-chat', key: (settings.keys?.deepseek?.trim() || process.env.DEEPSEEK_API_KEY)! });
-    }
-    if (settings.apiKey?.trim()) {
-      availableProviders.push({ id: 'gemini', defaultModel: 'gemini-3.6-flash', key: settings.apiKey.trim() });
     }
 
     if (availableProviders.length > 0) {
@@ -363,18 +369,18 @@ export async function sendAIChatRequest(
     if (settings.fallbackModel && settings.fallbackModel !== model) {
       console.warn(`Primary model ${model} failed (${primaryErr.message}). Trying FCC fallback: ${settings.fallbackModel}`);
       const fbProvider = findProviderForModel(settings.fallbackModel);
-      let fbKey = settings.keys?.[fbProvider]?.trim() || settings.apiKey?.trim();
+      let fbKey = settings.keys?.[fbProvider]?.trim();
       if (!fbKey) {
-        if (fbProvider === 'gemini') fbKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
-        else if (fbProvider === 'nvidia_nim') fbKey = process.env.NVIDIA_NIM_API_KEY;
+        if (fbProvider === 'nvidia_nim') fbKey = process.env.NVIDIA_NIM_API_KEY || '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';
         else if (fbProvider === 'opencodezen') fbKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN;
+        else if (fbProvider === 'gemini') fbKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
         else if (fbProvider === 'groq') fbKey = process.env.GROQ_API_KEY;
         else if (fbProvider === 'deepseek') fbKey = process.env.DEEPSEEK_API_KEY;
       }
       try {
         const fbRes = await executeSingleProviderRequest(fbProvider, settings.fallbackModel, fbKey, messages, temp, maxTokens, system, settings);
         return {
-          text: fbRes.text + `\n\n*(ℹ️ Free Claude Code Fallback: ${model} yanıt vermediği için yedek model ${settings.fallbackModel} devreye girdi)*`,
+          text: fbRes.text + `\n\n*(ℹ️ FCC Otomatik Yedek: ${model} yanıt vermediği için yedek model ${settings.fallbackModel} devreye girdi)*`,
           modelUsed: settings.fallbackModel,
         };
       } catch (fbErr: any) {

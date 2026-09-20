@@ -32,13 +32,40 @@ export async function POST(req: Request) {
     }
 
     try {
+      // Fetch existing settings to safely merge keys and preserve credentials
+      const { data: existing } = await supabase
+        .from('forge_settings')
+        .select('value')
+        .eq('key', 'ai_studio_settings')
+        .maybeSingle();
+
+      const existingValue = existing?.value || {};
+      const mergedKeys = {
+        ...(existingValue.keys || {}),
+        ...(settings.keys || {}),
+      };
+      for (const k in existingValue.keys || {}) {
+        if (existingValue.keys[k] && (!mergedKeys[k] || mergedKeys[k].trim() === '')) {
+          mergedKeys[k] = existingValue.keys[k];
+        }
+      }
+
+      const mergedSettings = {
+        ...DEFAULT_AI_SETTINGS,
+        ...existingValue,
+        ...settings,
+        keys: mergedKeys,
+      };
+
       await supabase
         .from('forge_settings')
         .upsert({
           key: 'ai_studio_settings',
-          value: settings,
+          value: mergedSettings,
           updated_at: new Date().toISOString(),
         });
+
+      return NextResponse.json({ success: true, settings: mergedSettings });
     } catch (dbErr) {
       console.error('Settings upsert warning:', dbErr);
     }

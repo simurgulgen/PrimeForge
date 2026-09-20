@@ -96,20 +96,56 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
       }
     }
 
-    // Load settings from local storage or backend
-    const saved = localStorage.getItem('primeforge_ai_settings');
-    if (saved) {
+    // Load settings from backend and sync with local storage
+    const syncSettings = async () => {
       try {
-        setSettings({ ...DEFAULT_AI_SETTINGS, ...JSON.parse(saved) });
-      } catch (_) {}
-    } else {
-      fetch('/api/ai/settings')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data.settings) setSettings(data.settings);
-        })
-        .catch(() => {});
-    }
+        const res = await fetch('/api/ai/settings');
+        const data = await res.json();
+        if (data.settings) {
+          const serverSettings = data.settings;
+          const saved = typeof window !== 'undefined' ? localStorage.getItem('primeforge_ai_settings') : null;
+          let localObj: any = {};
+          if (saved) {
+            try {
+              localObj = JSON.parse(saved);
+            } catch (_) {}
+          }
+
+          const mergedKeys = {
+            ...(serverSettings.keys || {}),
+            ...(localObj.keys || {}),
+          };
+          // Server keys take precedence if local is empty
+          for (const k in serverSettings.keys || {}) {
+            if (serverSettings.keys[k] && (!mergedKeys[k] || mergedKeys[k].trim() === '')) {
+              mergedKeys[k] = serverSettings.keys[k];
+            }
+          }
+
+          const activeProv = localObj.provider || serverSettings.provider || DEFAULT_AI_SETTINGS.provider;
+          const finalSettings = {
+            ...DEFAULT_AI_SETTINGS,
+            ...serverSettings,
+            ...localObj,
+            provider: activeProv,
+            model: localObj.model || serverSettings.model || DEFAULT_AI_SETTINGS.model,
+            keys: mergedKeys,
+            apiKey: mergedKeys[activeProv] || '',
+          };
+
+          setSettings(finalSettings);
+          localStorage.setItem('primeforge_ai_settings', JSON.stringify(finalSettings));
+        }
+      } catch (_) {
+        const saved = typeof window !== 'undefined' ? localStorage.getItem('primeforge_ai_settings') : null;
+        if (saved) {
+          try {
+            setSettings({ ...DEFAULT_AI_SETTINGS, ...JSON.parse(saved) });
+          } catch (_) {}
+        }
+      }
+    };
+    syncSettings();
 
     // Load recent jobs for APK context
     fetch('/api/job-status?t=' + Date.now())
@@ -768,10 +804,13 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
                         key={prov.id}
                         type="button"
                         onClick={() => {
+                          const provId = prov.id as any;
+                          const currentKey = settings.keys?.[provId] || '';
                           setSettings({
                             ...settings,
-                            provider: prov.id as any,
+                            provider: provId,
                             model: prov.defaultModel,
+                            apiKey: currentKey,
                           });
                         }}
                         className={`p-3 rounded-xl border text-left transition-all relative ${
@@ -827,15 +866,14 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
                   Ana model hata verdiğinde veya kotası bittiğinde isteği kesmeden otomatik devreye girer.
                 </p>
                 <select
-                  value={settings.fallbackModel || 'gemini-1.5-flash'}
+                  value={settings.fallbackModel || 'nvidia/nemotron-3-super-120b-a12b'}
                   onChange={(e) => setSettings({ ...settings, fallbackModel: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-xl bg-slate-900 border border-slate-700 text-teal-300 text-xs focus:outline-none focus:border-purple-500 font-mono"
                 >
-                  <option value="gemini-1.5-flash">Google Gemini 1.5 Flash (1M Context / Ücretsiz)</option>
-                  <option value="hy3-free">OpenCode Zen HY3 Free (Tencent Hunyuan 3 / Ücretsiz)</option>
-                  <option value="deepseek-v4-free">OpenCode Zen DeepSeek V4 Free (Yeni Nesil)</option>
-                  <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B Versatile (Ultra Hızlı)</option>
-                  <option value="nvidia/nemotron-3-super-120b-a12b">NVIDIA Nemotron 3 Super 120B</option>
+                  <option value="nvidia/nemotron-3-super-120b-a12b">NVIDIA Nemotron 3 Super 120B (120B Parametre / Hızlı)</option>
+                  <option value="gemini-3.6-flash">Google Gemini 3.6 Flash (1M Context / Ücretsiz Tier)</option>
+                  <option value="glm-5.3-flash">OpenCode Zen GLM 5.3 Flash (Ultra Hızlı)</option>
+                  <option value="llama-3.3-70b-versatile">Groq Llama 3.3 70B Versatile (300+ tps)</option>
                   <option value="claude-3-5-haiku-20241022">Anthropic Claude 3.5 Haiku</option>
                 </select>
               </div>
@@ -844,7 +882,7 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="font-semibold text-white">
-                    {currentProviderInfo.name} {currentProviderInfo.id === 'opencodezen' ? 'API Token' : 'API Anahtarı'}
+                    {currentProviderInfo.name} {currentProviderInfo.id === 'opencodezen' ? 'API Anahtarı / Token' : 'API Anahtarı'}
                   </label>
                   {currentProviderInfo.keyUrl && (
                     <a
@@ -853,7 +891,7 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
                       rel="noopener noreferrer"
                       className="text-[11px] text-purple-400 hover:underline flex items-center gap-1"
                     >
-                      {currentProviderInfo.id === 'opencodezen' ? 'Token Al' : 'Anahtar Al'} <ExternalLink className="w-3 h-3" />
+                      {currentProviderInfo.id === 'opencodezen' ? 'Anahtar Al' : 'Anahtar Al'} <ExternalLink className="w-3 h-3" />
                     </a>
                   )}
                 </div>
@@ -863,12 +901,13 @@ Sağ üstteki **Model Ayarları** butonundan Claude, NVIDIA NIM, Gemini veya Gro
                     type={showKey ? 'text' : 'password'}
                     value={settings.keys?.[settings.provider] || ''}
                     onChange={(e) => {
+                      const val = e.target.value;
                       const newKeys = { ...(settings.keys || {}) };
-                      newKeys[settings.provider] = e.target.value;
+                      newKeys[settings.provider] = val;
                       setSettings({
                         ...settings,
                         keys: newKeys,
-                        apiKey: e.target.value,
+                        apiKey: val,
                       });
                     }}
                     placeholder={currentProviderInfo.keyPlaceholder || 'API anahtarınızı yapıştırın...'}
