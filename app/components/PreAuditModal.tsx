@@ -1768,10 +1768,26 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                             {customAnalysisResult.summary}
                           </div>
                         </div>
-                        <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                          Risk: {customAnalysisResult.risk_level || 'DÜŞÜK'}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <span className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
+                            customAnalysisResult.is_fallback
+                              ? 'bg-amber-500/10 text-amber-300 border-amber-500/30'
+                              : 'bg-purple-500/20 text-purple-300 border-purple-500/30'
+                          }`}>
+                            {customAnalysisResult.is_fallback ? '⚠️ Çevrimdışı Kural' : `⚡ ${customAnalysisResult.model_used || 'NVIDIA NIM 120B'}`}
+                          </span>
+                          <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            Risk: {customAnalysisResult.risk_level || 'DÜŞÜK'}
+                          </span>
+                        </div>
                       </div>
+
+                      {customAnalysisResult.is_fallback && customAnalysisResult.fallback_reason && (
+                        <div className="text-[10px] text-amber-400/90 bg-amber-500/10 p-1.5 rounded border border-amber-500/20">
+                          ⚠️ Canlı AI yanıt veremedi ({customAnalysisResult.fallback_reason}). Çevrimdışı şablon kullanılıyor.
+                        </div>
+                      )}
+
 
                       <div className="p-2 rounded-lg bg-black/40 border border-white/5 space-y-1 text-[10px]">
                         <div>

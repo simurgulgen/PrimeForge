@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { sendAIChatRequest, AIMessage, DEFAULT_AI_SETTINGS, AISettings } from '@/lib/ai-service';
+import { supabase } from '@/lib/supabase';
 
 export const dynamic = 'force-dynamic';
 
@@ -76,10 +77,10 @@ function generateHeuristicFallback(userRequest: string, appName: string, package
       option_description: 'Arayüzdeki popup reklamları ve arka plan analitik raporlamalarını tamamen durdurur.',
       code_locations: [
         'com/google/android/gms/ads/AdView.smali -> loadAd()',
-        `${packageName.replace(/\./g, '/')}/ads/CustomAdManager.smali`,
+        `${packageName.replace(/\./g, '/')}/AdManager.smali`,
       ],
       recommended_smali_patch: {
-        target_class: `${packageName.replace(/\./g, '/')}/ads/CustomAdManager`,
+        target_class: `${packageName.replace(/\./g, '/')}/AdManager`,
         target_method: 'showInterstitial()V',
         action: 'empty_void',
         value: 'return-void',
@@ -144,6 +145,34 @@ export async function POST(req: Request) {
     const trimmedReq = user_request.trim();
     const heuristic = generateHeuristicFallback(trimmedReq, app_name, package_name);
 
+    // Resolve AI settings: DEFAULT -> Supabase DB settings -> Client local settings
+    let resolvedSettings: AISettings = { ...DEFAULT_AI_SETTINGS };
+    try {
+      const { data: dbSettings } = await supabase
+        .from('forge_settings')
+        .select('value')
+        .eq('key', 'ai_studio_settings')
+        .maybeSingle();
+
+      if (dbSettings?.value) {
+        resolvedSettings = { ...resolvedSettings, ...dbSettings.value };
+      }
+    } catch (dbErr) {
+      console.warn('DB settings read error in custom inspect:', dbErr);
+    }
+
+    if (ai_settings && typeof ai_settings === 'object') {
+      resolvedSettings = {
+        ...resolvedSettings,
+        ...ai_settings,
+        keys: {
+          ...(resolvedSettings.keys || {}),
+          ...(ai_settings.keys || {}),
+        },
+      };
+      if (ai_settings.apiKey) resolvedSettings.apiKey = ai_settings.apiKey;
+    }
+
     // Prepare AI prompt for deep smali / reverse engineering reasoning
     const prompt = `Sen PrimeForge Android APK Tersine Mühendislik ve Smali Modlama Uzmanısın.
 Kullanıcı şu uygulama için özel bir modlama / özellik isteğinde bulundu:
@@ -189,15 +218,14 @@ Yanıtını KESİNLİKLE aşağıdaki JSON şemasına uygun olarak üret:
 `;
 
     // Try AI generation
-    let finalResult = heuristic;
+    let finalResult: any = { ...heuristic, is_fallback: true };
     let modelUsed = 'Heuristic Engine (Anında)';
 
     try {
-      const activeSettings: AISettings = ai_settings || DEFAULT_AI_SETTINGS;
       const messages: AIMessage[] = [{ role: 'user', content: prompt }];
 
       const aiRes = await sendAIChatRequest(messages, {
-        ...activeSettings,
+        ...resolvedSettings,
         temperature: 0.2,
         maxTokens: 1200,
       });
@@ -215,13 +243,17 @@ Yanıtını KESİNLİKLE aşağıdaki JSON şemasına uygun olarak üret:
           finalResult = {
             ...heuristic,
             ...parsedJson,
+            is_fallback: false,
           };
-          modelUsed = aiRes.modelUsed || activeSettings.model;
+          modelUsed = aiRes.modelUsed || resolvedSettings.model;
         }
       }
     } catch (aiErr: any) {
       console.warn('AI custom inspect fell back to heuristic:', aiErr.message);
+      finalResult.fallback_reason = aiErr.message;
     }
+
+    finalResult.model_used = modelUsed;
 
     return NextResponse.json({
       success: true,
@@ -233,3 +265,4 @@ Yanıtını KESİNLİKLE aşağıdaki JSON şemasına uygun olarak üret:
     return NextResponse.json({ error: err.message || 'Özel istek analizi başarısız oldu.' }, { status: 500 });
   }
 }
+
