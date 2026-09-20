@@ -20,8 +20,12 @@ on:
         default: "full_mod"
         options:
           - "full_mod"
+          - "rebuild_guide"
+          - "autonomous_from_guide"
+          - "custom_mod"
           - "analyze_only"
           - "sanitize_only"
+          - "rebuild_only"
       variant:
         description: "Cihaz varyantı (tv, mobile, tablet)"
         type: choice

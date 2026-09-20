@@ -77,7 +77,10 @@ export async function POST(req: Request) {
 
     // 2. Dispatch: Local Windows Runner vs GitHub Actions Cloud
     let dispatchSuccess = false;
-    if (runner_type === 'local' || (apk_url && !apk_url.startsWith('http'))) {
+    const isVercel = process.env.VERCEL === '1' || req.url.includes('vercel.app');
+    const shouldUseLocal = (runner_type === 'local' || (apk_url && !apk_url.startsWith('http'))) && !isVercel && (apk_url && !apk_url.startsWith('http'));
+
+    if (shouldUseLocal) {
       try {
         const localRes = await fetch(new URL('/api/local-runner', req.url).toString(), {
           method: 'POST',

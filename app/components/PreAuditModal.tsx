@@ -159,7 +159,7 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
   const [submitting, setSubmitting] = useState(false);
 
   // Advanced Game-Changing Options
-  const [runnerType, setRunnerType] = useState<'local' | 'cloud'>('local');
+  const [runnerType, setRunnerType] = useState<'local' | 'cloud'>('cloud');
   const [enableTvDpad, setEnableTvDpad] = useState(false);
   const [enableAdBlocker, setEnableAdBlocker] = useState(true);
   const [enableSelfHealing, setEnableSelfHealing] = useState(true);
