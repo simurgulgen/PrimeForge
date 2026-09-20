@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sanitizeRegex, fetchResilientHtml } from '@/lib/scraper-utils';
+import { sanitizeRegex, fetchResilientHtml, parseLiteApksPage } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -60,6 +60,16 @@ export async function POST(req: Request) {
       }
     } catch (e: any) {
       linkRegexError = `Geçersiz Link Regex: ${e.message}`;
+    }
+
+    // LiteAPKs fallback for download link & version
+    if (!matchedDownloadUrl && cleanTargetUrl.includes('liteapks')) {
+      const parsed = parseLiteApksPage(html);
+      if (parsed.downloadPath) {
+        matchedDownloadUrl = parsed.downloadPath.startsWith('http')
+          ? parsed.downloadPath
+          : `https://liteapks.com${parsed.downloadPath}`;
+      }
     }
 
     // 2. Version matching
