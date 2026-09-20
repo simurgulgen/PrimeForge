@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sanitizeRegex, fetchResilientHtml, parseLiteApksPage } from '@/lib/scraper-utils';
+import { sanitizeRegex, fetchResilientHtml, parseLiteApksPage, extractVersionFromUrlOrFilename } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -76,13 +76,9 @@ export async function POST(req: Request) {
     let matchedVersion: string | null = null;
     let versionRegexError: string | null = null;
 
-    // Check APK URL filename first for reliable semver (e.g. app-v2.3.4.apk)
+    // Check APK URL filename first for reliable semver (e.g. app-v2.3.4.apk or FOX_TV_v5-3.apk)
     if (matchedDownloadUrl) {
-      const fn = matchedDownloadUrl.split('?')[0].split('/').pop() || '';
-      const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
-      if (fnMatch) {
-        matchedVersion = fnMatch[1];
-      }
+      matchedVersion = extractVersionFromUrlOrFilename(matchedDownloadUrl);
     }
 
     // If filename didn't match version, match from HTML body

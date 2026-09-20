@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { fetchResilientHtml, parseLiteApksPage } from '@/lib/scraper-utils';
+import { fetchResilientHtml, parseLiteApksPage, extractVersionFromUrlOrFilename } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow sufficient time for scraping & GitHub checks
@@ -144,13 +144,9 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
       return null;
     }
 
-    // Version match: APK filename first (most reliable)
+    // Version match: APK filename / URL first (most reliable)
     if (!newVersion) {
-      const fn = downloadUrl.split('?')[0].split('/').pop() || '';
-      const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
-      if (fnMatch) {
-        newVersion = fnMatch[1];
-      }
+      newVersion = extractVersionFromUrlOrFilename(downloadUrl);
     }
 
     // Version regex fallback on HTML

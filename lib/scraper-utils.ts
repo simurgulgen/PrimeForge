@@ -33,6 +33,39 @@ export function isNewerVersion(current: string, latest: string): boolean {
 }
 
 /**
+ * Accurately extracts version from APK URL or filename, supporting:
+ * - standard dotted: app-v1.2.3.apk, 9.6.25
+ * - hyphen/underscore separated: FOX_TV_v5-3.apk -> 5.3, app_v2_1.apk -> 2.1
+ * - single major version tags: Fx_PlayerV8.apk -> 8, dominotv-v13.apk -> 13
+ */
+export function extractVersionFromUrlOrFilename(urlOrFilename: string | null | undefined): string | null {
+  if (!urlOrFilename) return null;
+  const fn = urlOrFilename.split('?')[0].split('/').pop() || urlOrFilename;
+
+  // 1. Standard dotted semver e.g. 5.3.1, v1.0.2
+  const dottedMatch = fn.match(/(?:^|[vV_-])([0-9]+(?:\.[0-9]+)+)/);
+  if (dottedMatch) return dottedMatch[1];
+
+  // 2. Dash/underscore separated version in filename e.g. FOX_TV_v5-3.apk or app_v2_1.apk
+  const sepMatch = fn.match(/(?:^|[vV_])([0-9]+(?:[-_][0-9]+)+)/);
+  if (sepMatch) {
+    return sepMatch[1].replace(/[-_]/g, '.');
+  }
+
+  // 3. Single major version tag with 'v' prefix in filename e.g. Fx_PlayerV8.apk, dominotv-v13.apk
+  const singleMajorMatch = fn.match(/(?:^|[a-zA-Z_-])[vV]([0-9]+)(?:[._-][a-zA-Z0-9]+|\.apk|$)/);
+  if (singleMajorMatch) {
+    return singleMajorMatch[1];
+  }
+
+  // 4. Any dotted number fallback
+  const anyDotted = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
+  if (anyDotted) return anyDotted[1];
+
+  return null;
+}
+
+/**
  * Strict Security Guard against Fake / Adware / Virus Download Buttons
  * Validates that download links from LiteAPKs and third-party web scrapers
  * point to legitimate APK storage and not malicious advertising redirects.

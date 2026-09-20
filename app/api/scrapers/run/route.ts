@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { sanitizeRegex, cleanSemver, parseVersion, isNewerVersion, validateDownloadUrlSafety, parseLiteApksPage, fetchResilientHtml } from '@/lib/scraper-utils';
+import { sanitizeRegex, cleanSemver, parseVersion, isNewerVersion, validateDownloadUrlSafety, parseLiteApksPage, fetchResilientHtml, extractVersionFromUrlOrFilename } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -132,13 +132,9 @@ export async function POST(req: Request) {
       });
     }
 
-    // Version match: APK filename first if not found yet
+    // Version match: APK filename / URL first if not found yet
     if (!newVersion) {
-      const fn = downloadUrl.split('?')[0].split('/').pop() || '';
-      const fnMatch = fn.match(/([0-9]+(?:\.[0-9]+)+)/);
-      if (fnMatch) {
-        newVersion = fnMatch[1];
-      }
+      newVersion = extractVersionFromUrlOrFilename(downloadUrl);
     }
 
     if (!newVersion) {
