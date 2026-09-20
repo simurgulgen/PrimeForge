@@ -106,8 +106,10 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
   }
 
   const appTitle = job.app_name || job.analysis_report?.app_label || pkg || 'Uygulama';
-  const ver = job.version_name || '1.0';
-  const versionString = `${ver} (Prime Mod)`;
+  const rawVer = job.version_name || '1.0';
+  const cleanVerMatch = rawVer.match(/([0-9]+(?:\.[0-9]+)+)/);
+  const cleanVer = cleanVerMatch ? cleanVerMatch[1] : rawVer.replace(/^v/i, '').trim();
+  const versionString = `v${cleanVer} (Prime Mod)`;
 
   // 2. Check or create listing in 'listings' table (PrimeStore Catalog)
   let listingUpdated = false;
@@ -115,10 +117,37 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
   let listingId: string | null = null;
 
   if (pkg) {
-    const { data: existingListings } = await supabase
+    // A. Search by exact package name
+    let { data: existingListings } = await supabase
       .from('listings')
-      .select('id, title, version, "packageName"')
+      .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName"')
       .eq('packageName', pkg);
+
+    // B. Search by normalized package name (e.g. com.foobnix.pro.pdf.reader vs com.foobnix.pdf.reader)
+    if (!existingListings || existingListings.length === 0) {
+      const normalizedPkg = pkg.replace('.pro.', '.').replace('.lite.', '.').replace('.plus.', '.').replace('.free.', '.');
+      const { data: normalizedListings } = await supabase
+        .from('listings')
+        .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName"')
+        .ilike('packageName', `%${normalizedPkg.split('.').slice(1).join('.')}%`);
+      if (normalizedListings && normalizedListings.length > 0) {
+        existingListings = normalizedListings;
+      }
+    }
+
+    // C. Search by title match if still not found
+    if (!existingListings || existingListings.length === 0) {
+      const firstWord = appTitle.split(' ')[0];
+      if (firstWord && firstWord.length > 3) {
+        const { data: titleListings } = await supabase
+          .from('listings')
+          .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName"')
+          .ilike('title', `%${firstWord}%`);
+        if (titleListings && titleListings.length > 0) {
+          existingListings = titleListings;
+        }
+      }
+    }
 
     if (existingListings && existingListings.length > 0) {
       const target = existingListings[0];

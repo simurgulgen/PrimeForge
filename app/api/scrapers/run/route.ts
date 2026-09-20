@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
-import { sanitizeRegex, cleanSemver, parseVersion, isNewerVersion, validateDownloadUrlSafety, parseLiteApksPage } from '@/lib/scraper-utils';
+import { sanitizeRegex, cleanSemver, parseVersion, isNewerVersion, validateDownloadUrlSafety, parseLiteApksPage, fetchResilientHtml } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -68,32 +68,17 @@ export async function POST(req: Request) {
 
     const isLiteApks = targetUrl.includes('liteapks') || targetListing?.fileUrl?.includes('liteapks');
 
-    // Scrape target site with browser headers
-    const reqHeaders: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Accept-Language': 'tr,en-US;q=0.9,en;q=0.8',
-    };
-    if (isLiteApks) {
-      reqHeaders['Referer'] = 'https://liteapks.com/';
-    }
+    // Scrape target site with browser headers & automatic 403 proxy fallback
+    const fetchResult = await fetchResilientHtml(targetUrl, 10000);
 
-    const res = await fetch(targetUrl, {
-      headers: reqHeaders,
-      cache: 'no-store',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(10000),
-    });
-
-    if (!res.ok) {
+    if (!fetchResult.ok || !fetchResult.html) {
       return NextResponse.json({
         success: false,
-        error: `Hedef web sitesi HTTP ${res.status} hatası döndürdü.`,
+        error: fetchResult.error || `Hedef web sitesi HTTP ${fetchResult.status} hatası döndürdü.`,
       });
     }
 
-    const html = await res.text();
+    const html = fetchResult.html;
     let newVersion: string | null = null;
     let downloadUrl: string | null = null;
 

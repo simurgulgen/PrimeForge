@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { sanitizeRegex } from '@/lib/scraper-utils';
+import { sanitizeRegex, fetchResilientHtml } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -19,33 +19,22 @@ export async function POST(req: Request) {
 
     const cleanTargetUrl = target_url.trim();
 
-    // Fetch target URL with timeout
-    const res = await fetch(cleanTargetUrl, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'tr,en-US;q=0.9,en;q=0.8',
-      },
-      cache: 'no-store',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(8000),
-    });
+    // Fetch target URL with automatic 403 proxy fallback
+    const fetchResult = await fetchResilientHtml(cleanTargetUrl, 10000);
 
-    const status = res.status;
-    const statusText = res.statusText;
-
-    if (!res.ok) {
+    if (!fetchResult.ok || !fetchResult.html) {
       return NextResponse.json({
         success: false,
-        status,
-        statusText,
-        error: `Hedef web sitesi HTTP ${status} (${statusText}) hatası döndürdü.`,
+        status: fetchResult.status,
+        statusText: fetchResult.proxied ? 'Proxied Error' : 'Error',
+        error: fetchResult.error || `Hedef web sitesi HTTP ${fetchResult.status} hatası döndürdü.`,
         duration_ms: Date.now() - startTime,
       });
     }
 
-    const html = await res.text();
+    const status = 200;
+    const statusText = 'OK';
+    const html = fetchResult.html;
 
     // 1. Link matching
     const sanitizedLinkRegexStr = sanitizeRegex(link_regex) || 'href=["\']([^"\']+\\.apk[^"\']*)["\']';

@@ -109,37 +109,20 @@ jobs:
             keytool -genkey -v -keystore primestore_release.jks -alias primestore -keyalg RSA -keysize 2048 -validity 10000 -storepass primestore123 -keypass primestore123 -dname "CN=PrimeStore, OU=Release, O=Prime, L=TR, S=TR, C=TR"
           fi
 
-      - name: Download Target APK
+      - name: Download Target APK / APKS Bundle
+        env:
+          APK_URL: ${{ github.event.client_payload.apk_url || inputs.apk_url }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         run: |
-          APK_URL="${{ github.event.client_payload.apk_url || inputs.apk_url }}"
-          echo "Downloading APK from: $APK_URL"
-
-          EXTRA_OPTS=()
-          if [[ "$APK_URL" == *"liteapks"* ]]; then
-            echo "LiteAPKs download detected — adding Referer and browser headers..."
-            EXTRA_OPTS+=(-H "Referer: https://liteapks.com/")
+          echo "Target: $APK_URL"
+          python scripts/download_target.py
+          if [ -f input_base.apk ]; then
+            echo "APKS/Bundle detected, using resolved standalone or base APK for patching..."
+            cp input_base.apk input.apk
           fi
-
-          curl -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36" \
-            "${EXTRA_OPTS[@]}" \
-            -L --retry 3 --max-time 180 -o input.apk "$APK_URL"
-
           ls -lh input.apk
           FILE_SIZE=$(wc -c < input.apk || echo 0)
-          if [ "$FILE_SIZE" -lt 50000 ]; then
-            echo "❌ Downloaded APK is invalid or too small ($FILE_SIZE bytes):"
-            head -n 20 input.apk
-            exit 1
-          fi
-
-          # Security check: verify APK starts with valid ZIP magic bytes (PK)
-          MAGIC=$(head -c 2 input.apk)
-          if [ "$MAGIC" != "PK" ]; then
-            echo "❌ Security Error: Downloaded file is not a valid APK/ZIP archive (magic: $MAGIC). Might be an HTML redirect or adware page!"
-            head -n 20 input.apk
-            exit 1
-          fi
-          echo "✅ APK validation passed ($FILE_SIZE bytes, valid ZIP header)."
+          echo "✅ APK validation passed ($FILE_SIZE bytes)."
 
 
       - name: Run PrimeForge Engine

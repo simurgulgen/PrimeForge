@@ -18,8 +18,10 @@ import {
   Search,
   Ban,
   AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import ApkDropzone from '@/app/components/ApkDropzone';
+import InteractiveModModal from '@/app/components/InteractiveModModal';
 
 export default function DashboardPage() {
   const [apkUrl, setApkUrl] = useState('');
@@ -31,6 +33,7 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [toast, setToast] = useState<{ title: string; message: string; type?: 'success' | 'error' } | null>(null);
+  const [selectedModApp, setSelectedModApp] = useState<any | null>(null);
 
   const handleCancelJob = async (jobId: string) => {
     if (!confirm('Bu görevi iptal etmek istediğinize emin misiniz?')) return;
@@ -150,13 +153,20 @@ export default function DashboardPage() {
     if (app.packageName) {
       setProfile(app.packageName);
     }
-    setSelectedAppInfo({
+    const appInfo = {
       title: app.title || app.name || 'Uygulama',
       packageName: app.packageName || '',
       version: app.version || app.versionName || '',
-      icon: app.iconUrl || '',
-    });
+      icon: app.iconUrl || app.logoUrl || '',
+      fileUrl: app.fileUrl,
+    };
+    setSelectedAppInfo(appInfo);
     setModalOpen(false);
+    // Open the rich InteractiveModModal so user can inspect and configure options
+    setSelectedModApp({
+      ...app,
+      ...appInfo,
+    });
   };
 
   const handleTrigger = async (e: React.FormEvent) => {
@@ -390,23 +400,46 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm shadow-lg shadow-blue-600/20 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
-            >
-              {loading ? (
-                <>
-                  <RefreshCw className="w-4 h-4 animate-spin" />
-                  Kuyruğa Alınıyor...
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current" />
-                  Pipeline'ı Başlat
-                </>
-              )}
-            </button>
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  if (!apkUrl && !selectedAppInfo) {
+                    alert('Lütfen önce bir APK indirme linki girin veya katalogdan bir uygulama seçin.');
+                    return;
+                  }
+                  setSelectedModApp({
+                    title: selectedAppInfo?.title || 'Özel APK',
+                    packageName: selectedAppInfo?.packageName || (profile && profile.includes('.') ? profile : 'com.primeforge.app'),
+                    version: selectedAppInfo?.version || '1.0',
+                    fileUrl: apkUrl,
+                    iconUrl: selectedAppInfo?.icon || '',
+                  });
+                }}
+                className="flex-1 py-3 px-4 rounded-xl bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 border border-purple-500/40 text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-sm"
+              >
+                <Sparkles className="w-4 h-4 text-purple-400" />
+                Modlama Seçeneklerini Özelleştir
+              </button>
+
+              <button
+                type="submit"
+                disabled={loading}
+                className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-medium text-sm shadow-lg shadow-blue-600/20 disabled:opacity-50 transition-all flex items-center justify-center gap-2"
+              >
+                {loading ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    Kuyruğa Alınıyor...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current" />
+                    Hızlı Başlat
+                  </>
+                )}
+              </button>
+            </div>
           </form>
         </div>
 
@@ -714,6 +747,25 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Interactive Mod Pre-Flight Modal */}
+      {selectedModApp && (
+        <InteractiveModModal
+          app={selectedModApp}
+          onClose={() => setSelectedModApp(null)}
+          onSuccess={({ jobId, action }) => {
+            setSelectedModApp(null);
+            setApkUrl('');
+            setSelectedAppInfo(null);
+            setToast({
+              title: '🚀 Modlama Görevi Başlatıldı!',
+              message: `İş #${jobId.substring(0, 8)} kuyruğa alındı ve GitHub Actions başlatıldı.`,
+              type: 'success',
+            });
+            fetchJobs(true);
+          }}
+        />
       )}
 
       {/* Floating Action Toast Notification */}

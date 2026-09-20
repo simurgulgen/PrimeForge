@@ -27,4 +27,5 @@ node_modules/
 .idea/
 *.tsbuildinfo
 
-.vercel
+.vercel/
+scratch/

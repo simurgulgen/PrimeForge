@@ -92,6 +92,92 @@ export function validateDownloadUrlSafety(downloadUrl: string): { safe: boolean;
 }
 
 /**
+ * Fetches HTML from a target URL with automatic Cloudflare/403 resilient proxy fallback
+ */
+export async function fetchResilientHtml(
+  targetUrl: string,
+  timeoutMs: number = 10000
+): Promise<{ ok: boolean; status: number; html: string; proxied: boolean; error?: string }> {
+  const reqHeaders: Record<string, string> = {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
+    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+    'Accept-Language': 'tr,en-US;q=0.9,en;q=0.8',
+  };
+  if (targetUrl.includes('liteapks')) {
+    reqHeaders['Referer'] = 'https://liteapks.com/';
+  }
+
+  try {
+    const res = await fetch(targetUrl, {
+      headers: reqHeaders,
+      cache: 'no-store',
+      redirect: 'follow',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+
+    if (res.ok) {
+      const html = await res.text();
+      return { ok: true, status: res.status, html, proxied: false };
+    }
+
+    // If Cloudflare blocks with 403, 401 or 503, fallback to resilient HTML proxy
+    if (res.status === 403 || res.status === 401 || res.status === 503) {
+      console.warn(`[ResilientScraper] Direct fetch returned ${res.status}. Trying resilient reader proxy for ${targetUrl}`);
+      const proxyUrl = `https://r.jina.ai/${targetUrl}`;
+      const proxyRes = await fetch(proxyUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'X-Return-Format': 'html',
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(timeoutMs + 4000),
+      });
+
+      if (proxyRes.ok) {
+        const proxyHtml = await proxyRes.text();
+        return { ok: true, status: 200, html: proxyHtml, proxied: true };
+      }
+    }
+
+    return {
+      ok: false,
+      status: res.status,
+      html: '',
+      proxied: false,
+      error: `Hedef web sitesi HTTP ${res.status} hatası döndürdü.`,
+    };
+  } catch (err: any) {
+    // If timeout or network error, attempt proxy once
+    try {
+      console.warn(`[ResilientScraper] Direct fetch failed (${err.message}). Trying resilient reader proxy for ${targetUrl}`);
+      const proxyUrl = `https://r.jina.ai/${targetUrl}`;
+      const proxyRes = await fetch(proxyUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0',
+          'X-Return-Format': 'html',
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+
+      if (proxyRes.ok) {
+        const proxyHtml = await proxyRes.text();
+        return { ok: true, status: 200, html: proxyHtml, proxied: true };
+      }
+    } catch (_) {}
+
+    return {
+      ok: false,
+      status: 500,
+      html: '',
+      proxied: false,
+      error: err.message || 'Hedef web sitesine erişilemedi.',
+    };
+  }
+}
+
+/**
  * Parses LiteAPKs app page HTML to extract official version, technical specs, and download link
  */
 export function parseLiteApksPage(html: string): {
@@ -121,7 +207,7 @@ export function parseLiteApksPage(html: string): {
     updatedDate = dateMatch[1].trim();
   }
 
-  // 4. Download button path (a.btn-install href="/download/app-slug")
+  // 4. Download button path (a.btn-install href="/download/app-slug" or full URL)
   let downloadPath: string | null = null;
   const dlMatch = html.match(/href=["'](\/download\/[^"']+)["']/i) || html.match(/href=["'](https?:\/\/liteapks\.com\/download\/[^"']+)["']/i);
   if (dlMatch) {

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { fetchResilientHtml, parseLiteApksPage } from '@/lib/scraper-utils';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60; // Allow sufficient time for scraping & GitHub checks
@@ -94,35 +95,21 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
 
   try {
     const isLiteApks = targetUrl.includes('liteapks');
-    const reqHeaders: Record<string, string> = {
-      'User-Agent':
-        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36',
-      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    };
-    if (isLiteApks) {
-      reqHeaders['Referer'] = 'https://liteapks.com/';
+
+    const fetchResult = await fetchResilientHtml(targetUrl, 10000);
+    if (!fetchResult.ok || !fetchResult.html) {
+      console.warn(`[UpdateCheck] Scraper rule fetch failed for ${targetUrl}: ${fetchResult.error}`);
+      return null;
     }
-
-    const res = await fetch(targetUrl, {
-      headers: reqHeaders,
-      cache: 'no-store',
-      redirect: 'follow',
-      signal: AbortSignal.timeout(8000),
-    });
-
-    if (!res.ok) return null;
-    const html = await res.text();
+    const html = fetchResult.html;
 
     let newVersion: string | null = null;
     let downloadUrl: string | null = null;
 
     if (isLiteApks) {
-      // Use structured LiteAPKs extractor (H1 or specs table)
-      const h1Match = html.match(/<h1[^>]*>.*?v([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?)/i);
-      if (h1Match) newVersion = h1Match[1];
-      if (!newVersion) {
-        const specMatch = html.match(/<th[^>]*>\s*VERSION\s*<\/th>\s*<td[^>]*>\s*([0-9]+(?:\.[0-9]+)+(?:-[a-zA-Z0-9.]+)?)/i);
-        if (specMatch) newVersion = specMatch[1];
+      const parsedLite = parseLiteApksPage(html);
+      if (parsedLite.version) {
+        newVersion = parsedLite.version;
       }
     }
 

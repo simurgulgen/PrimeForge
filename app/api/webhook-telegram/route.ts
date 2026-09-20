@@ -6,6 +6,8 @@ const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8901088416:AAG3u11
 const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
 
+import { inspectTelegramDocument, formatTelegramInspectionMessage } from '@/lib/telegram-inspector';
+
 async function sendTelegramMessage(chatId: string | number, text: string, replyMarkup?: any) {
   const payload: any = {
     chat_id: chatId,
@@ -68,7 +70,7 @@ export async function POST(req: Request) {
           return NextResponse.json({ ok: true });
         }
 
-        if (action === 'full_mod' || action === 'sanitize_only') {
+        if (['full_mod', 'sanitize_only', 'tv_mod', 'analyze_only'].includes(action)) {
           const { data: job } = await supabase.from('forge_jobs').select('*').eq('id', jobId).single();
           if (job && GITHUB_TOKEN) {
             await fetch(`https://api.github.com/repos/${GITHUB_REPO}/dispatches`, {
@@ -84,6 +86,8 @@ export async function POST(req: Request) {
                   apk_url: job.apk_url,
                   action,
                   job_id: jobId,
+                  package_name: job.package_name,
+                  app_name: job.app_name,
                 },
               }),
             });
@@ -101,7 +105,10 @@ export async function POST(req: Request) {
               .eq('id', jobId);
 
             await answerCallbackQuery(cb.id, 'İşlem tetiklendi!');
-            await sendTelegramMessage(chatId, `⚡ GitHub Actions başlatıldı: <b>${action}</b>`);
+            await sendTelegramMessage(chatId, `⚡ GitHub Actions başlatıldı: <b>${action}</b>\n🆔 Görev ID: <code>#${jobId.substring(0, 8)}</code>`);
+          } else if (!GITHUB_TOKEN) {
+            await answerCallbackQuery(cb.id, 'GitHub Token eksik!');
+            await sendTelegramMessage(chatId, `⚠️ <b>Uyarı:</b> GITHUB_TOKEN tanımlı olmadığı için GitHub Actions tetiklenemedi.`);
           }
           return NextResponse.json({ ok: true });
         }
@@ -111,7 +118,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
 
-    // 2. Handle Text Command
+    // 2. Handle Document Uploads & Forwards (.apk, .apks, .xapk, .zip)
+    if (update.message && update.message.document) {
+      const doc = update.message.document;
+      const chatId = update.message.chat.id;
+      const caption = update.message.caption || '';
+      const fileName = doc.file_name || '';
+
+      const isApkOrBundle =
+        fileName.match(/\.(apk|apks|xapk|zip)$/i) ||
+        doc.mime_type?.includes('android') ||
+        doc.mime_type?.includes('zip') ||
+        doc.mime_type?.includes('octet-stream');
+
+      if (isApkOrBundle) {
+        await sendTelegramMessage(
+          chatId,
+          `📥 <b>Dosya Alındı:</b> <code>${fileName}</code>\n🤖 <i>Yapay zeka paketi inceliyor ve güvenlik/amaç raporu hazırlıyor...</i>`
+        );
+
+        try {
+          const info = await inspectTelegramDocument(doc, caption);
+          const { text, replyMarkup } = formatTelegramInspectionMessage(info);
+          await sendTelegramMessage(chatId, text, replyMarkup);
+        } catch (inspectErr: any) {
+          console.error('[TelegramWebhook] Inspection failed:', inspectErr);
+          await sendTelegramMessage(chatId, `⚠️ İnceleme sırasında hata oluştu: ${inspectErr.message}`);
+        }
+        return NextResponse.json({ ok: true });
+      }
+    }
+
+    // 3. Handle Text Command or Direct APK URL
     if (update.message && update.message.text) {
       const msg = update.message;
       const text = msg.text.trim();
@@ -121,6 +159,7 @@ export async function POST(req: Request) {
 
       if (cmd === '/start' || cmd === '/help') {
         const help = `🔧 <b>PrimeForge Telegram Bot</b>\n\n` +
+          `• <b>Dosya Gönderme / İletme:</b> APK veya APKS dosyasını doğrudan bu sohbete yükleyin veya başka bir kanaldan bota <b>İletin (Forward)</b>.\n` +
           `• <code>/mod &lt;APK_URL&gt;</code> — Tam modlama başlat\n` +
           `• <code>/analyze &lt;APK_URL&gt;</code> — Statik analiz yap\n` +
           `• <code>/sanitize &lt;APK_URL&gt;</code> — Sadece izin temizle\n` +
