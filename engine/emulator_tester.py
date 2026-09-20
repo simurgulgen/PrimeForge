@@ -272,11 +272,11 @@ class EmulatorTester:
                         # 2. Uygulamaya ait ANR
                         # 3. Fatal signal 11 (SIGSEGV)
                         is_fatal = False
-                        if "FATAL EXCEPTION" in line and (self.package_name in line or "AndroidRuntime" in line):
+                        if "FATAL EXCEPTION" in line and (self.package_name in line or f"Process: {self.package_name}" in line):
                             is_fatal = True
                         elif "ANR in" in line and self.package_name in line:
                             is_fatal = True
-                        elif "Fatal signal" in line and ("SIGSEGV" in line or "SIGABRT" in line):
+                        elif "Fatal signal" in line and ("SIGSEGV" in line or "SIGABRT" in line) and self.package_name in line:
                             is_fatal = True
                         elif "Application Error:" in line and self.package_name in line:
                             is_fatal = True
@@ -335,16 +335,21 @@ class EmulatorTester:
 
             root = ET.fromstring(xml_str)
 
-            # Kabul edilecek pozitif buton metinleri
+            # Yıkıcı butonlar (ASLA tıklanmayacak: uygulamayı sonlandırma / kaldırma butonları)
+            destructive_terms = {
+                "close app", "uygulamayı kapat", "force close", "force stop", "uninstall", "kaldır", "durdurmaya zorla"
+            }
+            # Kabul edilecek pozitif buton metinleri (ANR bekleme dahil)
             positive_terms = {
                 "allow", "izin ver", "while using the app", "uygulamayı kullanırken",
                 "tamam", "kabul et", "accept", "ok", "continue", "devam", "agree",
                 "anladım", "got it", "i agree", "yes", "evet", "başla", "start",
+                "wait", "bekle",
             }
             # İptal edilecek güncelleme / abonelik metinleri
             dismiss_terms = {
                 "later", "sonra", "iptal", "cancel", "şimdi değil", "not now",
-                "kapat", "close", "skip", "atla", "vazgeç", "daha sonra",
+                "skip", "atla", "vazgeç", "daha sonra", "remind me later",
             }
             target_terms = positive_terms | dismiss_terms
 
@@ -354,12 +359,16 @@ class EmulatorTester:
                 res_id = (node.attrib.get("resource-id") or "").lower()
                 bounds = node.attrib.get("bounds", "")
 
+                # Yıkıcı sistem butonlarını kesinlikle atla
+                if any(term in text or term in desc for term in destructive_terms):
+                    continue
+
                 is_match = False
                 if any(term in text for term in target_terms):
                     is_match = True
                 elif any(term in desc for term in target_terms):
                     is_match = True
-                elif any(bid in res_id for bid in ["permission_allow_button", "button1", "btn_positive"]):
+                elif any(bid in res_id for bid in ["permission_allow_button", "button1", "btn_positive", "a11y_action_click_label"]):
                     is_match = True
 
                 if is_match and bounds:
@@ -397,15 +406,20 @@ class EmulatorTester:
 
     def launch_app_benchmarked(self, prefer_leanback: bool = False) -> Tuple[bool, int]:
         """Uygulamayı başlatır, soğuk açılış süresini (Cold Start ms) ölçer."""
-        category = "android.intent.category.LEANBACK_LAUNCHER" if prefer_leanback else "android.intent.category.LAUNCHER"
-        print(f"  🚀 Başlatılıyor: {self.package_name} ({category.split('.')[-1]})...")
+        primary_cat = "android.intent.category.LEANBACK_LAUNCHER" if prefer_leanback else "android.intent.category.LAUNCHER"
+        secondary_cat = "android.intent.category.LAUNCHER" if prefer_leanback else "android.intent.category.LEANBACK_LAUNCHER"
+        print(f"  🚀 Başlatılıyor: {self.package_name} ({primary_cat.split('.')[-1]})...")
 
         t0 = time.time()
-        out = self._adb_shell(f"monkey -p {self.package_name} -c {category} 1")
-        if "No activities found" in out and prefer_leanback:
-            print("  ℹ️ Leanback launcher bulunamadı, standart LAUNCHER ile başlatılıyor...")
+        out = self._adb_shell(f"monkey -p {self.package_name} -c {primary_cat} 1")
+        if "No activities found" in out:
+            print(f"  ℹ️ {primary_cat.split('.')[-1]} bulunamadı, {secondary_cat.split('.')[-1]} ile deneniyor...")
             t0 = time.time()
-            out = self._adb_shell(f"monkey -p {self.package_name} -c android.intent.category.LAUNCHER 1")
+            out = self._adb_shell(f"monkey -p {self.package_name} -c {secondary_cat} 1")
+            if "No activities found" in out:
+                print("  ℹ️ Kategori bulunamadı, genel monkey launch intent ile deneniyor...")
+                t0 = time.time()
+                self._adb_shell(f"monkey -p {self.package_name} 1")
 
         # Odaklanılan aktiviteyi bekle ve süreyi kaydet
         cold_start_ms = 0

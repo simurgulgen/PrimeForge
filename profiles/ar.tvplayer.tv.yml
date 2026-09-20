@@ -22,6 +22,11 @@ mod_features:
     default: true
 
 smali_patches:
+  - description: "DexProtector Certificate Mismatch Anti-Tamper Bypass"
+    target_class: "ProtectedTvPlayerApplication"
+    method: "b"
+    patch_type: "return_void"
+
   - description: "BillingResult.getResponseCode -> OK (0)"
     target_class: "BillingResult"
     method: "getResponseCode"
