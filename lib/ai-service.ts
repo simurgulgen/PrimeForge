@@ -25,12 +25,17 @@ Kullanıcı ile HER ZAMAN ve İSTİSNASIZ TÜRKÇE konuşacaksın.
 Teknik smali opcodeları, Java kod blokları veya AndroidManifest XML etiketleri haricinde; tüm açıklamaların, analizlerin, soru yanıtların ve rehberlerin daima akıcı, net, profesyonel ve eksiksiz Türkçe olacaktır.
 Kullanıcı başka bir dilde yazsa veya analiz edilen APK yabancı dilde olsa dahi cevabını daima TÜRKÇE olarak vereceksin.`;
 
+export const SERVER_FALLBACK_GEMINI_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || '';
+
 export const DEFAULT_AI_SETTINGS: AISettings = {
-  provider: 'nvidia_nim',
-  model: 'nvidia/nemotron-3-super-120b-a12b',
-  fallbackModel: 'gemini-1.5-flash',
-  keys: {},
-  temperature: 0.4,
+  provider: 'gemini',
+  model: 'gemini-3.6-flash',
+  fallbackModel: 'gemini-flash-latest',
+  apiKey: SERVER_FALLBACK_GEMINI_KEY,
+  keys: {
+    gemini: SERVER_FALLBACK_GEMINI_KEY,
+  },
+  temperature: 0.2,
   maxTokens: 3000,
   systemPrompt: `Sen PrimeForge'un Kıdemli Android Güvenlik, Tersine Mühendislik ve Smali Kodlama Asistanısın.
 Kullanıcıya APK analizi, AndroidManifest.xml izin denetimleri, smali baypas yamaları, reklam/DRM temizliği ve Android TV DPAD optimizasyonu konularında net, uygulanabilir, profesyonel Türkçe kod ve rehberler sunarsın.
@@ -162,10 +167,11 @@ async function executeSingleProviderRequest(
 
   // 1. Google Gemini API
   if (provider === 'gemini') {
-    if (!apiKey) {
+    const activeKey = apiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
+    if (!activeKey) {
       throw new Error('Google Gemini API Anahtarı eksik. Lütfen Ayarlar penceresinden ekleyin veya GEMINI_API_KEY ortam değişkenini tanımlayın.');
     }
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${activeKey}`;
     const formattedContents = messages
       .filter((m) => m.role !== 'system')
       .map((m) => ({
@@ -311,7 +317,7 @@ export async function sendAIChatRequest(
   // Resolve API Key: per-provider keys map, or generic apiKey, or env
   let apiKey = settings.keys?.[provider]?.trim() || (provider === settings.provider ? settings.apiKey?.trim() : undefined);
   if (!apiKey) {
-    if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+    if (provider === 'gemini') apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
     else if (provider === 'anthropic') apiKey = process.env.ANTHROPIC_API_KEY;
     else if (provider === 'nvidia_nim') apiKey = process.env.NVIDIA_NIM_API_KEY;
     else if (provider === 'opencodezen') apiKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN || process.env.OPENCODE_TOKEN;
@@ -322,8 +328,8 @@ export async function sendAIChatRequest(
   // If primary provider key is missing, auto-switch to any configured provider key
   if (!apiKey) {
     const availableProviders: Array<{ id: AIProvider; defaultModel: string; key: string }> = [];
-    if (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY) {
-      availableProviders.push({ id: 'gemini', defaultModel: 'gemini-3.6-flash', key: (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY)! });
+    if (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY || SERVER_FALLBACK_GEMINI_KEY) {
+      availableProviders.push({ id: 'gemini', defaultModel: 'gemini-3.6-flash', key: (settings.keys?.gemini?.trim() || process.env.GEMINI_API_KEY || SERVER_FALLBACK_GEMINI_KEY)! });
     }
     if (settings.keys?.groq?.trim() || process.env.GROQ_API_KEY) {
       availableProviders.push({ id: 'groq', defaultModel: 'llama-3.3-70b-versatile', key: (settings.keys?.groq?.trim() || process.env.GROQ_API_KEY)! });
@@ -359,7 +365,7 @@ export async function sendAIChatRequest(
       const fbProvider = findProviderForModel(settings.fallbackModel);
       let fbKey = settings.keys?.[fbProvider]?.trim() || settings.apiKey?.trim();
       if (!fbKey) {
-        if (fbProvider === 'gemini') fbKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+        if (fbProvider === 'gemini') fbKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || SERVER_FALLBACK_GEMINI_KEY;
         else if (fbProvider === 'nvidia_nim') fbKey = process.env.NVIDIA_NIM_API_KEY;
         else if (fbProvider === 'opencodezen') fbKey = process.env.OPENCODE_API_KEY || process.env.OPENCODEZEN_API_TOKEN;
         else if (fbProvider === 'groq') fbKey = process.env.GROQ_API_KEY;

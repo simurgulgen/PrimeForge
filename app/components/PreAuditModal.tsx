@@ -71,6 +71,7 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
   const [expandedPerms, setExpandedPerms] = useState<Record<string, boolean>>({});
   const [aiInspectingPerm, setAiInspectingPerm] = useState<string | null>(null);
   const [aiInspectResults, setAiInspectResults] = useState<Record<string, any>>({});
+  const [aiInspectErrors, setAiInspectErrors] = useState<Record<string, string>>({});
 
   const toggleExpandPerm = (permName: string) => {
     setExpandedPerms((prev) => ({ ...prev, [permName]: !prev[permName] }));
@@ -86,7 +87,19 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
     }
 
     setAiInspectingPerm(permName);
+    setAiInspectErrors((prev) => {
+      const next = { ...prev };
+      delete next[permName];
+      return next;
+    });
+
     try {
+      let localAiSettings = null;
+      try {
+        const stored = localStorage.getItem('primeforge_ai_settings');
+        if (stored) localAiSettings = JSON.parse(stored);
+      } catch (_) {}
+
       const res = await fetch('/api/ai/permission-inspect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -94,15 +107,25 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
           package_name: app.packageName,
           app_name: app.title,
           permission_name: permName,
+          ai_settings: localAiSettings,
         }),
       });
       const data = await res.json();
       if (data.success && data.data) {
         setAiInspectResults((prev) => ({ ...prev, [permName]: data.data }));
         setExpandedPerms((prev) => ({ ...prev, [permName]: true }));
+      } else {
+        setAiInspectErrors((prev) => ({
+          ...prev,
+          [permName]: data.error || 'İzin analizi alınamadı.',
+        }));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('AI inspect error:', err);
+      setAiInspectErrors((prev) => ({
+        ...prev,
+        [permName]: err.message || 'Bağlantı hatası oluştu.',
+      }));
     } finally {
       setAiInspectingPerm(null);
     }
@@ -1009,6 +1032,22 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                               )}
                             </div>
                           )}
+
+                          {aiInspectErrors[perm.name] && (
+                            <div className="mt-2 p-2 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[11px] flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                {aiInspectErrors[perm.name]}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => handleAskAiAboutPerm(e, perm.name)}
+                                className="underline hover:text-white text-[10px] ml-2 shrink-0 font-medium"
+                              >
+                                Yeniden Dene
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1028,6 +1067,8 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                   <div className="grid grid-cols-1 gap-2 max-h-48 overflow-y-auto pr-1">
                     {auditData.permissions.ad_related.map((perm: any) => {
                       const isSelected = selectedAdPerms.includes(perm.name);
+                      const isAiInspecting = aiInspectingPerm === perm.name;
+                      const aiResult = aiInspectResults[perm.name];
 
                       return (
                         <div
@@ -1038,29 +1079,98 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                               : 'bg-slate-950/40 border-white/5 opacity-80'
                           }`}
                         >
-                          <label className="flex items-start gap-2.5 cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => toggleAdPerm(perm.name)}
-                              className="mt-0.5 rounded text-amber-500 focus:ring-0"
-                            />
-                            <div className="overflow-hidden flex-1">
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-xs text-white">{perm.description}</span>
-                                <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
-                                  {perm.safety_label || '✅ Sıfır Çökme Riski'}
+                          <div className="flex items-start justify-between gap-2">
+                            <label className="flex items-start gap-2.5 cursor-pointer flex-1 overflow-hidden">
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleAdPerm(perm.name)}
+                                className="mt-0.5 rounded text-amber-500 focus:ring-0"
+                              />
+                              <div className="overflow-hidden flex-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="font-semibold text-xs text-white">{perm.description}</span>
+                                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/20">
+                                    {perm.safety_label || '✅ Sıfır Çökme Riski'}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 font-mono truncate">{perm.name}</div>
+                              </div>
+                            </label>
+
+                            <button
+                              type="button"
+                              onClick={(e) => handleAskAiAboutPerm(e, perm.name)}
+                              disabled={isAiInspecting}
+                              className="shrink-0 text-[10px] font-medium text-amber-400 hover:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/25 px-2 py-1 rounded-lg flex items-center gap-1 transition-all"
+                              title="Yapay zekaya bu iznin ve reklam modülünün koddaki yerini sor"
+                            >
+                              {isAiInspecting ? (
+                                <>
+                                  <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                                  <span>Taranıyor...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Bot className="w-3 h-3 text-amber-400" />
+                                  <span>{aiResult ? 'Koddaki Yeri (AI)' : 'Koddaki Yeri?'}</span>
+                                </>
+                              )}
+                            </button>
+                          </div>
+
+                          <div className="mt-1.5 pt-1.5 border-t border-white/5 space-y-1 text-[11px]">
+                            <div className="flex items-start gap-1.5 text-slate-300">
+                              <span className="text-purple-400 font-medium shrink-0">🎯 Amaç:</span>
+                              <span className="text-slate-300/90 leading-tight">{perm.purpose}</span>
+                            </div>
+                            <div className="flex items-start gap-1.5 text-slate-300">
+                              <span className="text-amber-400 font-medium shrink-0">⚡ Kaldırılırsa:</span>
+                              <span className="text-slate-400 leading-tight">{perm.impact}</span>
+                            </div>
+                          </div>
+
+                          {/* Live AI Code Inspection Result Card */}
+                          {aiResult && (
+                            <div className="mt-2.5 p-2.5 rounded-lg bg-gradient-to-br from-amber-950/40 via-purple-950/40 to-slate-950/80 border border-amber-500/30 text-[11px] text-amber-200 space-y-1.5">
+                              <div className="flex items-center justify-between font-semibold text-amber-300 text-xs">
+                                <span className="flex items-center gap-1.5">
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                  Takipçi & Reklam Smali Teftişi
+                                </span>
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                  Çökme Riski: {aiResult.crash_risk || 'SIFIR'}
                                 </span>
                               </div>
-                              <div className="text-[10px] text-slate-500 font-mono truncate">{perm.name}</div>
-                              <div className="mt-1 text-[11px] text-slate-400">
-                                <span className="text-purple-400 font-medium">🎯 Amaç:</span> {perm.purpose}
+                              <div className="text-slate-300 text-[11px] leading-relaxed">
+                                <strong className="text-amber-300">Koddaki Yeri:</strong> {aiResult.usage_purpose}
                               </div>
-                              <div className="text-[11px] text-slate-400">
-                                <span className="text-amber-400 font-medium">⚡ Kaldırılırsa:</span> {perm.impact}
+                              <div className="text-amber-300/90 text-[11px] leading-relaxed">
+                                <strong className="text-amber-300">Etki & Tavsiye:</strong> {aiResult.removal_impact}
                               </div>
+                              {aiResult.code_references?.length > 0 && (
+                                <div className="font-mono text-[9px] text-amber-300/70 bg-black/40 p-1.5 rounded border border-amber-500/15">
+                                  İlgili Sınıflar: {aiResult.code_references.join(', ')}
+                                </div>
+                              )}
                             </div>
-                          </label>
+                          )}
+
+                          {aiInspectErrors[perm.name] && (
+                            <div className="mt-2 p-2 rounded-lg bg-rose-500/10 border border-rose-500/25 text-rose-300 text-[11px] flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                                {aiInspectErrors[perm.name]}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => handleAskAiAboutPerm(e, perm.name)}
+                                className="underline hover:text-white text-[10px] ml-2 shrink-0 font-medium"
+                              >
+                                Yeniden Dene
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
