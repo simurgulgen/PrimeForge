@@ -55,6 +55,8 @@ export async function POST(req: Request) {
       status: 'pending',
       analysis_report: {
         runner_type,
+        variant: variant || mod_options?.target_architecture || '',
+        target_channel: mod_options?.target_channel || '',
         requested_mod_options: mod_options || {},
         custom_notes: custom_notes || '',
         publish_mode: publish_mode || 'manual_review',
@@ -129,6 +131,7 @@ export async function POST(req: Request) {
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
       const actionLabels: Record<string, string> = {
         autonomous_from_guide: '🤖 Otonom Güncelleme (Kayıtlı Rehberden)',
+        rebuild_guide: '🔄 Rehberi Yeniden Eğit & Güncelle',
         full_mod: '🛠️ Tam Modlama & Emülatör Testi',
         custom_mod: '🎯 İnteraktif Özelleştirilmiş Mod',
         sanitize_only: '🧹 İzin & Manifest Temizliği',
@@ -146,19 +149,22 @@ export async function POST(req: Request) {
       if (mod_options && typeof mod_options === 'object') {
         const optNames: string[] = [];
         if (mod_options.use_saved_guide) optNames.push('🤖 Kayıtlı Rehberden Otonom Yamalama');
-        if (mod_options.save_guide) optNames.push('💾 Rehber & YAML Reçetesi Kaydı: Aktif');
+        if (mod_options.rebuild_guide || mod_options.update_guide || action === 'rebuild_guide') optNames.push('🔄 Mevcut Rehberi Güncelle & Üzerine Yaz');
+        if (mod_options.save_guide && !mod_options.rebuild_guide) optNames.push('💾 Rehber & YAML Reçetesi Kaydı: Aktif');
         if (mod_options.unlock_premium) optNames.push('🔓 Premium Kilidi Aç');
         if (mod_options.remove_ads) optNames.push('🚫 Reklam & Takipçi Temizle');
         if (mod_options.strip_permissions) optNames.push('🧹 İzin Temizliği');
         if (mod_options.bypass_update) optNames.push('🔄 Zorunlu Güncelleme Bypass');
         if (mod_options.enable_tv_compat) optNames.push('📺 Android TV Optimizasyonu');
+        if (mod_options.custom_ai_request) optNames.push(`🤖 Özel İstek: ${mod_options.custom_ai_request}`);
         if (optNames.length > 0) {
           optionsListText = `\n⚙️ <b>Seçilen Modlar:</b>\n• ${optNames.join('\n• ')}\n`;
         }
       }
 
+      const variantTag = variant ? ` <code>[${variant}]</code>` : '';
       const msg = `🚀 <b>PrimeForge — Yeni İş Kuyruğa Alındı</b>\n\n` +
-        `📱 <b>Uygulama:</b> ${appTitle}\n` +
+        `📱 <b>Uygulama:</b> ${appTitle}${variantTag}\n` +
         `📦 <b>Paket:</b> ${pkgLabel}\n` +
         `🏷️ <b>Sürüm:</b> ${verLabel}\n` +
         `🎯 <b>İşlem Modu:</b> ${actionLabel}\n` +

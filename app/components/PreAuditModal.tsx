@@ -32,6 +32,8 @@ import {
   ExternalLink,
   Copy,
   Terminal,
+  RotateCw,
+  RefreshCw,
 } from 'lucide-react';
 
 interface PreAuditModalProps {
@@ -53,14 +55,46 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
   const [auditData, setAuditData] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // User selections
+  // Multi-Variant Selection Support
   const variants = app.variants_needing_update || [];
-  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
-  const activeVariant = variants[selectedVariantIdx] || null;
+  const [selectedVariantIndices, setSelectedVariantIndices] = useState<number[]>(() =>
+    variants.length > 0 ? variants.map((_, i) => i) : [0]
+  );
+  const activeVariant = variants[selectedVariantIndices[0] ?? 0] || null;
+
+  const toggleVariant = (idx: number) => {
+    setSelectedVariantIndices((prev) => {
+      if (prev.includes(idx)) {
+        if (prev.length === 1) return prev; // Keep at least one variant selected
+        return prev.filter((i) => i !== idx);
+      } else {
+        return [...prev, idx].sort((a, b) => a - b);
+      }
+    });
+  };
+
+  const selectAllVariants = () => {
+    setSelectedVariantIndices(variants.map((_, i) => i));
+  };
+
+  const selectStableVariants = () => {
+    const stables = variants
+      .map((v: any, i: number) => (!v.releaseChannel?.toLowerCase().includes('beta') ? i : -1))
+      .filter((i: number) => i >= 0);
+    if (stables.length > 0) setSelectedVariantIndices(stables);
+  };
+
+  const selectBetaVariants = () => {
+    const betas = variants
+      .map((v: any, i: number) => (v.releaseChannel?.toLowerCase().includes('beta') ? i : -1))
+      .filter((i: number) => i >= 0);
+    if (betas.length > 0) setSelectedVariantIndices(betas);
+  };
 
   const [selectedDangerousPerms, setSelectedDangerousPerms] = useState<string[]>([]);
   const [selectedAdPerms, setSelectedAdPerms] = useState<string[]>([]);
-  const [actionType, setActionType] = useState<'autonomous_from_guide' | 'sanitize_only' | 'full_mod' | 'direct_sign'>('sanitize_only');
+  const [actionType, setActionType] = useState<'autonomous_from_guide' | 'rebuild_guide' | 'sanitize_only' | 'full_mod' | 'direct_sign'>('sanitize_only');
+  const [updateGuide, setUpdateGuide] = useState(false);
   const [transferModRecipe, setTransferModRecipe] = useState(true);
   const [runEmulatorTest, setRunEmulatorTest] = useState(true);
   const [saveGuide, setSaveGuide] = useState(true);
@@ -279,59 +313,82 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
 
   const handleSubmit = async () => {
     setSubmitting(true);
+    setError(null);
     try {
       const actionLabels: Record<string, string> = {
         autonomous_from_guide: 'Kayıtlı Rehberden Otonom Modlama',
+        rebuild_guide: 'Rehberi Yeniden Eğit & Güncelle',
         sanitize_only: 'Hızlı İzin & Reklam Temizliği (Decompile Yok)',
         full_mod: 'Tam Smali Modu & VIP Baypas',
         direct_sign: 'Doğrudan İmzala',
       };
 
-      const targetUrl = activeVariant?.suggested_url || app.download_url;
-      const targetVersion = activeVariant?.new_version || app.latest_version;
-      const targetVariantArch = activeVariant?.architecture || '';
+      const targetVariants = (variants.length > 0 && selectedVariantIndices.length > 0)
+        ? selectedVariantIndices.map((i) => variants[i]).filter(Boolean)
+        : [{
+            architecture: '',
+            releaseChannel: 'Stable',
+            new_version: app.latest_version,
+            suggested_url: app.download_url,
+          }];
 
-      const res = await fetch('/api/trigger-job', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apk_url: targetUrl,
-          action: actionType,
-          package_name: app.packageName,
-          app_name: app.title,
-          version_name: targetVersion,
-          variant: targetVariantArch,
-          profile: app.packageName,
-          runner_type: runnerType,
-          mod_options: {
-            strip_dangerous_permissions: selectedDangerousPerms,
-            strip_ad_permissions: selectedAdPerms,
-            transfer_mod_recipe: transferModRecipe,
-            run_emulator_test: runEmulatorTest,
-            save_guide: saveGuide,
-            use_saved_guide: actionType === 'autonomous_from_guide',
-            enable_tv_dpad_converter: enableTvDpad,
-            enable_universal_ad_blocker: enableAdBlocker,
-            enable_self_healing: enableSelfHealing,
-            custom_ai_request: customAiRequest.trim() || undefined,
-            custom_ai_patch_enabled: customOptionEnabled && (Boolean(customAnalysisResult) || Boolean(customAiRequest.trim())),
-            custom_ai_patch_spec: (customOptionEnabled && customAnalysisResult?.recommended_smali_patch) ? customAnalysisResult.recommended_smali_patch : undefined,
-            custom_smali_patches: (customOptionEnabled && customAnalysisResult?.recommended_smali_patch) ? [customAnalysisResult.recommended_smali_patch] : undefined,
-            custom_option_label: customAnalysisResult?.option_label || (customAiRequest.trim() ? customAiRequest.trim() : undefined),
-          },
-          custom_notes: `İşlem: ${actionLabels[actionType] || actionType}. Runner: ${runnerType}. Mimari: ${targetVariantArch || 'Universal'}. Rehber Kaydı: ${saveGuide ? 'Aktif' : 'Pasif'}.${customAiRequest.trim() ? ` Özel AI İsteği: ${customAiRequest.trim()}` : ''}`,
-          publish_mode: 'manual_review',
-        }),
+      const triggerPromises = targetVariants.map(async (v: any) => {
+        const targetUrl = v.suggested_url || app.download_url;
+        const targetVersion = v.new_version || app.latest_version;
+        const targetVariantArch = v.architecture || '';
+        const targetChannel = v.releaseChannel || 'Stable';
+
+        const res = await fetch('/api/trigger-job', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            apk_url: targetUrl,
+            action: actionType,
+            package_name: app.packageName,
+            app_name: app.title,
+            version_name: targetVersion,
+            variant: targetVariantArch,
+            target_channel: targetChannel,
+            profile: app.packageName,
+            runner_type: runnerType,
+            mod_options: {
+              strip_dangerous_permissions: selectedDangerousPerms,
+              strip_ad_permissions: selectedAdPerms,
+              transfer_mod_recipe: transferModRecipe,
+              run_emulator_test: runEmulatorTest,
+              save_guide: saveGuide || actionType === 'rebuild_guide',
+              update_guide: actionType === 'rebuild_guide' || updateGuide,
+              overwrite_guide: actionType === 'rebuild_guide' || updateGuide,
+              use_saved_guide: actionType === 'autonomous_from_guide',
+              enable_tv_dpad_converter: enableTvDpad,
+              enable_universal_ad_blocker: enableAdBlocker,
+              enable_self_healing: enableSelfHealing,
+              custom_ai_request: customAiRequest.trim() || undefined,
+              custom_ai_patch_enabled: customOptionEnabled && (Boolean(customAnalysisResult) || Boolean(customAiRequest.trim())),
+              custom_ai_patch_spec: (customOptionEnabled && customAnalysisResult?.recommended_smali_patch) ? customAnalysisResult.recommended_smali_patch : undefined,
+              custom_smali_patches: (customOptionEnabled && customAnalysisResult?.recommended_smali_patch) ? [customAnalysisResult.recommended_smali_patch] : undefined,
+              custom_option_label: customAnalysisResult?.option_label || (customAiRequest.trim() ? customAiRequest.trim() : undefined),
+            },
+            custom_notes: `İşlem: ${actionLabels[actionType] || actionType}. Mimari: ${targetVariantArch || 'Universal'} (${targetChannel}). Runner: ${runnerType}.${actionType === 'rebuild_guide' ? ' [Rehber Sıfırdan Güncelleniyor]' : ''}${customAiRequest.trim() ? ` Özel AI İsteği: ${customAiRequest.trim()}` : ''}`,
+            publish_mode: 'manual_review',
+          }),
+        });
+        return res.json();
       });
-      const data = await res.json();
-      if (data.success) {
+
+      const results = await Promise.all(triggerPromises);
+      const successfulJobs = results.filter((r) => r.success && r.job_id);
+
+      if (successfulJobs.length > 0) {
+        const firstJobId = successfulJobs[0].job_id;
         onSuccess({
-          jobId: data.job_id,
-          message: `${app.title} için ${actionType === 'autonomous_from_guide' ? 'rehber tabanlı otonom pipeline' : 'güvenlik pipeline'} başarıyla başlatıldı!`,
+          jobId: firstJobId,
+          message: `${app.title} için ${successfulJobs.length} varyantın işlemi (${actionLabels[actionType] || actionType}) eşzamanlı olarak başlatıldı!`,
         });
         onClose();
       } else {
-        setError(data.error || 'İşlem başlatılamadı.');
+        const firstErr = results.find((r) => !r.success)?.error;
+        setError(firstErr || 'İşlemler başlatılamadı.');
       }
     } catch (err: any) {
       setError(err.message || 'Bağlantı hatası');
@@ -386,45 +443,88 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
             </div>
           ) : (
             <>
-              {/* Variant / Architecture / Channel Selector Banner */}
+              {/* Multi-Variant / Architecture / Channel Selector Banner */}
               {variants.length > 1 && (
                 <div className="p-3.5 rounded-xl bg-slate-950/80 border border-purple-500/20 space-y-2.5">
-                  <div className="text-[11px] font-semibold text-white flex items-center justify-between">
+                  <div className="text-[11px] font-semibold text-white flex flex-wrap items-center justify-between gap-2">
                     <span className="flex items-center gap-1.5">
                       <Layers className="w-3.5 h-3.5 text-purple-400" />
-                      İşlenecek Varyantı & Mimariyi Seçin
+                      İşlenecek Varyantları Seçin ({selectedVariantIndices.length}/{variants.length} Seçili)
                     </span>
-                    <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
-                      {variants.length} Farklı Varyant
-                    </span>
+                    <div className="flex items-center gap-1.5 text-[10px]">
+                      <button
+                        type="button"
+                        onClick={selectAllVariants}
+                        className="px-2 py-0.5 rounded bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 transition"
+                      >
+                        Tümünü Seç
+                      </button>
+                      {variants.some((v: any) => !v.releaseChannel?.toLowerCase().includes('beta')) && (
+                        <button
+                          type="button"
+                          onClick={selectStableVariants}
+                          className="px-2 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition"
+                        >
+                          Sadece Stable
+                        </button>
+                      )}
+                      {variants.some((v: any) => v.releaseChannel?.toLowerCase().includes('beta')) && (
+                        <button
+                          type="button"
+                          onClick={selectBetaVariants}
+                          className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition"
+                        >
+                          Sadece Beta
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
                     {variants.map((v: any, idx: number) => {
-                      const isSelected = selectedVariantIdx === idx;
+                      const isSelected = selectedVariantIndices.includes(idx);
                       const isBeta = v.releaseChannel?.toLowerCase().includes('beta');
                       return (
-                        <button
+                        <div
                           key={idx}
-                          type="button"
-                          onClick={() => setSelectedVariantIdx(idx)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-2 ${
+                          onClick={() => toggleVariant(idx)}
+                          className={`p-2 rounded-xl text-xs font-medium border transition-all flex items-center justify-between cursor-pointer select-none ${
                             isSelected
-                              ? 'bg-purple-600/30 border-purple-500 text-white shadow-lg shadow-purple-600/20 ring-1 ring-purple-500/50'
-                              : 'bg-slate-900/60 border-white/10 text-slate-400 hover:text-white hover:bg-slate-800'
+                              ? 'bg-purple-600/25 border-purple-500/80 text-white shadow-md shadow-purple-600/20 ring-1 ring-purple-500/40'
+                              : 'bg-slate-900/60 border-white/5 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
                           }`}
                         >
-                          <span
-                            className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
-                              isBeta
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                            }`}
-                          >
-                            {v.releaseChannel || 'Stable'}
-                          </span>
-                          <span className="font-mono font-bold text-white">{v.architecture}</span>
-                          <span className="text-[10px] text-slate-400 font-mono">v{v.new_version}</span>
-                        </button>
+                          <div className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleVariant(idx)}
+                              onClick={(e) => e.stopPropagation()}
+                              className="rounded text-purple-600 focus:ring-0 w-3.5 h-3.5"
+                            />
+                            <div className="truncate">
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-mono font-bold text-white text-[11px] truncate">
+                                  {v.architecture || 'Universal'}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.2 rounded text-[8px] font-mono font-bold uppercase ${
+                                    isBeta
+                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  }`}
+                                >
+                                  {v.releaseChannel || 'Stable'}
+                                </span>
+                              </div>
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                v{v.new_version || v.current_version || app.latest_version}
+                              </div>
+                            </div>
+                          </div>
+                          {isSelected && (
+                            <CheckCircle2 className="w-4 h-4 text-purple-400 shrink-0 ml-1" />
+                          )}
+                        </div>
                       );
                     })}
                   </div>
@@ -822,6 +922,32 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                   <div className="text-[11px] text-emerald-200/80">
                     Bu uygulama için daha önce uygulanan güvenlik filtreleri, reklam engellemeleri ve VIP smali yamaları rehbere kaydedilmiş. Yeni sürüme doğrudan otonom aktarabilirsiniz.
                   </div>
+
+                  {variants.length > 1 && (
+                    <div className="mt-2.5 p-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-200 flex flex-wrap sm:flex-nowrap items-center justify-between gap-3 text-[11px]">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                        <span>
+                          <strong>Çoklu Varyant Uyarısı:</strong> Mevcut rehber önceki tek varyant için oluşturulmuştu. Seçilen {selectedVariantIndices.length} varyantın tüm mimarilerini kapsayacak güncel profili baştan oluşturmak için <strong>'Rehberi Yeniden Eğit & Güncelle'</strong> yöntemini seçebilirsiniz.
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionType('rebuild_guide');
+                          setUpdateGuide(true);
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold whitespace-nowrap transition border shrink-0 ${
+                          actionType === 'rebuild_guide'
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-md shadow-amber-500/30'
+                            : 'bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border-amber-500/40'
+                        }`}
+                      >
+                        {actionType === 'rebuild_guide' ? '✓ Yeniden Oluştur Seçildi' : '🔄 Rehberi Yeniden Eğit'}
+                      </button>
+                    </div>
+                  )}
+
                   {showGuidePreview && auditData.modding_guide && (
                     <div className="mt-2 p-3 rounded-lg bg-slate-950/80 border border-emerald-500/20 max-h-40 overflow-y-auto font-mono text-[10px] text-slate-300 whitespace-pre-wrap">
                       {auditData.modding_guide}
@@ -830,13 +956,13 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                 </div>
               )}
 
-              {/* Action Selection (Gereksiz decompile'ı önleyen radyo butonları) */}
+              {/* Action Selection */}
               <div className="space-y-3 pt-2">
                 <div className="font-semibold text-white flex items-center gap-2">
                   <Sliders className="w-4 h-4 text-purple-400" />
                   İşlem Yöntemini Seçin
                 </div>
-                <div className={`grid grid-cols-1 ${auditData?.has_existing_profile ? 'sm:grid-cols-3' : 'sm:grid-cols-2'} gap-3`}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {auditData?.has_existing_profile && (
                     <label
                       className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
@@ -859,7 +985,44 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-400 mt-2">
-                        Kayıtlı rehberdeki manifest ve smali reçetesini sıfır eforla doğrudan yeni APK'ya uygular.
+                        Kayıtlı rehberdeki manifest ve smali reçetesini doğrudan yeni APK'ya uygular.
+                      </p>
+                    </label>
+                  )}
+
+                  {auditData?.has_existing_profile && (
+                    <label
+                      className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col justify-between ${
+                        actionType === 'rebuild_guide'
+                          ? 'bg-amber-500/10 border-amber-500/50 text-white shadow-lg shadow-amber-500/10 ring-1 ring-amber-500/30'
+                          : 'bg-slate-950/40 border-white/5 text-slate-400 hover:border-white/10'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="radio"
+                            name="actionType"
+                            checked={actionType === 'rebuild_guide'}
+                            onChange={() => {
+                              setActionType('rebuild_guide');
+                              setUpdateGuide(true);
+                            }}
+                            className="text-amber-600 focus:ring-0"
+                          />
+                          <span className="font-bold text-xs text-white flex items-center gap-1.5">
+                            <RotateCw className="w-3.5 h-3.5 text-amber-400" />
+                            Rehberi Yeniden Eğit & Güncelle
+                          </span>
+                        </div>
+                        {variants.length > 1 && (
+                          <span className="text-[9px] font-mono font-bold px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                            Önerilen
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-2">
+                        Önceki tek varyantlı rehberi sıfırlar; seçilen yeni varyantlara göre baştan decompile & analiz yapıp rehberi günceller.
                       </p>
                     </label>
                   )}
@@ -1510,26 +1673,44 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                   </div>
                 </label>
 
-                <label className="flex items-start gap-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={saveGuide}
-                    onChange={(e) => setSaveGuide(e.target.checked)}
-                    className="mt-0.5 rounded text-emerald-500 focus:ring-0"
-                  />
-                  <div>
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
-                      <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Yapılan İşlemleri Bu Uygulama İçin Rehber Olarak Kaydet</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                        Otonom Şablon
+                <div className="space-y-2">
+                  <label className="flex items-start gap-2.5 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={saveGuide || actionType === 'rebuild_guide'}
+                      disabled={actionType === 'rebuild_guide'}
+                      onChange={(e) => setSaveGuide(e.target.checked)}
+                      className="mt-0.5 rounded text-emerald-500 focus:ring-0"
+                    />
+                    <div>
+                      <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-400" />
+                        <span>Yapılan İşlemleri Bu Uygulama İçin Rehber Olarak Kaydet</span>
+                        <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          {actionType === 'rebuild_guide' ? 'Zorunlu Güncelleme' : 'Otonom Şablon'}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        Kaldırılan izinler, reklam filtreleri ve VIP yamaları uygulamanın profiline kaydedilir. Bir sonraki kontrolde bu kurallar doğrudan otonom olarak kullanılacaktır.
+                      </div>
+                    </div>
+                  </label>
+
+                  {auditData?.has_existing_profile && (
+                    <label className="flex items-center gap-2.5 ml-6 cursor-pointer text-xs">
+                      <input
+                        type="checkbox"
+                        checked={updateGuide || actionType === 'rebuild_guide'}
+                        disabled={actionType === 'rebuild_guide'}
+                        onChange={(e) => setUpdateGuide(e.target.checked)}
+                        className="rounded text-amber-500 focus:ring-0"
+                      />
+                      <span className="text-[11px] text-amber-300 font-medium">
+                        Eski profilin üzerine yaz / sıfırla (Önceki tek varyantlı rehberi silip güncel analizle değiştir)
                       </span>
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5">
-                      Kaldırılan izinler, reklam filtreleri ve VIP yamaları uygulamanın profiline kaydedilir. Bir sonraki kontrolde bu kurallar doğrudan otonom olarak kullanılacaktır.
-                    </div>
-                  </div>
-                </label>
+                    </label>
+                  )}
+                </div>
               </div>
             </>
           )}
@@ -1547,7 +1728,7 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
 
           <button
             onClick={handleSubmit}
-            disabled={loading || submitting}
+            disabled={loading || submitting || (variants.length > 0 && selectedVariantIndices.length === 0)}
             className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-purple-600/20 transition-all flex items-center gap-2 disabled:opacity-50"
           >
             {submitting ? (
@@ -1555,7 +1736,13 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
             ) : (
               <Send className="w-3.5 h-3.5" />
             )}
-            Seçilen Ayarlarla Başlat
+            {selectedVariantIndices.length > 1
+              ? actionType === 'rebuild_guide'
+                ? `${selectedVariantIndices.length} Varyant İçin Rehberi Yeniden Oluştur & Başlat`
+                : `${selectedVariantIndices.length} Varyantı Eşzamanlı Başlat`
+              : actionType === 'rebuild_guide'
+                ? 'Rehberi Yeniden Oluştur & Başlat'
+                : 'Seçilen Ayarlarla Başlat'}
           </button>
         </div>
       </div>

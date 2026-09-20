@@ -491,9 +491,10 @@ export default function PipelineActivityDrawer() {
                       : job.status === 'in_progress' || job.status === 'running'
                       ? '⏳'
                       : '⚪';
+                  const variantTag = job.analysis_report?.variant ? ` [${job.analysis_report.variant}]` : '';
                   return (
                     <option key={job.id} value={job.id}>
-                      {statusIcon} {job.app_name || job.package_name || 'Bilinmeyen Uygulama'} (
+                      {statusIcon} {job.app_name || job.package_name || 'Bilinmeyen Uygulama'}{variantTag} (
                       {job.version_name || 'Sürüm yok'}) – {job.action}
                     </option>
                   );
@@ -510,9 +511,25 @@ export default function PipelineActivityDrawer() {
                 <div className="p-3.5 rounded-xl bg-slate-900/80 border border-white/10 space-y-2">
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <h4 className="text-sm font-bold text-white">
-                        {selectedJob.app_name || selectedJob.package_name}
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-white">
+                          {selectedJob.app_name || selectedJob.package_name}
+                        </h4>
+                        {selectedJob.analysis_report?.variant && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            {selectedJob.analysis_report.variant}
+                          </span>
+                        )}
+                        {selectedJob.analysis_report?.target_channel && (
+                          <span className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                            String(selectedJob.analysis_report.target_channel).toLowerCase().includes('beta')
+                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                              : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                          }`}>
+                            {selectedJob.analysis_report.target_channel}
+                          </span>
+                        )}
+                      </div>
                       <div className="text-xs text-slate-400 font-mono mt-0.5">
                         {selectedJob.package_name || 'Paket adı yok'}
                       </div>

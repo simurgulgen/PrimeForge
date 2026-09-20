@@ -195,8 +195,11 @@ def run_pipeline(apk_path, action=None, profile_name=None):
 
     profile = load_profile(profile_name or package_name)
 
-    # If action is autonomous_from_guide and profile exists, force auto_apply
-    if action == "autonomous_from_guide" and profile:
+    # If action is rebuild_guide or user requested to update/recreate guide: do not reuse stale single-variant profile
+    if action == "rebuild_guide" or requested_mod_opts.get("update_guide") or requested_mod_opts.get("overwrite_guide"):
+        print(f"🔄 Rehber Yeniden Oluşturma & Güncelleme Devrede: Eski profil sıfırlanıyor, güncel varyanta göre taze analiz yapılacak.")
+        profile = None
+    elif action == "autonomous_from_guide" and profile:
         print(f"🤖 Kayıtlı Rehber ile Otonom Modlama Devrede: '{profile.get('name', package_name)}'")
         profile["auto_apply"] = True
 
@@ -223,11 +226,21 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             with open(github_env, "a") as f:
                 f.write("SKIP_EMULATOR=true\n")
 
-    # Merge user-selected permissions into profile if provided
+    # User-selected permissions and custom smali patches
+    strip_danger = requested_mod_opts.get("strip_dangerous_permissions") or []
+    strip_ad = requested_mod_opts.get("strip_ad_permissions") or []
+    extra_perms = list(set(strip_danger + strip_ad))
+
+    custom_patches = requested_mod_opts.get("custom_smali_patches") or []
+    if not custom_patches and requested_mod_opts.get("custom_ai_patch_spec"):
+        spec = requested_mod_opts.get("custom_ai_patch_spec")
+        if isinstance(spec, list):
+            custom_patches.extend(spec)
+        elif isinstance(spec, dict):
+            custom_patches.append(spec)
+
+    # Merge user-selected permissions into profile if already loaded
     if profile:
-        strip_danger = requested_mod_opts.get("strip_dangerous_permissions") or []
-        strip_ad = requested_mod_opts.get("strip_ad_permissions") or []
-        extra_perms = list(set(strip_danger + strip_ad))
         if extra_perms:
             if "manifest_cleanup" not in profile:
                 profile["manifest_cleanup"] = {}
@@ -235,14 +248,6 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             profile["manifest_cleanup"]["remove_permissions"] = list(set(current_perms + extra_perms))
             print(f"🛡️ Kullanıcı tarafından seçilen {len(extra_perms)} izin temizleme kuralı profile eklendi.")
 
-        # Merge custom user/AI smali patches if provided
-        custom_patches = requested_mod_opts.get("custom_smali_patches") or []
-        if not custom_patches and requested_mod_opts.get("custom_ai_patch_spec"):
-            spec = requested_mod_opts.get("custom_ai_patch_spec")
-            if isinstance(spec, list):
-                custom_patches.extend(spec)
-            elif isinstance(spec, dict):
-                custom_patches.append(spec)
         if custom_patches:
             if "smali_patches" not in profile:
                 profile["smali_patches"] = []
@@ -264,6 +269,17 @@ def run_pipeline(apk_path, action=None, profile_name=None):
                 ai_profile = ai_generate_profile(report)
                 if ai_profile and isinstance(ai_profile, dict) and ai_profile.get("package"):
                     profile = ai_profile
+                    # Also include user-selected extra permissions and custom patches into the new profile
+                    if extra_perms:
+                        if "manifest_cleanup" not in profile:
+                            profile["manifest_cleanup"] = {}
+                        current_perms = profile["manifest_cleanup"].get("remove_permissions") or []
+                        profile["manifest_cleanup"]["remove_permissions"] = list(set(current_perms + extra_perms))
+                    if custom_patches:
+                        if "smali_patches" not in profile:
+                            profile["smali_patches"] = []
+                        profile["smali_patches"].extend(custom_patches)
+
                     ai_success = True
 
                     # Save to local profile file
@@ -295,6 +311,36 @@ def run_pipeline(apk_path, action=None, profile_name=None):
                         print(f"⚠️ Telegram AI notification error: {te}")
         except Exception as e:
             print(f"⚠️ AI profil üretimi başarısız oldu: {e}")
+
+        if not ai_success and (action in ["rebuild_guide", "full_mod"] or requested_mod_opts.get("update_guide") or requested_mod_opts.get("save_guide")):
+            print("💡 AI servisinden yanıt alınamadı; kullanıcı ön denetim tercihleri ve statik analizle otonom rehber oluşturuluyor...")
+            profile = {
+                "name": f"{package_name} Otonom Mod Rehberi",
+                "package": package_name,
+                "auto_apply": True,
+                "manifest_cleanup": {
+                    "remove_permissions": extra_perms
+                },
+                "smali_patches": custom_patches
+            }
+            ai_success = True
+            try:
+                os.makedirs(PROFILES_DIR, exist_ok=True)
+                target_profile_path = os.path.join(PROFILES_DIR, f"{package_name}.yml")
+                with open(target_profile_path, "w", encoding="utf-8") as pf:
+                    yaml.dump(profile, pf, default_flow_style=False, allow_unicode=True)
+                print(f"💾 Otonom rehber kaydedildi: {target_profile_path}")
+                from engine.supabase_client import upsert_profile
+                upsert_profile(
+                    package_name=package_name,
+                    profile_name=profile.get("name"),
+                    profile_yaml=yaml.dump(profile, default_flow_style=False, allow_unicode=True),
+                    modding_guide="Kullanıcı ön denetim tercihleri ile güncellendi.",
+                    auto_apply=True
+                )
+                print(f"☁️ Güncellenmiş rehber Supabase forge_profiles tablosuna işlendi.")
+            except Exception as ex:
+                print(f"⚠️ Rehber kaydetme uyarısı: {ex}")
 
         if not ai_success:
             print("🚫 No auto-apply profile and AI unavailable. Requesting decision via Telegram...")
