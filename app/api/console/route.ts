@@ -83,19 +83,24 @@ export async function GET(req: Request) {
     if (!logs && !runId && GITHUB_TOKEN) {
       try {
         const runsRes = await fetch(
-          `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?per_page=8`,
+          `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?event=repository_dispatch&per_page=10`,
           { headers, cache: 'no-store' }
         );
         if (runsRes.ok) {
           const runsData = await runsRes.json();
           const workflowRuns = runsData.workflow_runs || [];
 
-          // Job oluşturulma zamanına en yakın veya şu an çalışan run'ı bul
+          // Job oluşturulma zamanına en yakın repository_dispatch run'ı bul
           const jobTime = new Date(selectedJob.created_at).getTime();
-          const matchingRun = workflowRuns.find((r: any) => {
-            const rTime = new Date(r.created_at).getTime();
-            return Math.abs(rTime - jobTime) < 30 * 60 * 1000; // 30 dk içinde
-          }) || workflowRuns[0];
+          const matchingRun =
+            workflowRuns.find((r: any) => {
+              const rTime = new Date(r.created_at).getTime();
+              return Math.abs(rTime - jobTime) < 15 * 60 * 1000; // 15 dk içinde
+            }) ||
+            (workflowRuns.length > 0 &&
+            Math.abs(new Date(workflowRuns[0].created_at).getTime() - jobTime) < 30 * 60 * 1000
+              ? workflowRuns[0]
+              : null);
 
           if (matchingRun) {
             runId = String(matchingRun.id);

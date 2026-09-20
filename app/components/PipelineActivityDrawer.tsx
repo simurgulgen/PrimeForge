@@ -220,7 +220,13 @@ export default function PipelineActivityDrawer() {
 
       // 1. Download
       const dlStatus = mapGhStepStatus('Download Target APK');
-      defaultSteps[0].status = dlStatus !== 'pending' ? dlStatus : (isFailedOverall ? 'failed' : 'in_progress');
+      if (dlStatus !== 'pending') {
+        defaultSteps[0].status = dlStatus;
+      } else if (runInfoData.status === 'completed') {
+        defaultSteps[0].status = runInfoData.conclusion === 'success' ? 'completed' : 'failed';
+      } else {
+        defaultSteps[0].status = isFailedOverall ? 'failed' : 'in_progress';
+      }
 
       // 2. Setup & Decompile / Engine
       const engineStatus = mapGhStepStatus('Run PrimeForge Engine');
