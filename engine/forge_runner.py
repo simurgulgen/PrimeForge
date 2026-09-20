@@ -235,6 +235,20 @@ def run_pipeline(apk_path, action=None, profile_name=None):
             profile["manifest_cleanup"]["remove_permissions"] = list(set(current_perms + extra_perms))
             print(f"🛡️ Kullanıcı tarafından seçilen {len(extra_perms)} izin temizleme kuralı profile eklendi.")
 
+        # Merge custom user/AI smali patches if provided
+        custom_patches = requested_mod_opts.get("custom_smali_patches") or []
+        if not custom_patches and requested_mod_opts.get("custom_ai_patch_spec"):
+            spec = requested_mod_opts.get("custom_ai_patch_spec")
+            if isinstance(spec, list):
+                custom_patches.extend(spec)
+            elif isinstance(spec, dict):
+                custom_patches.append(spec)
+        if custom_patches:
+            if "smali_patches" not in profile:
+                profile["smali_patches"] = []
+            profile["smali_patches"].extend(custom_patches)
+            print(f"✨ Kullanıcı / AI özel modlama kuralları ({len(custom_patches)} kural) profile eklendi.")
+
     if profile is None or not profile.get("auto_apply", False):
         ai_success = False
         try:

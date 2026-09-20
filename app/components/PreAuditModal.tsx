@@ -14,6 +14,7 @@ import {
   AlertTriangle,
   FileCode2,
   Layers,
+  Key,
   X,
   Send,
   Loader2,
@@ -184,6 +185,52 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
     setTimeout(() => setCopiedSnippet(null), 2500);
   };
 
+  // Custom AI Modding Request & Instruction States
+  const [customAiRequest, setCustomAiRequest] = useState<string>('');
+  const [isAnalyzingCustomRequest, setIsAnalyzingCustomRequest] = useState<boolean>(false);
+  const [customAnalysisResult, setCustomAnalysisResult] = useState<any | null>(null);
+  const [customAnalysisError, setCustomAnalysisError] = useState<string | null>(null);
+  const [customOptionEnabled, setCustomOptionEnabled] = useState<boolean>(true);
+
+  const handleAnalyzeCustomRequest = async () => {
+    if (!customAiRequest.trim()) return;
+    setIsAnalyzingCustomRequest(true);
+    setCustomAnalysisError(null);
+
+    try {
+      let localAiSettings = null;
+      try {
+        const stored = localStorage.getItem('primeforge_ai_settings');
+        if (stored) localAiSettings = JSON.parse(stored);
+      } catch (_) {}
+
+      const res = await fetch('/api/ai/custom-request-inspect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_request: customAiRequest.trim(),
+          package_name: app.packageName,
+          app_name: app.title,
+          audit_data: auditData,
+          ai_settings: localAiSettings,
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success && data.data) {
+        setCustomAnalysisResult(data.data);
+        setCustomOptionEnabled(true);
+      } else {
+        setCustomAnalysisError(data.error || 'Özel istek analizi alınamadı.');
+      }
+    } catch (err: any) {
+      console.error('Custom request inspect error:', err);
+      setCustomAnalysisError(err.message || 'Bağlantı hatası oluştu.');
+    } finally {
+      setIsAnalyzingCustomRequest(false);
+    }
+  };
+
   useEffect(() => {
     const fetchPreAudit = async () => {
       setLoading(true);
@@ -266,8 +313,13 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
             enable_tv_dpad_converter: enableTvDpad,
             enable_universal_ad_blocker: enableAdBlocker,
             enable_self_healing: enableSelfHealing,
+            custom_ai_request: customAiRequest.trim() || undefined,
+            custom_ai_patch_enabled: customOptionEnabled && (Boolean(customAnalysisResult) || Boolean(customAiRequest.trim())),
+            custom_ai_patch_spec: (customOptionEnabled && customAnalysisResult?.recommended_smali_patch) ? customAnalysisResult.recommended_smali_patch : undefined,
+            custom_smali_patches: (customOptionEnabled && customAnalysisResult?.recommended_smali_patch) ? [customAnalysisResult.recommended_smali_patch] : undefined,
+            custom_option_label: customAnalysisResult?.option_label || (customAiRequest.trim() ? customAiRequest.trim() : undefined),
           },
-          custom_notes: `İşlem: ${actionLabels[actionType] || actionType}. Runner: ${runnerType}. Mimari: ${targetVariantArch || 'Universal'}. Rehber Kaydı: ${saveGuide ? 'Aktif' : 'Pasif'}.`,
+          custom_notes: `İşlem: ${actionLabels[actionType] || actionType}. Runner: ${runnerType}. Mimari: ${targetVariantArch || 'Universal'}. Rehber Kaydı: ${saveGuide ? 'Aktif' : 'Pasif'}.${customAiRequest.trim() ? ` Özel AI İsteği: ${customAiRequest.trim()}` : ''}`,
           publish_mode: 'manual_review',
         }),
       });
@@ -1232,6 +1284,149 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
                   </div>
                 </div>
               )}
+
+              {/* 🤖 Özel AI Modlama Talebi & Akıllı İstek Alanı */}
+              <div className="pt-3 border-t border-purple-500/20 space-y-3">
+                <div className="p-3.5 rounded-xl bg-gradient-to-br from-slate-950/90 via-purple-950/20 to-slate-900/80 border border-purple-500/30 space-y-3 shadow-lg shadow-purple-950/30">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4 text-purple-400" />
+                      Özel AI Modlama Talebi & Akıllı Talimat
+                    </span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      Yapay Zeka Destekli
+                    </span>
+                  </div>
+
+                  <p className="text-[11px] text-slate-400 leading-relaxed">
+                    Uygulamada kaldırmak istediğiniz bir şifre/PIN kilit ekranı, zorunlu giriş, süre kısıtı veya eklemek istediğiniz özel bir davranış varsa yazın. Yapay zeka uygulamayı inceleyip tek tıkla seçilebilir modlama kuralına dönüştürecektir.
+                  </p>
+
+                  {/* Suggestion Chips */}
+                  <div className="flex flex-wrap gap-1.5 pt-0.5">
+                    {[
+                      { label: '🔑 Şifre / PIN Kaldır', text: 'Uygulama açılışındaki şifre / PIN kilit ekranını tespit et ve kaldır' },
+                      { label: '🚀 Açılış Ekranını Atla', text: 'Giriş / splash bekleme ekranını atla doğrudan ana menüyü aç' },
+                      { label: '📺 Android TV & Kumanda', text: 'Dokunmatik arayüzü TV kumandası yön tuşlarıyla yönlendirilebilir yap' },
+                      { label: '🛡️ Gizli Telemetriyi Sustur', text: 'Arka planda çalışan analitik ve telemetri raporlayıcılarını temizle' },
+                    ].map((chip, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => setCustomAiRequest(chip.text)}
+                        className="text-[10px] px-2 py-0.5 rounded-lg bg-purple-950/50 hover:bg-purple-900/60 text-purple-300 border border-purple-500/20 transition-all hover:border-purple-500/40"
+                      >
+                        {chip.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Textarea & Inspect Button */}
+                  <div className="space-y-2">
+                    <div className="relative">
+                      <textarea
+                        value={customAiRequest}
+                        onChange={(e) => setCustomAiRequest(e.target.value)}
+                        placeholder="Örn: Bu uygulamada kilit şifresi var, şifre sormadan doğrudan açılsın istiyorum..."
+                        rows={2}
+                        className="w-full px-3 py-2 text-xs rounded-xl bg-slate-900/90 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:border-purple-500 transition-all resize-none font-sans"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        onClick={handleAnalyzeCustomRequest}
+                        disabled={isAnalyzingCustomRequest || !customAiRequest.trim()}
+                        className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-md shadow-purple-600/30 transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isAnalyzingCustomRequest ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Yapay Zeka İnceliyor...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Bot className="w-3.5 h-3.5 text-purple-200" />
+                            <span>Yapay Zeka ile İncele & Çözüm Üret</span>
+                          </>
+                        )}
+                      </button>
+
+                      {customAiRequest.trim() && !customAnalysisResult && (
+                        <span className="text-[10px] text-slate-400 italic">
+                          İnceleme yapmadan da doğrudan talebi iletebilirsiniz.
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* AI Analysis Error */}
+                  {customAnalysisError && (
+                    <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs flex items-center gap-2">
+                      <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                      <span>{customAnalysisError}</span>
+                    </div>
+                  )}
+
+                  {/* AI Result & Selectable Option Card */}
+                  {customAnalysisResult && (
+                    <div className="p-3 rounded-xl bg-slate-900/95 border border-purple-500/40 space-y-2.5 animate-in fade-in duration-200">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="font-bold text-xs text-white flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                            {customAnalysisResult.title}
+                          </div>
+                          <div className="text-[11px] text-slate-300 mt-0.5 leading-relaxed">
+                            {customAnalysisResult.summary}
+                          </div>
+                        </div>
+                        <span className="text-[9px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                          Risk: {customAnalysisResult.risk_level || 'DÜŞÜK'}
+                        </span>
+                      </div>
+
+                      <div className="p-2 rounded-lg bg-black/40 border border-white/5 space-y-1 text-[10px]">
+                        <div>
+                          <strong className="text-purple-300">Tespit Edilen Mekanizma: </strong>
+                          <span className="text-slate-300">{customAnalysisResult.detected_mechanism}</span>
+                        </div>
+                        <div>
+                          <strong className="text-amber-300">Yama Stratejisi: </strong>
+                          <span className="text-slate-300">{customAnalysisResult.patch_strategy}</span>
+                        </div>
+                        {customAnalysisResult.code_locations?.length > 0 && (
+                          <div className="text-slate-400 font-mono text-[9px] pt-0.5">
+                            Konumlar: {customAnalysisResult.code_locations.slice(0, 2).join(', ')}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Selectable Mod Option Switch */}
+                      <label className="flex items-center gap-2.5 p-2 rounded-lg bg-purple-600/15 border border-purple-500/30 cursor-pointer hover:bg-purple-600/25 transition-all">
+                        <input
+                          type="checkbox"
+                          checked={customOptionEnabled}
+                          onChange={(e) => setCustomOptionEnabled(e.target.checked)}
+                          className="rounded text-purple-600 focus:ring-0"
+                        />
+                        <div className="flex-1">
+                          <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                            <span>{customAnalysisResult.option_label || 'Özel AI Mod Seçeneği'}</span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-purple-500/30 text-purple-200">
+                              Seçenek Olarak Eklendi
+                            </span>
+                          </div>
+                          <div className="text-[10px] text-purple-300/80">
+                            {customAnalysisResult.option_description || 'Pipeline sırasında bu özel smali kuralı otomatik olarak uygulanacaktır.'}
+                          </div>
+                        </div>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
 
               {/* Runner Selector & Game-Changing Engine Toggles */}
               <div className="pt-3 border-t border-white/10 space-y-3">
