@@ -1,9 +1,15 @@
 # -*- coding: utf-8 -*-
 """Telegram Bot for PrimeForge notifications and interactive decisions."""
-import json
 import os
-import ssl
 import sys
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+import json
+import ssl
 import urllib.request
 
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):

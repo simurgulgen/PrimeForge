@@ -206,10 +206,14 @@ def scan_virustotal(apk_path: str, sha256: str = None) -> dict:
 # =====================================================================
 # Known Protectors / Packers
 PROTECTORS_SIGS = {
-    "SecNeo (Bangcle)": [b"libsecneo.so", b"libSecShell.so", b"com.secneo.apkwrapper"],
+    "NP Manager (Dex2C Pro / Native Shell)": [
+        b"protected_by_np", b"apkdex2cpro", b"d_shell_data", b"libdecaa", b"vwwwwwvwww", b"librzcore"
+    ],
+    "Dex2C Virtualization": [b"dex2c", b"libdex2c.so", b"libdex2c"],
+    "SecNeo (Bangcle)": [b"libsecneo.so", b"libsecshell.so", b"com.secneo.apkwrapper", b"libsecexe.so", b"libsecmain.so"],
     "Bangcle": [b"libsecexe.so", b"libsecmain.so", b"com.bangcle"],
-    "Tencent Legu": [b"libtxapp.so", b"libshell.so", b"com.tencent.StubShell", b"com.tencent.tpshell"],
-    "Qihoo 360 / Jiagu": [b"libjiagu.so", b"libprotectClass.so", b"com.qihoo.util.StubApp", b"com.stub.StubApp"],
+    "Tencent Legu": [b"libtxapp.so", b"libshell.so", b"com.tencent.stubshell", b"com.tencent.tpshell"],
+    "Qihoo 360 / Jiagu": [b"libjiagu.so", b"libprotectclass.so", b"com.qihoo.util.stubapp", b"com.stub.stubapp"],
     "Baidu Protect": [b"libbaiduprotect.so", b"com.baidu.protect"],
     "Alibaba (Ali / Mobisec)": [b"libmobisec.so", b"libfake_jni.so", b"com.alibaba.mobisec"],
     "IJiaMi": [b"libexec.so", b"libexecmain.so", b"com.ijiami"],
@@ -265,11 +269,13 @@ def scan_apkid(apk_path: str, decompiled_dir: str = None) -> dict:
             namelist = z.namelist()
             so_files = [f for f in namelist if f.startswith("lib/") and f.endswith(".so")]
             dex_files = [f for f in namelist if f.startswith("classes") and f.endswith(".dex")]
+            all_entry_names = b" ".join(f.lower().encode("utf-8") for f in namelist)
 
             # Read strings from DEX headers
             dex_bytes_pool = bytearray()
             for dex in dex_files[:3]:  # inspect first 3 dex files
                 dex_bytes_pool.extend(z.read(dex)[:500000])  # read first 500KB per dex
+            dex_pool_lower = bytes(dex_bytes_pool).lower()
 
             # Check compilers
             if b"~~R8" in dex_bytes_pool:
@@ -279,11 +285,11 @@ def scan_apkid(apk_path: str, decompiled_dir: str = None) -> dict:
             else:
                 result["compiler"] = "DX / Standart Dalvik"
 
-            # Check Protectors / Packers
-            so_names_bytes = b" ".join(f.encode("utf-8") for f in so_files)
+            # Check Protectors / Packers (search across all zip files, assets, and dex strings)
             for prot_name, sigs in PROTECTORS_SIGS.items():
                 for sig in sigs:
-                    if sig in so_names_bytes or sig in dex_bytes_pool:
+                    sig_lower = sig.lower()
+                    if sig_lower in all_entry_names or sig_lower in dex_pool_lower:
                         if prot_name not in result["protector"]:
                             result["protector"].append(prot_name)
 
