@@ -24,6 +24,7 @@ import {
   BookOpen,
   Activity,
   XCircle,
+  Ban,
   Terminal,
   Settings,
   Plus,
@@ -933,6 +934,8 @@ export default function UpdatesPage() {
                               ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse'
                               : activeJob.status === 'completed'
                               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
+                              : activeJob.status === 'cancelled'
+                              ? 'bg-slate-800 border-slate-700 text-slate-400'
                               : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300 animate-pulse'
                           }`}
                           title="Aşama durumunu ve hata ayrıntılarını aç/kapat"
@@ -941,6 +944,8 @@ export default function UpdatesPage() {
                             <XCircle className="w-3.5 h-3.5 text-rose-400" />
                           ) : activeJob.status === 'completed' ? (
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          ) : activeJob.status === 'cancelled' ? (
+                            <Ban className="w-3.5 h-3.5 text-slate-400" />
                           ) : (
                             <Loader2 className="w-3.5 h-3.5 text-cyan-400 animate-spin" />
                           )}
@@ -948,6 +953,8 @@ export default function UpdatesPage() {
                             ? 'Hata Detayı & Aşamalar'
                             : activeJob.status === 'completed'
                             ? 'Aşamalar (Tamamlandı)'
+                            : activeJob.status === 'cancelled'
+                            ? 'Aşamalar (İptal Edildi)'
                             : 'Aşamalar (Çalışıyor)'}
                         </button>
                       )}
@@ -1018,6 +1025,8 @@ export default function UpdatesPage() {
                             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                           ) : activeJob.status === 'failed' ? (
                             <XCircle className="w-4 h-4 text-rose-400" />
+                          ) : activeJob.status === 'cancelled' ? (
+                            <Ban className="w-4 h-4 text-slate-400" />
                           ) : (
                             <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
                           )}
@@ -1027,10 +1036,12 @@ export default function UpdatesPage() {
                                 ? '✅ Pipeline Başarıyla Tamamlandı'
                                 : activeJob.status === 'failed'
                                 ? '❌ Pipeline Başarısız Oldu!'
+                                : activeJob.status === 'cancelled'
+                                ? '🛑 Pipeline İptal Edildi'
                                 : '⚡ Modlama Pipeline Çalışıyor...'}
                             </span>
                             <span className="text-[10px] text-slate-400 font-mono">
-                              İş #{activeJob.id.substring(0, 8)} • {activeJob.action}
+                              İş #{activeJob.id.substring(0, 8)} • {activeJob.status === 'cancelled' ? 'İptal Edildi' : activeJob.action}
                             </span>
                           </div>
                         </div>

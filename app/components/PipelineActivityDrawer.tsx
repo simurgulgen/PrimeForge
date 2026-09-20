@@ -256,6 +256,12 @@ export default function PipelineActivityDrawer() {
         defaultSteps[0].status = 'completed';
         defaultSteps[1].status = 'failed';
         defaultSteps[1].detail = job.error_message || 'Motor yürütme sırasında hata oluştu.';
+      } else if (engineStatus === 'cancelled' || isCancelledOverall) {
+        defaultSteps[0].status = 'completed';
+        defaultSteps[1].status = 'cancelled';
+        defaultSteps[1].detail = 'İşlem iptal edildi.';
+        defaultSteps[2].status = 'cancelled';
+        defaultSteps[3].status = 'cancelled';
       }
 
       // 5. Emulator
@@ -266,12 +272,31 @@ export default function PipelineActivityDrawer() {
       const pubStatus = mapGhStepStatus('Post-test Catbox Publish');
       if (pubStatus !== 'pending') defaultSteps[5].status = pubStatus;
 
+      if (isCancelledOverall) {
+        defaultSteps.forEach((s) => {
+          if (s.status === 'pending' || s.status === 'in_progress') {
+            s.status = 'cancelled';
+          }
+        });
+      }
+
       return defaultSteps;
     }
 
     // Status-based fallback
     if (job.status === 'completed') {
       return defaultSteps.map((s) => ({ ...s, status: 'completed' }));
+    }
+
+    if (job.status === 'cancelled') {
+      defaultSteps[0].status = 'completed';
+      defaultSteps[1].status = 'cancelled';
+      defaultSteps[1].detail = 'İşlem iptal edildi.';
+      defaultSteps[2].status = 'cancelled';
+      defaultSteps[3].status = 'cancelled';
+      defaultSteps[4].status = 'skipped';
+      defaultSteps[5].status = 'skipped';
+      return defaultSteps;
     }
 
     if (job.status === 'waiting_approval') {
