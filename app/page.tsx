@@ -20,8 +20,8 @@ import {
   AlertTriangle,
   Sparkles,
 } from 'lucide-react';
+import PreAuditModal from '@/app/components/PreAuditModal';
 import ApkDropzone from '@/app/components/ApkDropzone';
-import InteractiveModModal from '@/app/components/InteractiveModModal';
 
 export default function DashboardPage() {
   const [apkUrl, setApkUrl] = useState('');
@@ -410,8 +410,10 @@ export default function DashboardPage() {
                   }
                   setSelectedModApp({
                     title: selectedAppInfo?.title || 'Özel APK',
+                    name: selectedAppInfo?.title || 'Özel APK',
                     packageName: selectedAppInfo?.packageName || (profile && profile.includes('.') ? profile : 'com.primeforge.app'),
                     version: selectedAppInfo?.version || '1.0',
+                    newVersion: selectedAppInfo?.version || '1.0',
                     fileUrl: apkUrl,
                     iconUrl: selectedAppInfo?.icon || '',
                   });
@@ -751,7 +753,7 @@ export default function DashboardPage() {
 
       {/* Interactive Mod Pre-Flight Modal */}
       {selectedModApp && (
-        <InteractiveModModal
+        <PreAuditModal
           app={selectedModApp}
           onClose={() => setSelectedModApp(null)}
           onSuccess={({ jobId, action }) => {
@@ -760,7 +762,7 @@ export default function DashboardPage() {
             setSelectedAppInfo(null);
             setToast({
               title: '🚀 Modlama Görevi Başlatıldı!',
-              message: `İş #${jobId.substring(0, 8)} kuyruğa alındı ve GitHub Actions başlatıldı.`,
+              message: `İş #${jobId ? jobId.substring(0, 8) : 'GÖREV'} kuyruğa alındı ve GitHub Actions başlatıldı.`,
               type: 'success',
             });
             fetchJobs(true);

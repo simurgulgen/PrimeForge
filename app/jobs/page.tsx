@@ -30,7 +30,7 @@ import {
   Copy,
   Loader2,
 } from 'lucide-react';
-import InteractiveModModal from '@/app/components/InteractiveModModal';
+import PreAuditModal from '@/app/components/PreAuditModal';
 
 export default function JobsPage() {
   const [jobs, setJobs] = useState<any[]>([]);
@@ -684,17 +684,34 @@ export default function JobsPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    const sec = getSecurityReport(selectedJob);
                     setCustomModApp({
+                      listing_id: selectedJob.listing_id || selectedJob.package_name,
+                      id: selectedJob.id,
                       name: selectedJob.app_name || selectedJob.analysis_report?.app_label || selectedJob.package_name,
                       title: selectedJob.app_name || selectedJob.analysis_report?.app_label || selectedJob.package_name,
                       packageName: selectedJob.package_name,
+                      current_version: selectedJob.version_name,
+                      latest_version: selectedJob.version_name,
                       version: selectedJob.version_name,
-                      fileUrl: selectedJob.apk_url,
-                      analysis_report: selectedJob.analysis_report,
+                      download_url: selectedJob.apk_url,
+                      initialAuditData: {
+                        success: true,
+                        apk_url: selectedJob.apk_url,
+                        package_name: selectedJob.package_name,
+                        version_name: selectedJob.version_name,
+                        security: sec,
+                        security_scan: sec,
+                        permissions: selectedJob.analysis_report?.permissions || selectedJob.analysis_report?.manifest?.permissions || {},
+                        has_existing_profile: Boolean(selectedJob.profile_used || selectedJob.analysis_report?.has_profile),
+                        recommended_action: selectedJob.action === 'analyze_only' ? 'full_mod' : (selectedJob.action || (selectedJob.analysis_report?.has_profile ? 'autonomous_from_guide' : 'full_mod')),
+                      },
+                      initialAiFixResults: aiJobFixResults,
+                      jobId: selectedJob.id,
                     });
                   }}
                   className="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-semibold flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
-                  title="Analiz sonuçlarına göre modlama seçeneklerini belirle ve yeniden başlat"
+                  title="Analiz ve güvenlik sonuçlarına göre modlama seçeneklerini belirle ve başlat"
                 >
                   <Zap className="w-3.5 h-3.5 text-indigo-400" />
                   Mod Seçeneklerini Belirle
@@ -1842,16 +1859,16 @@ export default function JobsPage() {
         </div>
       )}
 
-      {/* Interactive Modding Modal */}
+      {/* Pre-Audit & Dynamic Modding Options Modal */}
       {customModApp && (
-        <InteractiveModModal
+        <PreAuditModal
           app={customModApp}
           onClose={() => setCustomModApp(null)}
           onSuccess={(result: any) => {
             const shortId = result.jobId ? `#${result.jobId.substring(0, 8)}` : '';
             setToast({
               title: '🚀 Modlama Görevi Başlatıldı',
-              message: `Özelleştirilmiş modlama işlemi (${shortId}) kuyruğa eklendi.`,
+              message: result.message || `Özelleştirilmiş modlama işlemi (${shortId}) kuyruğa eklendi.`,
               type: 'success',
             });
             fetchJobs(true);

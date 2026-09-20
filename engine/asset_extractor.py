@@ -192,19 +192,40 @@ def extract_icon_and_banner(apk_path: str, meta: Dict[str, Any], output_dir: str
                 f.write(z.read(target_icon))
             icon_found = True
 
-        # 2. If not found, scan for highest resolution launcher icon
+        # 2. If not found or target was XML, scan for highest resolution genuine launcher icon
         if not icon_found:
-            # Candidates sorted by preference (xxxhdpi > xxhdpi > xhdpi > hdpi > mdpi)
             density_order = ["xxxhdpi", "xxhdpi", "xhdpi", "hdpi", "mdpi"]
-            candidates = []
-            for name in names:
-                if name.endswith(valid_exts) and any(k in name.lower() for k in ["ic_launcher", "app_icon", "icon"]):
-                    candidates.append(name)
+            valid_exts = (".png", ".webp", ".jpg", ".jpeg")
+            excluded_prefixes = ("exo_", "media3_", "abc_", "common_", "notification_", "notify_", "btn_", "ic_mr_", "cast_")
+
+            # Tier 1: Real launcher icons in mipmap
+            tier1 = []
+            for n in names:
+                if n.endswith(valid_exts) and "mipmap" in n.lower():
+                    base = n.split("/")[-1].lower()
+                    if not any(base.startswith(p) for p in excluded_prefixes):
+                        if any(k in base for k in ["ic_launcher_round", "ic_launcher", "app_icon", "logo"]):
+                            tier1.append(n)
+
+            # Tier 2: Real launcher icons in drawable
+            tier2 = []
+            for n in names:
+                if n.endswith(valid_exts) and "drawable" in n.lower():
+                    base = n.split("/")[-1].lower()
+                    if not any(base.startswith(p) for p in excluded_prefixes):
+                        if any(k in base for k in ["ic_launcher_round", "ic_launcher", "app_icon", "logo", "icon"]):
+                            tier2.append(n)
+
+            candidates = tier1 if tier1 else tier2
 
             best_candidate = None
             for d in density_order:
                 matches = [c for c in candidates if d in c]
-                if matches:
+                round_matches = [m for m in matches if "round" in m.lower()]
+                if round_matches:
+                    best_candidate = round_matches[0]
+                    break
+                elif matches:
                     best_candidate = matches[0]
                     break
 

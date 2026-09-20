@@ -26,6 +26,77 @@ export async function sendTelegramPublishAlert(text: string, replyMarkup?: any) 
   }
 }
 
+/**
+ * Extracts high-res in-app screenshot URLs from a job's analysis/emulator reports.
+ * Excludes icons and small logos from the screenshot showcase.
+ */
+function extractJobScreenshots(job: any): string[] {
+  const shots: string[] = [];
+  const raw = job?.analysis_report?.screenshots;
+  const emu = job?.analysis_report?.emulator_test_report?.screenshots;
+
+  const tryAdd = (url: any) => {
+    if (typeof url === 'string' && url.startsWith('http')) {
+      const lower = url.toLowerCase();
+      // Exclude icon and small logo files from gallery
+      if (!lower.includes('icon.png') && !lower.includes('icon-') && !shots.includes(url)) {
+        shots.push(url);
+      }
+    }
+  };
+
+  if (Array.isArray(raw)) {
+    raw.forEach(tryAdd);
+  } else if (raw && typeof raw === 'object') {
+    // TV content first (guaranteed clean & inside app UI), then mobile, tablet, and fallback tv
+    const preferredOrder = [
+      'tv_content', 'tv_content_screenshot',
+      'mobile', 'mobile_content', 'mobile_screenshot', 'mobile_content_screenshot',
+      'tablet', 'tablet_screenshot',
+      'tv', 'tv_screenshot', 'emulator'
+    ];
+    for (const key of preferredOrder) {
+      if (raw[key]) tryAdd(raw[key]);
+    }
+    for (const [k, val] of Object.entries(raw)) {
+      if (!preferredOrder.includes(k) && k !== 'icon' && k !== 'banner') {
+        tryAdd(val);
+      }
+    }
+  }
+
+  if (emu && typeof emu === 'object') {
+    for (const [k, val] of Object.entries(emu)) {
+      if (k !== 'icon') tryAdd(val);
+    }
+  }
+
+  if (shots.length === 0 && job?.screenshot_url) {
+    const sUrl = job.screenshot_url;
+    if (typeof sUrl === 'string' && sUrl.startsWith('http') && !sUrl.toLowerCase().includes('icon.png')) {
+      shots.push(sUrl);
+    }
+  }
+
+  return shots;
+}
+
+/**
+ * Extracts the clean app icon/logo URL from a job.
+ */
+function extractJobLogo(job: any): string | null {
+  const iconCandidate = job?.analysis_report?.screenshots?.icon ||
+                        job?.analysis_report?.emulator_test_report?.screenshots?.icon ||
+                        job?.analysis_report?.logo_url;
+  if (typeof iconCandidate === 'string' && iconCandidate.startsWith('http')) {
+    return iconCandidate;
+  }
+  if (job?.screenshot_url && job.screenshot_url.toLowerCase().includes('icon.png')) {
+    return job.screenshot_url;
+  }
+  return null;
+}
+
 export async function publishJobToPrimeStore(jobIdOrPkg: string) {
   // 1. Fetch job from forge_jobs
   let job: any = null;
@@ -78,6 +149,28 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
   const cleanVer = cleanVerMatch ? cleanVerMatch[1] : rawVer.replace(/^v/i, '').trim();
   const versionString = `v${cleanVer} (Prime Mod)`;
 
+  // Extract screenshots and logos
+  const jobScreenshots = extractJobScreenshots(job);
+  const stableLogoCandidate = extractJobLogo(job);
+
+  // Extract VirusTotal & Multi-engine security score
+  const vtEngine = job.analysis_report?.security?.engines?.virustotal ||
+                   job.analysis_report?.security_scan?.engines?.virustotal ||
+                   job.analysis_report?.security?.virustotal ||
+                   job.analysis_report?.security_scan?.virustotal;
+  const vtScore: string | null = vtEngine?.detection_ratio ||
+                  (vtEngine?.total_engines ? `${vtEngine.malicious || 0}/${vtEngine.total_engines}` : null);
+  const vtStatus: string | null = vtEngine?.status ||
+                   (vtEngine?.malicious === 0 ? 'clean' : (vtEngine?.malicious > 0 ? 'malicious' : null));
+
+  // Extract resolved APK SHA256 (modded or analyzed)
+  const resolvedNewHash: string | null = job.modded_apk_hash ||
+                                         job.apk_hash ||
+                                         job.analysis_report?.sha256 ||
+                                         job.analysis_report?.security?.engines?.virustotal?.sha256 ||
+                                         job.analysis_report?.security_scan?.engines?.virustotal?.sha256 ||
+                                         null;
+
   // Detect variant architecture and channel
   const rawVariant = (job.analysis_report?.variant || '').toUpperCase().replace('-', '_');
   const rawArchs: string[] = job.analysis_report?.architectures || [];
@@ -102,13 +195,13 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
 
   let { data: existingListings } = await supabase
     .from('listings')
-    .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName", variants')
+    .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName", variants, screenshots')
     .eq('packageName', pkg);
 
   if (!existingListings || existingListings.length === 0) {
     const { data: titleListings } = await supabase
       .from('listings')
-      .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName", variants')
+      .select('id, title, version, "packageName", "logoUrl", "categoryId", "categoryName", variants, screenshots')
       .ilike('title', `%${appTitle.split(' ')[0]}%`);
     if (titleListings && titleListings.length > 0) {
       existingListings = titleListings;
@@ -135,8 +228,11 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
             ...v,
             fileUrl: moddedUrl,
             version: cleanVer,
+            screenshots: jobScreenshots.length > 0 ? jobScreenshots : (v.screenshots || []),
             fileSize: job.modded_apk_size ? Number(job.modded_apk_size) : v.fileSize,
-            fileHash: job.modded_apk_hash || v.fileHash,
+            fileHash: resolvedNewHash || job.modded_apk_hash || v.fileHash,
+            ...(vtScore ? { virusTotalScore: vtScore } : {}),
+            ...(vtStatus ? { virusTotalStatus: vtStatus } : {}),
             updatedAt: Date.now(),
           };
         }
@@ -151,8 +247,11 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
           version: cleanVer,
           fileUrl: moddedUrl,
           fileHost: moddedUrl.includes('catbox') ? 'CUSTOM_URL' : 'GITHUB',
+          screenshots: jobScreenshots.length > 0 ? jobScreenshots : [],
           fileSize: job.modded_apk_size ? Number(job.modded_apk_size) : undefined,
-          fileHash: job.modded_apk_hash || undefined,
+          fileHash: resolvedNewHash || job.modded_apk_hash || undefined,
+          ...(vtScore ? { virusTotalScore: vtScore } : {}),
+          ...(vtStatus ? { virusTotalStatus: vtStatus } : {}),
           updatedAt: Date.now(),
         });
       }
@@ -175,15 +274,44 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
       updatePayload.fileUrl = moddedUrl;
       updatePayload.version = versionString;
       if (job.modded_apk_size) updatePayload.file_size = String(job.modded_apk_size);
-      if (job.modded_apk_hash) updatePayload.fileHash = job.modded_apk_hash;
+      if (resolvedNewHash || job.modded_apk_hash) updatePayload.fileHash = resolvedNewHash || job.modded_apk_hash;
+      if (vtScore) updatePayload.virusTotalScore = vtScore;
+      if (vtStatus) updatePayload.virusTotalStatus = vtStatus;
     }
 
-    const { error: listErr } = await supabase
-      .from('listings')
-      .update(updatePayload)
-      .eq('id', target.id);
+    // 1. High-Quality In-App Screenshots:
+    // Update listing showcase if it's the primary build, or if current screenshots are empty or generic placeholders
+    if (jobScreenshots.length > 0) {
+      const existingShots = Array.isArray(target.screenshots) ? target.screenshots : [];
+      const hasOnlyPlaceholders = existingShots.length === 0 || existingShots.every((s: string) => s.includes('ss-png.jpg') || s.includes('placeholder'));
+      if (shouldUpdateRoot || hasOnlyPlaceholders) {
+        updatePayload.screenshots = jobScreenshots;
+      }
+    }
 
-    if (!listErr) listingUpdated = true;
+    // 2. Logo Refresh (Safe & Official):
+    // Refresh the store's main logo ONLY if this is a STABLE variant and we have an extracted high-res icon!
+    // Beta builds NEVER overwrite the clean store logo.
+    if (!isBeta && stableLogoCandidate) {
+      updatePayload.logoUrl = stableLogoCandidate;
+    }
+
+    // Update via security definer RPC first (bypasses RLS safely), fallback to direct update
+    const { error: rpcErr } = await supabase.rpc('primeforge_update_listing_full', {
+      p_listing_id: target.id,
+      p_payload: updatePayload,
+    });
+
+    if (!rpcErr) {
+      listingUpdated = true;
+    } else {
+      console.warn('primeforge_update_listing_full RPC error, trying direct update:', rpcErr);
+      const { error: listErr } = await supabase
+        .from('listings')
+        .update(updatePayload)
+        .eq('id', target.id);
+      if (!listErr) listingUpdated = true;
+    }
   } else {
     // Create new listing
     const newListing: any = {
@@ -194,8 +322,8 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
       type: 'APK',
       title: appTitle,
       description: `${appTitle} - PrimeForge tarafından otomatik optimize edilmiş ve temizlenmiş sürüm.\n\n### ✨ Özellikler:\n- Reklam ve gereksiz izinler temizlendi\n- Keystore ile imzalandı\n- Android TV & Mobil uyumlu`,
-      logoUrl: job.analysis_report?.logo_url || 'https://raw.githubusercontent.com/simurgulgen/PrimeStore/main/public/icon.png',
-      screenshots: job.analysis_report?.screenshots || [],
+      logoUrl: (!isBeta ? stableLogoCandidate : null) || job.analysis_report?.logo_url || 'https://raw.githubusercontent.com/simurgulgen/PrimeStore/main/public/icon.png',
+      screenshots: jobScreenshots,
       fileHost: moddedUrl.includes('catbox') ? 'CUSTOM_URL' : 'GITHUB',
       fileUrl: moddedUrl,
       status: 'PUBLISHED',
@@ -203,6 +331,8 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
       packageName: pkg,
       file_size: job.modded_apk_size ? String(job.modded_apk_size) : null,
       fileHash: job.modded_apk_hash || null,
+      virusTotalScore: vtScore || null,
+      virusTotalStatus: vtStatus || null,
       createdAt: Date.now(),
       updatedAt: Date.now(),
       downloadCount: 0,
@@ -215,21 +345,33 @@ export async function publishJobToPrimeStore(jobIdOrPkg: string) {
         version: cleanVer,
         fileUrl: moddedUrl,
         fileHost: moddedUrl.includes('catbox') ? 'CUSTOM_URL' : 'GITHUB',
+        screenshots: jobScreenshots,
         fileSize: job.modded_apk_size ? Number(job.modded_apk_size) : undefined,
         fileHash: job.modded_apk_hash || undefined,
+        virusTotalScore: vtScore || undefined,
+        virusTotalStatus: vtStatus || undefined,
         updatedAt: Date.now(),
       }],
     };
 
-    const { data: inserted, error: insertErr } = await supabase
-      .from('listings')
-      .insert(newListing)
-      .select('id')
-      .single();
+    const { data: inserted, error: insertErr } = await supabase.rpc('primeforge_insert_listing', {
+      p_listing: newListing,
+    });
 
     if (!insertErr && inserted) {
       listingCreated = true;
       listingId = inserted.id;
+    } else {
+      const { data: directInsert, error: directErr } = await supabase
+        .from('listings')
+        .insert(newListing)
+        .select('id')
+        .single();
+
+      if (!directErr && directInsert) {
+        listingCreated = true;
+        listingId = directInsert.id;
+      }
     }
   }
 

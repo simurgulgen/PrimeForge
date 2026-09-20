@@ -120,12 +120,25 @@ class UpdateChecker:
             with urllib.request.urlopen(req, timeout=15, context=_ctx) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
                 tag = data.get("tag_name", "").lstrip("v")
+                rel_name = data.get("name", "")
+                
+                # Prioritize release title (e.g. '2.0.19') over generic tags (e.g. 'update', 'latest')
+                import re
+                m_name = re.search(r"([0-9]+(?:\.[0-9]+)+)", rel_name)
+                m_tag = re.search(r"([0-9]+(?:\.[0-9]+)+)", tag)
+                if m_name:
+                    remote_ver = m_name.group(1)
+                elif m_tag:
+                    remote_ver = m_tag.group(1)
+                else:
+                    remote_ver = tag or rel_name
+
                 apk_url = None
                 for asset in data.get("assets", []):
                     if asset.get("name", "").endswith(".apk"):
                         apk_url = asset.get("browser_download_url")
                         break
-                return {"remote_version": tag, "apk_url": apk_url}
+                return {"remote_version": remote_ver, "apk_url": apk_url}
         except Exception as e:
             print(f"  ⚠️ GitHub check failed for {repo}: {e}")
             return None

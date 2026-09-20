@@ -53,6 +53,40 @@ function cleanSemver(v: string | null | undefined): string {
   return m ? m[1] : s;
 }
 
+function extractReleaseVersion(release: any): string {
+  if (!release) return '1.0.0';
+
+  // 1. Try release title / name first (e.g. "2.0.19" or "v2.0.19" or "Release 2.0.19")
+  if (release.name) {
+    const m = String(release.name).match(/([0-9]+(?:\.[0-9]+)+)/);
+    if (m) return m[1];
+  }
+
+  // 2. Try tag_name (e.g. "v2.0.19" or "2.0.19")
+  if (release.tag_name) {
+    const m = String(release.tag_name).match(/([0-9]+(?:\.[0-9]+)+)/);
+    if (m) return m[1];
+  }
+
+  // 3. Try asset filenames (e.g. "Reezn-2.0.19.apk")
+  if (Array.isArray(release.assets)) {
+    for (const a of release.assets) {
+      if (a && a.name) {
+        const m = String(a.name).match(/([0-9]+(?:\.[0-9]+)+)/);
+        if (m) return m[1];
+      }
+    }
+  }
+
+  // 4. Try release description / body (e.g. "v2.0.19" or "Version 2.0.19")
+  if (release.body) {
+    const m = String(release.body).match(/(?:v|version|sürüm)?\s*([0-9]+\.[0-9]+(?:\.[0-9]+)?)/i);
+    if (m) return m[1];
+  }
+
+  return cleanSemver(release.tag_name || release.name || '1.0.0');
+}
+
 function parseVersion(v: string): number[] {
   const cleaned = cleanSemver(v);
   return cleaned.split(/[.\-_]/).map((p) => {
@@ -469,7 +503,7 @@ export async function GET(req: Request) {
 
             const primaryRelease = latestStable || latestAny;
             const primaryTag = primaryRelease.tag_name;
-            const primaryVer = cleanSemver(primaryTag);
+            const primaryVer = extractReleaseVersion(primaryRelease);
 
             // Detailed variant evaluation
             let hasAnyVariantUpdate = false;
@@ -484,7 +518,7 @@ export async function GET(req: Request) {
                 if (!targetRel) continue;
 
                 const targetTag = targetRel.tag_name;
-                const targetVer = cleanSemver(targetTag);
+                const targetVer = extractReleaseVersion(targetRel);
                 const vCurVer = cleanSemver(v.version || currentVer);
                 const isNewer = isNewerVersion(vCurVer, targetVer);
 

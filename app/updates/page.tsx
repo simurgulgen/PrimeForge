@@ -932,6 +932,8 @@ export default function UpdatesPage() {
                           className={`px-3 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-1.5 shadow-md ${
                             activeJob.status === 'failed'
                               ? 'bg-rose-500/20 border-rose-500/40 text-rose-300 animate-pulse'
+                              : activeJob.status === 'published'
+                              ? 'bg-cyan-500/20 border-cyan-500/40 text-cyan-300'
                               : activeJob.status === 'completed'
                               ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300'
                               : activeJob.status === 'cancelled'
@@ -942,6 +944,8 @@ export default function UpdatesPage() {
                         >
                           {activeJob.status === 'failed' ? (
                             <XCircle className="w-3.5 h-3.5 text-rose-400" />
+                          ) : activeJob.status === 'published' ? (
+                            <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
                           ) : activeJob.status === 'completed' ? (
                             <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
                           ) : activeJob.status === 'cancelled' ? (
@@ -951,6 +955,8 @@ export default function UpdatesPage() {
                           )}
                           {activeJob.status === 'failed'
                             ? 'Hata Detayı & Aşamalar'
+                            : activeJob.status === 'published'
+                            ? 'Aşamalar (Yayınlandı)'
                             : activeJob.status === 'completed'
                             ? 'Aşamalar (Tamamlandı)'
                             : activeJob.status === 'cancelled'

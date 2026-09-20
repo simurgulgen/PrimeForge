@@ -422,8 +422,28 @@ class EmulatorTester:
         print(f"  ⚡ Soğuk Açılış Süresi: {cold_start_ms} ms (Odak: {'Sağlandı' if focused else 'Bekleniyor'})")
         return focused, cold_start_ms
 
+    def dismiss_system_dialogs(self):
+        """Sistem ANR (Yanıt Vermiyor) veya çökme pencerelerini tespit edip ekran görüntüsü öncesinde kapatır."""
+        try:
+            focus = self._adb_shell("dumpsys window | grep mCurrentFocus")
+            if any(term in focus.lower() for term in ["appnotresponding", "systemui", "system ui", "anr", "crash"]):
+                print("  🛡️ Sistem ANR / Bekleme penceresi tespit edildi, kapatılıyor...")
+                # Geri tuşuyla diyalogu kapatmayı dene
+                self._adb_shell("input keyevent 4")
+                time.sleep(1)
+                focus2 = self._adb_shell("dumpsys window | grep mCurrentFocus")
+                if "appnotresponding" in focus2.lower() or "systemui" in focus2.lower():
+                    # 'Wait' butonuna bas (Aşağı + Enter)
+                    self._adb_shell("input keyevent 20")
+                    time.sleep(0.3)
+                    self._adb_shell("input keyevent 23")
+                    time.sleep(1)
+        except Exception:
+            pass
+
     def capture_screenshot(self, filename: str) -> str:
         """Ekran görüntüsünü doğrudan adb exec-out screencap ile kaydeder."""
+        self.dismiss_system_dialogs()
         dest = os.path.join(self.output_dir, filename)
         cmd = ["adb"]
         if self.device_serial:

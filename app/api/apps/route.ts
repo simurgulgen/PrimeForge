@@ -52,20 +52,28 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    const pagePackageNames = Array.from(
+      new Set((apps || []).map((a: any) => a.packageName).filter(Boolean))
+    );
+
     // Also get existing profile package names & compatibility from forge_profiles
     const { data: profiles } = await supabase
       .from('forge_profiles')
       .select('package_name, auto_apply, profile_yaml');
 
-    // Also get latest job and analysis for each package
-    const { data: recentJobs } = await supabase
-      .from('forge_jobs')
-      .select('id, package_name, status, action, analysis_report, created_at')
-      .order('created_at', { ascending: false })
-      .limit(150);
+    // Also get latest job and analysis for each package on current page
+    let recentJobs: any[] = [];
+    if (pagePackageNames.length > 0) {
+      const { data: jobs } = await supabase
+        .from('forge_jobs')
+        .select('id, package_name, status, action, analysis_report, created_at')
+        .in('package_name', pagePackageNames)
+        .order('created_at', { ascending: false });
+      recentJobs = jobs || [];
+    }
 
     const jobMap = new Map<string, any>();
-    for (const j of recentJobs || []) {
+    for (const j of recentJobs) {
       if (j.package_name && !jobMap.has(j.package_name)) {
         jobMap.set(j.package_name, j);
       }

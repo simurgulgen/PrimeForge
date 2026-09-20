@@ -116,8 +116,8 @@ const PERMISSION_INTELLIGENCE: Record<string, {
 }> = {
   'android.permission.ACCESS_FINE_LOCATION': {
     title: 'Hassas GPS Konum Bilgisi',
-    purpose: 'Konuma özel bölgesel reklam hedeflemesi yapmak veya yerel gün doğumu/batımı saatine göre otomatik gece okuma moduna geçmek için istenir.',
-    impact: 'Kitap okuma, PDF açma ve uygulamanın temel özellikleri KESİNLİKLE etkilenmez. Yalnızca reklam hedeflemesi ve otomatik saat/konum teması engellenir.',
+    purpose: 'Konuma özel bölgesel reklam hedeflemesi yapmak veya yerel gün doğumu/batımı saatine göre otomatik gece moduna geçmek için istenir.',
+    impact: 'Uygulamanın temel özellikleri KESİNLİKLE etkilenmez. Yalnızca reklam hedeflemesi ve saat/konum teması engellenir.',
     safety: 'safe',
     safety_label: '✅ Güvenle Kaldırılabilir (Sıfır Risk)',
   },
@@ -130,119 +130,133 @@ const PERMISSION_INTELLIGENCE: Record<string, {
   },
   'android.permission.MANAGE_EXTERNAL_STORAGE': {
     title: 'Tüm Hafıza ve Dosyalara Erişim',
-    purpose: 'Cihazdaki tüm PDF, EPUB, MOBI ve çizgi roman dosyalarını tarayarak kütüphanenizi oluşturmak ve son okunan yerleri kaydetmek için istenir.',
-    impact: '⚠️ DİKKAT: Bu izin kaldırılırsa uygulama cihaz hafızasındaki kitapları ve dosyaları OKUYAMAZ. Okuma uygulamaları için ZORUNLUDUR, kaldırılmamalıdır.',
+    purpose: 'Cihazdaki tüm medya, video, PDF veya kitap dosyalarını tarayarak kütüphanenizi oluşturmak için istenir.',
+    impact: '⚠️ DİKKAT: Bu izin kaldırılırsa uygulama cihaz hafızasındaki yerel dosyalara erişemeyebilir. Yalnızca online akış yapan uygulamalarda kaldırılabilir.',
     safety: 'warning',
-    safety_label: '⚠️ Kütüphane İçin Zorunlu (Kaldırmayın)',
+    safety_label: '⚠️ Medya Kütüphanesi İçin Gerekli',
+  },
+  'android.permission.READ_EXTERNAL_STORAGE': {
+    title: 'Hafızadaki Dosyaları Okuma',
+    purpose: 'Cihaz hafızasındaki yerel video, müzik veya belge dosyalarını oynatmak için istenir.',
+    impact: 'Yerel dosya oynatma özelliği durdurulabilir. İnternet üzerinden canlı yayın veya akış izleyen uygulamalar etkilenmez.',
+    safety: 'caution',
+    safety_label: '📁 Yerel Dosya Oynatımı',
   },
   'android.permission.WRITE_EXTERNAL_STORAGE': {
     title: 'Hafızaya Dosya Yazma / Kaydetme',
-    purpose: 'Okuma ayarlarını, kitap ayraçlarını, indirilen e-kitapları ve önbellek dosyalarını hafızaya yazmak için istenir.',
-    impact: 'Kaldırılırsa kitap ayraçları ve yerel indirmeler kaydedilemeyebilir.',
+    purpose: 'Önbellek dosyaları, indirmeler veya kullanıcı ayarlarını hafızaya yazmak için istenir.',
+    impact: 'Kaldırılırsa indirme ve yerel kayıt yapılamayabilir.',
     safety: 'caution',
-    safety_label: '⚠️ Ayar & Kitap Kaydı İçin Gerekli',
+    safety_label: '⚠️ İndirme & Ayar Kaydı İçin Gerekli',
   },
   'android.permission.RECEIVE_BOOT_COMPLETED': {
     title: 'Cihaz Açılışında Otomatik Başlama',
-    purpose: 'Cihaz yeniden başladığında arka plan okuma hatırlatıcılarını, günlük bildirim alarmlarını ve otomatik servisleri başlatmak için istenir.',
-    impact: 'Uygulamanın açılışta arkada gereksiz pil ve RAM tüketmesi engellenir. Uygulamayı kendiniz açtığınızda her şey kusursuz çalışır; yalnızca açılış alarmları tetiklenmez.',
+    purpose: 'Cihaz yeniden başladığında arka plan servislerini, alarmları ve otomatik bildirimleri başlatmak için istenir.',
+    impact: 'Uygulamanın açılışta arkada gereksiz pil ve RAM tüketmesi engellenir. Uygulamayı kendiniz açtığınızda her şey kusursuz çalışır.',
     safety: 'safe',
     safety_label: '✅ Önerilen Temizlik (Pil Tasarrufu)',
   },
   'android.permission.SYSTEM_ALERT_WINDOW': {
-    title: 'Diğer Uygulamaların Üzerinde Görünme (Overlay)',
-    purpose: 'Başka uygulamalardayken ekranda asılı kalan mini sözlük balonu, kayan okuma penceresi veya hızlı not alma widget\'ı açmak için kullanılır.',
-    impact: 'Eğer ekranda asılı kalan kayan mini sözlük/widget kullanıyorsanız bu özellik kapanır. Tam ekran kitap/PDF okuma deneyimi aynen sürer; ayrıca ekrana sahte tıklama (tapjacking) riskleri önlenir.',
+    title: 'Diğer Uygulamaların Üzerinde Görünme (Overlay / PiP)',
+    purpose: 'Resim içinde resim (PiP), kayan video penceresi veya arka plan widget\'ı açmak için kullanılır.',
+    impact: 'Kayan mini oynatıcı kullanmıyorsanız kaldırılabilir. Tam ekran oynatma aynen devam eder.',
     safety: 'caution',
-    safety_label: '⚠️ İhtiyaca Göre Seçin (Kayan Pencere)',
+    safety_label: '⚠️ PiP / Kayan Pencere İçin Gerekli',
   },
   'android.permission.FOREGROUND_SERVICE': {
     title: 'Ön Plan Servisi Çalıştırma',
-    purpose: 'Metin seslendirme (TTS) ile kitap dinlerken veya uzun kitap taramalarında Android sisteminin uygulamayı sonlandırmasını önlemek için kullanılır.',
-    impact: 'Sesli kitap veya arka plan taraması kullanmıyorsanız kaldırılabilir.',
-    safety: 'safe',
-    safety_label: '🎧 Sesli Kitap / TTS İçin Gerekli',
+    purpose: 'Arka planda video veya ses çalarken Android sisteminin uygulamayı sonlandırmasını önlemek için kullanılır.',
+    impact: 'Uygulama arka planda medya çalarken sistem tarafından kapatılabilir.',
+    safety: 'caution',
+    safety_label: '🎧 Arka Plan Oynatma İçin Gerekli',
   },
   'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK': {
     title: 'Arka Planda Ses / Medya Çalma',
-    purpose: 'Ekran kapandığında veya başka uygulamaya geçtiğinizde sesli kitabın kesilmeden çalmaya devam etmesi için kullanılır.',
-    impact: 'Yalnızca gözle okuma yapıyorsanız hiçbir etkisi olmaz. Sesli kitap dinlerken ekran kapanınca sesin kesilmesini önler.',
+    purpose: 'Ekran kapandığında veya başka uygulamaya geçtiğinizde sesin/yayının kesilmeden çalmaya devam etmesi için kullanılır.',
+    impact: 'Ekran kapandığında yayının kesilmesini önler. Medya uygulamaları için önemlidir.',
+    safety: 'caution',
+    safety_label: '🎧 Arka Planda Kesintisiz Çalma',
+  },
+  'android.permission.FOREGROUND_SERVICE_DATA_SYNC': {
+    title: 'Ön Plan Veri Senkronizasyonu',
+    purpose: 'Katalog, kanal listesi veya içerik veritabanını arka planda güncellemek için kullanılır.',
+    impact: 'Uygulama açıkken senkronizasyon devam eder.',
     safety: 'safe',
-    safety_label: '🎧 Sesli Kitap İçin Gerekli',
+    safety_label: '✅ Güvenle Kaldırılabilir',
   },
   'android.permission.WAKE_LOCK': {
     title: 'Ekranın Uykuya Geçmesini Önleme',
-    purpose: 'Kitap veya çizgi roman okurken ekrana dokunmadığınız süre boyunca ekranın kararıp kilitlenmesini engellemek için kullanılır.',
-    impact: 'Kaldırılırsa telefonun normal ekran zaman aşımı süresi (örn. 30 saniye) devreye girer ve sayfa açıkken ekran kapanabilir.',
+    purpose: 'Video veya canlı yayın izlerken ekrana dokunulmadığında ekranın kararıp kilitlenmesini engellemek için kullanılır.',
+    impact: 'Kaldırılırsa video izlerken ekran zaman aşımı süresinde ekran kararabilir.',
     safety: 'caution',
-    safety_label: '👁️ Kesintisiz Okuma Konforu',
+    safety_label: '👁️ Kesintisiz İzleme Konforu',
   },
   'android.permission.POST_NOTIFICATIONS': {
     title: 'Bildirim Gönderme İzni',
-    purpose: 'Okuma hedefleri, yeni bölüm bildirimleri veya durum çubuğunda mini okuma kontrolcüsü göstermek için istenir.',
-    impact: 'Uygulama bildirim gönderemez. Kitap okuma deneyimi asla etkilenmez.',
+    purpose: 'Yeni bölüm, canlı yayın başlangıcı veya güncellemeler hakkında bildirim göndermek için istenir.',
+    impact: 'Uygulama bildirim gönderemez. İzleme veya temel deneyim asla etkilenmez.',
     safety: 'safe',
     safety_label: '✅ Güvenle Kaldırılabilir',
   },
   'android.permission.RECORD_AUDIO': {
     title: 'Mikrofon Erişimi / Ses Kaydı',
-    purpose: 'Sesli komutla sayfa çevirme, sesli not alma veya sesli kitap metin seslendirme (TTS) entegrasyonu için kullanılır.',
-    impact: 'Sesli arama ve ses kaydı özellikleri durdurulur. Dokunmatik ve kumandayla okuma ve sayfa çevirme özellikleri sorunsuz çalışır.',
+    purpose: 'Sesli arama ile kanal/video bulma veya sesli komutlar için istenir.',
+    impact: 'Sesli arama özelliği kapanır. Kumanda ve dokunmatik arama sorunsuz çalışır.',
     safety: 'safe',
     safety_label: '✅ Gizlilik İçin Kaldırılabilir',
   },
   'android.permission.CAMERA': {
     title: 'Kamera Erişimi',
-    purpose: 'Kitap kapağı fotoğrafı çekmek, QR kod taramak veya fiziki kitapları tarayıp metne dökmek (OCR) için kullanılır.',
-    impact: 'Uygulama içinden canlı kamera çekimi kapatılır. Cihaz hafızasındaki veya galerideki PDF, EPUB ve resimleri açmada hiçbir sorun yaşanmaz.',
+    purpose: 'QR kod tarayarak giriş yapma veya profil fotoğrafı çekme için istenir.',
+    impact: 'Uygulama içinden canlı kamera çekimi kapatılır.',
     safety: 'caution',
-    safety_label: '⚠️ Tarama Kullanmıyorsanız Kaldırın',
+    safety_label: '⚠️ QR Giriş Kullanmıyorsanız Kaldırın',
   },
   'android.permission.READ_CONTACTS': {
     title: 'Rehber ve Kişi Bilgilerini Okuma',
-    purpose: 'Kitap veya alıntı paylaşırken rehberdeki kişileri doğrudan listeletmek veya profil senkronizasyonu için istenir.',
-    impact: 'Kişisel rehber verinizin dışarı sızması önlenir. Paylaşım standart Android sistem paylaşım menüsüyle sorunsuz yapılabilir.',
+    purpose: 'Genellikle agresif analitik ve reklam SDK\'ları tarafından izinsiz profil oluşturmak için istenir.',
+    impact: 'Kişisel rehber verinizin dışarı sızması önlenir. Medya oynatmaya sıfır etkisi vardır.',
     safety: 'safe',
     safety_label: '🛡️ Yüksek Risk - Mutlaka Kaldırın',
   },
   'android.permission.READ_CALL_LOG': {
     title: 'Arama Geçmişini Okuma',
-    purpose: 'Okuma veya medya uygulamasında hiçbir geçerli işlevi yoktur; genellikle agresif reklam/analitik SDK\'ları tarafından istenir.',
-    impact: 'Arama geçmişinize erişim sıfırlanır. Uygulamanın normal çalışmasına hiçbir etkisi olmaz.',
+    purpose: 'Medya uygulamasında hiçbir geçerli işlevi yoktur; casus yazılım/analitik SDK\'ları tarafından istenir.',
+    impact: 'Arama geçmişi güvenliği sağlanır. Uygulamanın çalışmasına hiçbir etkisi olmaz.',
     safety: 'safe',
     safety_label: '🛡️ Yüksek Risk - Mutlaka Kaldırın',
   },
   'android.permission.READ_SMS': {
     title: 'SMS Mesajlarını Okuma',
-    purpose: 'Eski SMS tabanlı hesap doğrulama veya harici reklam servisleri tarafından şüpheli veri toplama amaçlı kullanılır.',
-    impact: 'SMS güvenliği sağlanır. Uygulamanın çalışmasında herhangi bir fonksiyon kaybı yaşanmaz.',
+    purpose: 'Eski SMS tabanlı hesap doğrulama veya şüpheli veri toplama amaçlı kullanılır.',
+    impact: 'SMS güvenliği sağlanır. Uygulamanın normal akışında herhangi bir kayıp yaşanmaz.',
     safety: 'safe',
     safety_label: '🛡️ Yüksek Risk - Mutlaka Kaldırın',
   },
   'android.permission.SEND_SMS': {
     title: 'Arka Planda SMS Gönderme',
-    purpose: 'Genellikle kötü amaçlı veya gereksiz üçüncü taraf SDK\'ların arka planda ücretli SMS tetiklemesi riskini barındırır.',
-    impact: 'Gizli SMS gönderimi tamamen engellenir. Uygulamanın çalışmasına hiçbir olumsuz etkisi yoktur.',
+    purpose: 'Kötü amaçlı üçüncü taraf SDK\'ların arka planda ücretli SMS tetiklemesi riskini barındırır.',
+    impact: 'Gizli SMS gönderimi tamamen engellenir.',
     safety: 'safe',
     safety_label: '🛡️ Yüksek Risk - Mutlaka Kaldırın',
   },
   'android.permission.QUERY_ALL_PACKAGES': {
     title: 'Yüklü Tüm Uygulamaları Tarama (Sniffer)',
-    purpose: 'Cihazınızda kurulu diğer PDF okuyucuları, sözlükleri veya bankacılık uygulamalarını tarayıp analiz etmek için istenir.',
-    impact: 'Uygulamanın cihazınızı gözetlemesi (profil çıkarması) engellenir. Temel işlevler aynen çalışır.',
+    purpose: 'Cihazınızda kurulu harici oynatıcıları (VLC, MX Player vb.) veya diğer uygulamaları tespit etmek için istenir.',
+    impact: 'Uygulamanın cihazınızı gözetlemesi engellenir. Harici oynatıcı seçimi Android sistem menüsüyle yapılabilir.',
     safety: 'safe',
     safety_label: '✅ Gizlilik Koruyucu - Kaldırın',
   },
   'android.permission.REQUEST_INSTALL_PACKAGES': {
     title: 'Dışarıdan Başka APK Kurma',
-    purpose: 'Uygulamanın kendi sunucusundan yeni APK indirip Google Play/PrimeStore harici sizi güncellemeye zorlaması için kullanılır.',
+    purpose: 'Uygulamanın kendi sunucusundan sessizce yeni APK indirip PrimeStore harici sizi güncellemeye zorlaması için kullanılır.',
     impact: 'Uygulama arka planda sessizce başka APK kuramaz. Güncellemeleri her zaman PrimeStore üzerinden güvenle alırsınız.',
     safety: 'safe',
     safety_label: '✅ Güvenle Kaldırılabilir',
   },
   'android.permission.PACKAGE_USAGE_STATS': {
     title: 'Diğer Uygulamaların Kullanımını İzleme',
-    purpose: 'Günde kaç saat hangi uygulamada vakit geçirdiğinizi ölçüp pazarlama analitiği göndermek için istenir.',
+    purpose: 'Hangi uygulamada ne kadar vakit geçirdiğinizi ölçüp pazarlama analitiği göndermek için istenir.',
     impact: 'Kişisel kullanım alışkanlıklarınızın sızması önlenir. Uygulama kusursuz çalışır.',
     safety: 'safe',
     safety_label: '✅ Güvenle Kaldırılabilir',
@@ -282,7 +296,70 @@ const PERMISSION_INTELLIGENCE: Record<string, {
     safety: 'safe',
     safety_label: '💎 Modlama / VIP İçin Önerilir',
   },
+  'android.permission.INTERNET': {
+    title: 'Tam İnternet Erişimi',
+    purpose: 'Medya akışı, sunucu bağlantısı ve çevrimiçi içerik yüklemek için temel Android ağ iznidir.',
+    impact: 'Kaldırılamaz; kaldırılırsa uygulama internete bağlanamaz.',
+    safety: 'caution',
+    safety_label: '🌐 Temel Ağ İzni (Zorunlu)',
+  },
+  'android.permission.ACCESS_NETWORK_STATE': {
+    title: 'Ağ Bağlantı Durumunu Denetleme',
+    purpose: 'İnternet bağlantısının (Wi-Fi veya Mobil Veri) aktif olup olmadığını kontrol etmek için kullanılır.',
+    impact: 'Uygulamanın bağlantı kesintilerini doğru yönetmesi için gereklidir.',
+    safety: 'safe',
+    safety_label: '📡 Ağ Durumu İzni',
+  },
+  'android.permission.VIBRATE': {
+    title: 'Titreşim Bildirimi',
+    purpose: 'Kullanıcı etkileşimlerinde veya buton tıklamalarında dokunsal titreşim geri bildirimi vermek için kullanılır.',
+    impact: 'Titreşim kapanır, uygulama çalışmaya devam eder.',
+    safety: 'safe',
+    safety_label: '📳 Titreşim Geri Bildirimi',
+  },
 };
+
+function getHumanPermInfo(perm: string) {
+  if (PERMISSION_INTELLIGENCE[perm]) {
+    return PERMISSION_INTELLIGENCE[perm];
+  }
+  const simple = perm.split('.').pop() || perm;
+  const formatted = simple.replace(/_/g, ' ').toLowerCase();
+  const title = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  const up = perm.toUpperCase();
+
+  const isDangerous =
+    up.includes('SMS') ||
+    up.includes('CALL') ||
+    up.includes('CONTACT') ||
+    up.includes('CAMERA') ||
+    up.includes('RECORD_AUDIO') ||
+    up.includes('LOCATION') ||
+    up.includes('SYSTEM_ALERT_WINDOW') ||
+    up.includes('REQUEST_INSTALL_PACKAGES') ||
+    up.includes('QUERY_ALL_PACKAGES') ||
+    up.includes('PACKAGE_USAGE_STATS') ||
+    up.includes('RECEIVE_BOOT_COMPLETED') ||
+    up.includes('WRITE_SETTINGS') ||
+    up.includes('MANAGE_EXTERNAL_STORAGE');
+
+  const isAd =
+    up.includes('AD_ID') ||
+    up.includes('ADSERVICES') ||
+    up.includes('BILLING') ||
+    up.includes('REFERRER') ||
+    up.includes('BADGE') ||
+    up.includes('C2D_MESSAGE') ||
+    up.includes('C2DM');
+
+  return {
+    title,
+    purpose: `${perm} sistem izni. Uygulama çalışma ortamı tarafından talep edilmiştir.`,
+    impact: 'Uygulama fonksiyon ihtiyacına göre değerlendirilebilir.',
+    safety: isDangerous ? ('caution' as const) : ('safe' as const),
+    safety_label: isDangerous ? '⚠️ Hassas Sistem İzni' : isAd ? '✅ İzleyici / Telemetri' : '✅ Güvenli Sistem İzni',
+  };
+}
 
 /**
  * Ultra-fast HTTP Range-based APK Manifest Inspector
@@ -291,6 +368,8 @@ const PERMISSION_INTELLIGENCE: Record<string, {
  */
 async function fetchRealApkManifest(apkUrl: string): Promise<{
   permissions: string[];
+  packageName?: string;
+  versionName?: string;
   hasBilling: boolean;
   billingFrameworks: string[];
   vipMethods: string[];
@@ -308,10 +387,23 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{
       reqHeaders['Referer'] = 'https://liteapks.com/';
     }
 
-    const head = await fetch(apkUrl, { headers: reqHeaders, redirect: 'follow' });
+    let head = await fetch(apkUrl, { method: 'HEAD', headers: reqHeaders, redirect: 'follow' });
+    if (!head.ok || !head.headers.get('content-length')) {
+      // Fallback: try GET with a 1-byte range to get Content-Range and headers without downloading whole file
+      head = await fetch(apkUrl, {
+        method: 'GET',
+        headers: { ...reqHeaders, Range: 'bytes=0-0' },
+        redirect: 'follow',
+      });
+    }
     if (!head.ok) return null;
     const finalUrl = head.url;
-    const len = parseInt(head.headers.get('content-length') || '0', 10);
+    let len = parseInt(head.headers.get('content-length') || '0', 10);
+    const cr = head.headers.get('content-range');
+    if (cr) {
+      const match = cr.match(/\/(\d+)$/);
+      if (match) len = parseInt(match[1], 10);
+    }
     if (!len || len < 50000) return null;
 
     const tailSize = Math.min(len, 65536);
@@ -449,8 +541,9 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{
 
     const utf8 = raw.toString('utf8');
     const utf16 = raw.toString('utf16le');
-    const p1: string[] = Array.from(utf8.match(/android\.permission\.[a-zA-Z0-9_]+/g) || []);
-    const p2: string[] = Array.from(utf16.match(/android\.permission\.[a-zA-Z0-9_]+/g) || []);
+    const permRegex = /(?:[a-zA-Z0-9_]+\.)+permission\.[a-zA-Z0-9_]+|com\.android\.vending\.BILLING/g;
+    const p1: string[] = Array.from(utf8.match(permRegex) || []);
+    const p2: string[] = Array.from(utf16.match(permRegex) || []);
     const permissions: string[] = Array.from(new Set([...p1, ...p2]));
 
     const allStr = utf8 + ' ' + utf16;
@@ -473,6 +566,23 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{
     if (vipMethods.size === 0 && hasBillingInZip) {
       vipMethods.add('isPurchased()');
       vipMethods.add('isPremium()');
+    }
+
+    // Heuristic package name extraction from AXML strings
+    let foundPkgName: string | undefined = undefined;
+    const pkgMatches = Array.from(allStr.match(/[a-zA-Z][a-zA-Z0-9_]*(\.[a-zA-Z][a-zA-Z0-9_]*){2,}/g) || []);
+    for (const cand of pkgMatches) {
+      if (!cand.startsWith('android.') && !cand.startsWith('com.google.') && !cand.startsWith('androidx.') && !cand.startsWith('com.android.')) {
+        foundPkgName = cand;
+        break;
+      }
+    }
+
+    // Heuristic version name extraction
+    let foundVerName: string | undefined = undefined;
+    const verMatch = allStr.match(/\b\d+\.\d+(?:\.\d+)?(?:-[a-zA-Z0-9_.]+)?\b/);
+    if (verMatch) {
+      foundVerName = verMatch[0];
     }
 
     // APKiD Compiler & Obfuscator inference from strings
@@ -511,6 +621,8 @@ async function fetchRealApkManifest(apkUrl: string): Promise<{
 
     return {
       permissions,
+      packageName: foundPkgName,
+      versionName: foundVerName,
       hasBilling: hasBillingInZip,
       billingFrameworks: Array.from(billingFrameworks),
       vipMethods: Array.from(vipMethods),
@@ -566,17 +678,19 @@ export async function POST(req: Request) {
     // 3. Check latest forge_job analysis report if available
     let latestReport: any = null;
     if (pkg) {
-      const { data: job } = await supabase
+      const { data: jobs } = await supabase
         .from('forge_jobs')
-        .select('analysis_report, status')
+        .select('id, package_name, status, action, analysis_report, created_at')
         .eq('package_name', pkg)
+        .not('analysis_report', 'is', null)
         .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      latestReport = job?.analysis_report;
+        .limit(1);
+      if (jobs && jobs.length > 0) {
+        latestReport = jobs[0].analysis_report;
+      }
     }
 
-    // 4. Ultra-fast real APK inspection directly from remote URL
+    // 4. Ultra-fast real APK inspection directly from remote URL if needed
     const targetApkUrl = apk_url || listing?.fileUrl || '';
     let realInspection: any = null;
     if (targetApkUrl && targetApkUrl.startsWith('http')) {
@@ -585,101 +699,117 @@ export async function POST(req: Request) {
 
     const isRealTime = Boolean(realInspection && realInspection.permissions && realInspection.permissions.length > 0);
 
-    // Filter permissions from real inspection or latest report or intelligent fallback
+    // If both real inspection failed and no job report exists, NEVER return fake dummy data!
+    if (!isRealTime && !latestReport) {
+      if (!targetApkUrl || targetApkUrl.startsWith('market://')) {
+        return NextResponse.json(
+          {
+            success: false,
+            error:
+              'Bu uygulama doğrudan indirilemiyor (Google Play market yönlendirmesi). Lütfen doğrudan APK indirme bağlantısı sağlayın.',
+          },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Uygulama APK dosyası indirilemedi veya sunucuya bağlanılamadı. Lütfen APK indirme bağlantısını kontrol edin veya iş kuyruğundan APK yükleyin.',
+        },
+        { status: 400 }
+      );
+    }
+
+    // Filter permissions from real inspection or latest report
     let allExtractedPerms: string[] = [];
     if (isRealTime) {
       allExtractedPerms = realInspection.permissions;
-    } else if (latestReport?.permissions?.all?.length > 0) {
-      allExtractedPerms = latestReport.permissions.all;
-    } else {
-      // Fallback only if APK could not be inspected at all
-      allExtractedPerms = [
-        ...(latestReport?.permissions?.dangerous || ['android.permission.RECEIVE_BOOT_COMPLETED']),
-        ...(latestReport?.permissions?.ad_related || ['com.google.android.gms.permission.AD_ID']),
-      ];
+    } else if (latestReport) {
+      if (Array.isArray(latestReport.permissions?.all) && latestReport.permissions.all.length > 0) {
+        allExtractedPerms = latestReport.permissions.all;
+      } else {
+        const d = latestReport.permissions?.dangerous || [];
+        const a = latestReport.permissions?.ad_related || [];
+        const s = latestReport.permissions?.safe || [];
+        const combined = [...d, ...a, ...s];
+        allExtractedPerms = Array.from(new Set(combined.map((p: any) => (typeof p === 'string' ? p : p.name)).filter(Boolean)));
+      }
     }
 
-    const dangerousPermKeys = [
-      'android.permission.ACCESS_FINE_LOCATION',
-      'android.permission.ACCESS_COARSE_LOCATION',
-      'android.permission.MANAGE_EXTERNAL_STORAGE',
-      'android.permission.WRITE_EXTERNAL_STORAGE',
-      'android.permission.RECEIVE_BOOT_COMPLETED',
-      'android.permission.SYSTEM_ALERT_WINDOW',
-      'android.permission.RECORD_AUDIO',
-      'android.permission.CAMERA',
-      'android.permission.READ_CONTACTS',
-      'android.permission.READ_CALL_LOG',
-      'android.permission.READ_SMS',
-      'android.permission.SEND_SMS',
-      'android.permission.QUERY_ALL_PACKAGES',
-      'android.permission.REQUEST_INSTALL_PACKAGES',
-      'android.permission.PACKAGE_USAGE_STATS',
-    ];
+    // Sensitive / Dangerous permission detector
+    const isDangerous = (p: string) => {
+      const up = p.toUpperCase();
+      return (
+        up.includes('SMS') ||
+        up.includes('CALL') ||
+        up.includes('CONTACT') ||
+        up.includes('CAMERA') ||
+        up.includes('RECORD_AUDIO') ||
+        up.includes('LOCATION') ||
+        up.includes('SYSTEM_ALERT_WINDOW') ||
+        up.includes('REQUEST_INSTALL_PACKAGES') ||
+        up.includes('QUERY_ALL_PACKAGES') ||
+        up.includes('PACKAGE_USAGE_STATS') ||
+        up.includes('RECEIVE_BOOT_COMPLETED') ||
+        up.includes('WRITE_SETTINGS') ||
+        up.includes('MANAGE_EXTERNAL_STORAGE')
+      );
+    };
 
-    const adPermKeys = [
-      'com.google.android.gms.permission.AD_ID',
-      'android.permission.ACCESS_ADSERVICES_AD_ID',
-      'android.permission.ACCESS_ADSERVICES_ATTRIBUTION',
-      'android.permission.ACCESS_ADSERVICES_TOPICS',
-      'com.android.vending.BILLING',
-    ];
+    // Telemetry / Ad permission detector
+    const isAd = (p: string) => {
+      const up = p.toUpperCase();
+      return (
+        up.includes('AD_ID') ||
+        up.includes('ADSERVICES') ||
+        up.includes('BILLING') ||
+        up.includes('REFERRER') ||
+        up.includes('BADGE') ||
+        up.includes('C2D_MESSAGE') ||
+        up.includes('C2DM')
+      );
+    };
 
-    const dangerousList: PermissionIntelligence[] = allExtractedPerms
-      .filter((p) => dangerousPermKeys.includes(p))
-      .map((p) => {
-        const intel = PERMISSION_INTELLIGENCE[p];
-        return {
-          name: p,
-          description: intel?.title || p.split('.').pop() || 'Riskli İzin',
-          purpose: intel?.purpose || 'Uygulamanın Android manifestinde talep edilen donanım veya arka plan servisidir.',
-          impact: intel?.impact || 'İzin kaldırıldığında ilgili özellik durur, temel okuma/medya özellikleri devam eder.',
-          safety: intel?.safety || 'caution',
-          safety_label: intel?.safety_label || '⚠️ İsteğe Bağlı Seçim',
-          selected: intel?.safety === 'safe', // Preselect safe ones, leave storage/camera unselected by default for safety
-        };
-      });
+    const dangerousList: PermissionIntelligence[] = [];
+    const adList: PermissionIntelligence[] = [];
+    const safeList: PermissionIntelligence[] = [];
 
-    const adList: PermissionIntelligence[] = allExtractedPerms
-      .filter((p) => adPermKeys.includes(p))
-      .map((p) => {
-        const intel = PERMISSION_INTELLIGENCE[p];
-        return {
-          name: p,
-          description: intel?.title || p.split('.').pop() || 'Reklam / Takip İzni',
-          purpose: intel?.purpose || 'Reklam ağlarına kimlik ve ilgi alanı bilgisi aktarmak için kullanılır.',
-          impact: intel?.impact || 'Reklam takipçileri engellenir. Uygulama sıfır çökme riskiyle tertemiz çalışır.',
-          safety: intel?.safety || 'safe',
-          safety_label: intel?.safety_label || '✅ Önerilen Temizlik (Sıfır Risk)',
-          selected: true,
-        };
-      });
+    for (const p of allExtractedPerms) {
+      const intel = getHumanPermInfo(p);
+      const item: PermissionIntelligence = {
+        name: p,
+        description: intel.title,
+        purpose: intel.purpose,
+        impact: intel.impact,
+        safety: intel.safety,
+        safety_label: intel.safety_label,
+        selected: isDangerous(p) ? intel.safety === 'safe' : isAd(p) ? true : false,
+      };
 
-    const safeList: PermissionIntelligence[] = allExtractedPerms
-      .filter((p) => ['android.permission.FOREGROUND_SERVICE', 'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK', 'android.permission.WAKE_LOCK', 'android.permission.POST_NOTIFICATIONS'].includes(p))
-      .map((p) => {
-        const intel = PERMISSION_INTELLIGENCE[p];
-        return {
-          name: p,
-          description: intel?.title || p.split('.').pop() || 'Sistem Özelliği',
-          purpose: intel?.purpose || 'Android arka plan veya ekran konforu hizmetidir.',
-          impact: intel?.impact || 'Fonksiyon ihtiyacınıza göre seçebilirsiniz.',
-          safety: intel?.safety || 'safe',
-          safety_label: intel?.safety_label || '✅ Sistem Özelliği',
-          selected: false,
-        };
-      });
+      if (isDangerous(p)) {
+        dangerousList.push(item);
+      } else if (isAd(p)) {
+        adList.push(item);
+      } else {
+        safeList.push(item);
+      }
+    }
 
     // Detect Billing / IAP
     const hasBilling = Boolean(
       (realInspection && realInspection.hasBilling) ||
-      latestReport?.drm_systems?.some((d: any) => d.package?.includes('billing') || d.package?.includes('revenuecat')) ||
+      latestReport?.drm_systems?.some((d: any) => d.name?.toLowerCase().includes('billing') || d.package?.toLowerCase().includes('billing') || d.package?.includes('revenuecat')) ||
+      latestReport?.billing_and_mods?.has_billing ||
       allExtractedPerms.includes('com.android.vending.BILLING') ||
       existingProfile?.profile_yaml?.includes('billing')
     );
 
     const isFdroidOpenSource = Boolean(
       pkg.includes('foobnix') ||
+      pkg.includes('smarttube') ||
+      pkg.includes('newpipe') ||
       targetApkUrl.toLowerCase().includes('fdroid') ||
       listing?.description?.toLowerCase().includes('açık kaynak') ||
       listing?.title?.toLowerCase().includes('açık kaynak')
@@ -717,7 +847,7 @@ export async function POST(req: Request) {
       status_description: hasBilling
         ? 'Uygulama kodunda Google Play Billing / In-App Purchase arayüzü tespit edildi. PrimeForge Smali Yama Motoru, abonelik ve satın alma metotlarını (isPurchased -> true) otomatik olarak yeni sürüme aktaracaktır.'
         : isFdroidOpenSource
-          ? 'Bu sürüm F-Droid mimarisiyle derlenmiştir. İçerisinde Google Play Billing ödeme koruması veya zorunlu lisans denetimi bulunmaz; tüm Pro/VIP e-kitap ve çizgi roman özellikleri kaynak kodundan doğrudan etkindir.'
+          ? 'Bu sürüm F-Droid veya açık kaynak mimarisiyle derlenmiştir. İçerisinde Google Play Billing ödeme koruması veya zorunlu lisans denetimi bulunmaz; tüm özellikler doğrudan etkindir.'
           : 'Uygulama VIP özelliklerini bağımsız olarak sunmaktadır. Kod seviyesinde ek Google Play ödeme kısıtlaması bulunmamaktadır.',
       is_open_source_pro: isFdroidOpenSource,
     };
@@ -735,7 +865,8 @@ export async function POST(req: Request) {
     // Build Unified 4-Engine Security Scan Report (VirusTotal, APKiD, Quark-Engine, ClamAV)
     const secDetails = realInspection?.securityDetails || {};
 
-    // 1. VirusTotal report
+    // 1. VirusTotal report: Query database cache by hash or package name
+    const resolvedHash = listing?.fileHash || listing?.file_hash || listing?.variants?.[0]?.fileHash || '';
     let vtReport = {
       engine: 'VirusTotal',
       status: 'clean',
@@ -746,17 +877,30 @@ export async function POST(req: Request) {
       total_engines: 68,
       cached: false,
       details: [] as any[],
-      vt_report_url: listing?.file_hash ? `https://www.virustotal.com/gui/file/${listing.file_hash}` : undefined,
+      vt_report_url: resolvedHash ? `https://www.virustotal.com/gui/file/${resolvedHash}` : undefined,
     };
 
-    if (listing?.file_hash || pkg) {
+    if (resolvedHash || pkg) {
       try {
-        const { data: vtRow } = await supabase
-          .from('virustotal_scans')
-          .select('*')
-          .or(`file_hash.eq.${listing?.file_hash || ''},package_name.eq.${pkg}`)
-          .limit(1)
-          .maybeSingle();
+        let vtRow: any = null;
+        if (resolvedHash) {
+          const { data } = await supabase
+            .from('virustotal_scans')
+            .select('*')
+            .eq('file_hash', resolvedHash)
+            .maybeSingle();
+          vtRow = data;
+        }
+        if (!vtRow && pkg) {
+          const { data } = await supabase
+            .from('virustotal_scans')
+            .select('*')
+            .eq('package_name', pkg)
+            .order('scanned_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          vtRow = data;
+        }
 
         if (vtRow) {
           const pos = vtRow.positives || 0;
@@ -773,6 +917,24 @@ export async function POST(req: Request) {
             details: [],
             vt_report_url: vtRow.vt_report_url || (vtRow.file_hash ? `https://www.virustotal.com/gui/file/${vtRow.file_hash}` : undefined),
           };
+        } else if (listing?.virusTotalScore) {
+          const match = String(listing.virusTotalScore).match(/(\d+)\/(\d+)/);
+          if (match) {
+            const pos = parseInt(match[1], 10);
+            const tot = parseInt(match[2], 10);
+            vtReport = {
+              engine: 'VirusTotal',
+              status: pos > 0 ? 'malicious' : 'clean',
+              detection_ratio: `${pos}/${tot}`,
+              malicious: pos,
+              suspicious: 0,
+              undetected: Math.max(0, tot - pos),
+              total_engines: tot,
+              cached: true,
+              details: [],
+              vt_report_url: resolvedHash ? `https://www.virustotal.com/gui/file/${resolvedHash}` : undefined,
+            };
+          }
         }
       } catch (_) {}
     }
@@ -832,13 +994,13 @@ export async function POST(req: Request) {
       scanner_mode: 'heuristic_signature',
     };
 
-    // If an earlier full security scan exists from forge_runner.py, merge it
-    if (latestReport?.security?.engines) {
-      const eng = latestReport.security.engines;
-      if (eng.virustotal) vtReport = { ...vtReport, ...eng.virustotal };
-      if (eng.apkid) apkidReport = { ...apkidReport, ...eng.apkid };
-      if (eng.quark) quarkReport = { ...quarkReport, ...eng.quark };
-      if (eng.clamav) clamReport = { ...clamReport, ...eng.clamav };
+    // If an earlier full security scan exists from forge_jobs report, merge it!
+    const jobSecurity = latestReport?.security?.engines || latestReport?.security;
+    if (jobSecurity) {
+      if (jobSecurity.virustotal && jobSecurity.virustotal.detection_ratio) vtReport = { ...vtReport, ...jobSecurity.virustotal };
+      if (jobSecurity.apkid) apkidReport = { ...apkidReport, ...jobSecurity.apkid };
+      if (jobSecurity.quark) quarkReport = { ...quarkReport, ...jobSecurity.quark };
+      if (jobSecurity.clamav) clamReport = { ...clamReport, ...jobSecurity.clamav };
     }
 
     const hasIssues =
@@ -867,7 +1029,7 @@ export async function POST(req: Request) {
     const response: PreAuditResponse = {
       success: true,
       package_name: pkg,
-      version_name: listing?.version || '1.0.0',
+      version_name: listing?.version || realInspection?.versionName || '1.0.0',
       app_title: listing?.title || pkg || 'Uygulama',
       has_existing_profile: Boolean(existingProfile),
       existing_profile_name: existingProfile?.profile_name || null,
@@ -886,12 +1048,12 @@ export async function POST(req: Request) {
       detected_features: {
         has_billing: hasBilling,
         billing_type: premiumSummary.billing_type,
-        billing_frameworks: realInspection?.billingFrameworks || (hasBilling ? ['Google Play In-App Billing (IAP)'] : []),
+        billing_frameworks: realInspection?.billingFrameworks || (latestReport?.drm_systems?.map((d: any) => d.name || d.package) || (hasBilling ? ['Google Play In-App Billing (IAP)'] : [])),
         vip_methods: realInspection?.vipMethods || (hasBilling ? ['isVip()', 'isPremium()', 'isPurchased()'] : []),
         has_ads: hasAds,
         ad_networks: realInspection?.adNetworks && realInspection.adNetworks.length > 0
           ? realInspection.adNetworks
-          : latestReport?.ad_networks?.map((a: any) => a.name) || (hasAds ? ['Google AdMob'] : []),
+          : latestReport?.ad_networks?.map((a: any) => a.name || a) || (hasAds ? ['Google AdMob'] : []),
         is_already_modded: isAlreadyModded,
         mod_signatures: isAlreadyModded ? ['VIP Flag Aktif', 'Önceden Tanımlı Profil Mevcut'] : [],
       },

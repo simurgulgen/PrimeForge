@@ -20,7 +20,7 @@ import {
   ChevronRight,
   Layers,
 } from 'lucide-react';
-import InteractiveModModal from '@/app/components/InteractiveModModal';
+import PreAuditModal from '@/app/components/PreAuditModal';
 
 export default function CatalogPage() {
   const [apps, setApps] = useState<any[]>([]);
@@ -426,9 +426,22 @@ export default function CatalogPage() {
               {/* Action Buttons */}
               <div className="pt-3 border-t border-slate-800/60 flex items-center gap-2">
                 <button
-                  onClick={() => setSelectedModApp(app)}
-                  disabled={triggeringId === app.id || !app.fileUrl}
+                  onClick={() => {
+                    setSelectedModApp({
+                      listing_id: app.id,
+                      id: app.id,
+                      title: app.name || app.title || app.packageName,
+                      name: app.name || app.title || app.packageName,
+                      packageName: app.packageName,
+                      current_version: app.version,
+                      latest_version: app.version,
+                      download_url: app.fileUrl,
+                      fileUrl: app.fileUrl,
+                    });
+                  }}
+                  disabled={triggeringId === app.id || !app.fileUrl || app.fileUrl.startsWith('market://')}
                   className="flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 disabled:opacity-50 text-white text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md shadow-indigo-600/20 cursor-pointer"
+                  title={app.fileUrl?.startsWith('market://') ? 'Doğrudan APK bağlantısı yok (Google Play)' : 'Uygulamayı incele ve modlama seçeneklerini aç'}
                 >
                   <Zap className="w-3.5 h-3.5 fill-current" />
                   Modla
@@ -436,7 +449,7 @@ export default function CatalogPage() {
 
                 <button
                   onClick={() => handleModApp(app, 'analyze_only')}
-                  disabled={triggeringId === app.id || !app.fileUrl}
+                  disabled={triggeringId === app.id || !app.fileUrl || app.fileUrl.startsWith('market://')}
                   className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-slate-200 text-xs font-medium flex items-center justify-center gap-1 transition-colors"
                   title="Sadece Statik Analiz Et"
                 >
@@ -503,21 +516,21 @@ export default function CatalogPage() {
         </div>
       )}
 
-      {/* Interactive Modding Modal */}
+      {/* Pre-Audit & Dynamic Modding Options Modal */}
       {selectedModApp && (
-        <InteractiveModModal
+        <PreAuditModal
           app={selectedModApp}
           onClose={() => setSelectedModApp(null)}
           onSuccess={(result: any) => {
             const shortId = result.jobId ? `#${result.jobId.substring(0, 8)}` : '';
             setActionMsg({
-              id: selectedModApp.id,
+              id: selectedModApp.id || selectedModApp.listing_id,
               type: 'success',
-              text: `Özelleştirilmiş modlama başlatıldı! (${shortId})`,
+              text: result.message || `Özelleştirilmiş modlama başlatıldı! (${shortId})`,
             });
             setToast({
               title: `🚀 ${selectedModApp.name || selectedModApp.title || selectedModApp.packageName} Modlanıyor`,
-              message: `Seçtiğiniz modlar kuyruğa alındı (${shortId}). Tamamlandığında onayınıza sunulacaktır.`,
+              message: result.message || `Seçtiğiniz modlar ve güvenlik düzeltmeleri kuyruğa alındı (${shortId}).`,
               jobId: result.jobId,
             });
             setTimeout(() => setToast(null), 8000);

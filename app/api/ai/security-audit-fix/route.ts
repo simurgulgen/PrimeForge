@@ -86,8 +86,30 @@ function getSmartFallbackRemediation(engine: string, finding: string, appName: s
     };
   }
 
-  // 4. ClamAV: Zip slip or hidden script
-  if (fLower.includes('zip') || fLower.includes('traversal') || fLower.includes('script') || fLower.includes('sh')) {
+  // 4. VirusTotal / AdLibrary / PUP / Telemetry Detection
+  if (fLower.includes('adlibrary') || fLower.includes('pup') || fLower.includes('repmalware') || fLower.includes('generisk') || engine === 'VirusTotal') {
+    return {
+      engine: 'VirusTotal',
+      issue_title: 'Üçüncü Parti Reklam & Telemetri SDK Tespiti (PUP / AdLibrary)',
+      threat_severity: 'LOW',
+      root_cause: 'Antivirüs motorları (Symantec, Avast vb.) uygulamada kullanılan üçüncü parti reklam veya analitik kütüphanesini potansiyel istenmeyen yazılım (PUP) olarak işaretledi.',
+      target_file: 'AndroidManifest.xml',
+      target_method: '<uses-permission android:name="com.google.android.gms.permission.AD_ID" />',
+      approx_line: 'L10-L25',
+      safe_remediation_strategy: 'Uygulamada herhangi bir virüs veya zararlı shell script bulunmamaktadır. Reklam izinleri (AD_ID) temizlenip smali seviyesinde reklam kütüphanesi çağrıları nötralize edildiğinde uyarı sıfırlanır.',
+      smali_diff: `--- a/AndroidManifest.xml
++++ b/AndroidManifest.xml
+@@ -10,3 +10,2 @@
+-    <uses-permission android:name="com.google.android.gms.permission.AD_ID" />
++    <!-- PrimeForge: Reklam kimliği izni kaldırıldı (VirusTotal Temiz) -->`,
+      manifest_fix: 'AndroidManifest.xml dosyasından AD_ID ve gereksiz reklam sağlayıcı etiketleri temizlenmelidir.',
+      verify_error_risk: 'SIFIR (Çökme riski yok, reklam kütüphanesi bypass edilir)',
+      verification_tip: 'Sanitizer ad_id ve gereksiz izinleri sildiğinde VirusTotal uyarısı temizlenir.',
+    };
+  }
+
+  // 5. ClamAV: Zip slip or hidden script (exact match only)
+  if (fLower.includes('zip-slip') || fLower.includes('traversal') || (fLower.includes('script') && fLower.includes('shell')) || fLower.includes('.sh')) {
     return {
       engine: 'ClamAV',
       issue_title: 'Arşiv Dizin Aşımı (Zip-Slip) / Şüpheli Script Dosyası',
