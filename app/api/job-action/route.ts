@@ -90,7 +90,19 @@ export async function POST(req: Request) {
       let ghCancelled = false;
       if (GITHUB_TOKEN) {
         try {
-          // List runs for the repo
+          if (job.github_run_id) {
+            await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${job.github_run_id}/cancel`, {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${GITHUB_TOKEN}`,
+                Accept: 'application/vnd.github.v3+json',
+                'User-Agent': 'PrimeForge-Cancel',
+              },
+            });
+            ghCancelled = true;
+          }
+
+          // Also check any active in_progress runs
           const runsRes = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs?status=in_progress&per_page=10`, {
             headers: {
               Authorization: `Bearer ${GITHUB_TOKEN}`,
@@ -102,19 +114,15 @@ export async function POST(req: Request) {
             const runsData = await runsRes.json();
             const activeRuns = runsData.workflow_runs || [];
             for (const run of activeRuns) {
-              // Check if run is patch-and-test
-              if (run.name?.includes('PrimeForge') || run.path?.includes('patch-and-test')) {
-                // Cancel run
-                await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${run.id}/cancel`, {
-                  method: 'POST',
-                  headers: {
-                    Authorization: `Bearer ${GITHUB_TOKEN}`,
-                    Accept: 'application/vnd.github.v3+json',
-                    'User-Agent': 'PrimeForge-Cancel',
-                  },
-                });
-                ghCancelled = true;
-              }
+              await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${run.id}/cancel`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${GITHUB_TOKEN}`,
+                  Accept: 'application/vnd.github.v3+json',
+                  'User-Agent': 'PrimeForge-Cancel',
+                },
+              });
+              ghCancelled = true;
             }
           }
         } catch (e) {

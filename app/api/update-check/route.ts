@@ -31,12 +31,18 @@ interface UpdateCheckResult {
   guide_name?: string;
   auto_apply?: boolean;
   assets?: Array<{ name: string; browser_download_url: string; size: number }>;
+  channel_summary?: {
+    stable?: string;
+    beta?: string;
+  };
   variants_needing_update: Array<{
     platform: string;
     architecture: string;
+    releaseChannel?: string;
     current_version: string;
     new_version: string;
     suggested_url: string;
+    asset_name?: string;
   }>;
 }
 
@@ -81,6 +87,58 @@ function parseOwnerAndRepo(url: string): [string, string] | null {
     return [parts[0], parts[1]];
   }
   return null;
+}
+
+function matchAssetToVariant(assets: any[], variant: { architecture?: string; platform?: string }): any | null {
+  if (!assets || assets.length === 0) return null;
+  const apkAssets = assets.filter((a: any) => a && a.name && a.name.toLowerCase().endsWith('.apk'));
+  if (apkAssets.length === 0) return null;
+
+  const arch = (variant.architecture || '').toUpperCase();
+
+  if (arch.includes('ARM64') || arch.includes('V8A') || arch.includes('AARCH64')) {
+    const found = apkAssets.find((a: any) => {
+      const n = a.name.toLowerCase();
+      return n.includes('arm64') || n.includes('v8a') || n.includes('aarch64');
+    });
+    if (found) return found;
+  }
+
+  if (arch.includes('ARMEABI') || arch.includes('V7A') || arch === 'ARM') {
+    const found = apkAssets.find((a: any) => {
+      const n = a.name.toLowerCase();
+      return (n.includes('armeabi') || n.includes('v7a') || n.includes('arm-v7a')) && !n.includes('arm64') && !n.includes('v8a');
+    });
+    if (found) return found;
+  }
+
+  if (arch === 'X86') {
+    const found = apkAssets.find((a: any) => {
+      const n = a.name.toLowerCase();
+      return n.includes('x86') && !n.includes('x86_64') && !n.includes('x86-64') && !n.includes('64');
+    });
+    if (found) return found;
+  }
+
+  if (arch.includes('X86_64') || arch.includes('X64')) {
+    const found = apkAssets.find((a: any) => {
+      const n = a.name.toLowerCase();
+      return n.includes('x86_64') || n.includes('x86-64') || n.includes('x64');
+    });
+    if (found) return found;
+  }
+
+  if (arch.includes('UNIVERSAL')) {
+    const found = apkAssets.find((a: any) => {
+      const n = a.name.toLowerCase();
+      return n.includes('universal') || n.includes('all') || (!n.includes('arm') && !n.includes('v7') && !n.includes('v8') && !n.includes('x86'));
+    });
+    if (found) return found;
+  }
+
+  // Fallback: search for universal or return first asset
+  const universal = apkAssets.find((a: any) => a.name.toLowerCase().includes('universal'));
+  return universal || apkAssets[0];
 }
 
 function sanitizeRegex(str: string | null | undefined): string {
@@ -360,77 +418,136 @@ export async function GET(req: Request) {
         const cacheKey = `${owner}/${repo}`.toLowerCase();
 
         try {
-          let releaseData = ghReleasesCache.get(cacheKey);
+          let releasesList = ghReleasesCache.get(cacheKey);
 
-          if (releaseData === undefined) {
+          if (releasesList === undefined) {
             const headers: Record<string, string> = {
               'User-Agent': 'PrimeForge-Update-Checker',
               Accept: 'application/vnd.github+json',
             };
             if (githubToken) headers['Authorization'] = `token ${githubToken}`;
 
-            const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
-              headers,
-              cache: 'no-store',
-            });
-
-            if (res.ok) {
-              releaseData = await res.json();
-            } else {
-              // Try list releases
-              const listRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases?per_page=3`, {
-                headers,
-                cache: 'no-store',
-              });
-              if (listRes.ok) {
-                const list = await listRes.json();
-                releaseData = Array.isArray(list) && list.length > 0 ? list[0] : null;
-              } else {
-                releaseData = null;
-              }
-            }
-            ghReleasesCache.set(cacheKey, releaseData);
-          }
-
-          // Case 2A: Found GitHub Release with assets
-          if (releaseData && releaseData.tag_name) {
-            const latestTag = releaseData.tag_name;
-            const latestVer = cleanSemver(latestTag);
-            const apkAssets = (releaseData.assets || []).filter((a: any) =>
-              a.name && a.name.toLowerCase().endsWith('.apk')
+            const listRes = await fetch(
+              `https://api.github.com/repos/${owner}/${repo}/releases?per_page=15`,
+              { headers, cache: 'no-store' }
             );
 
-            const isNewer = isNewerVersion(currentVer, latestVer);
-            if (isNewer) {
-              const defaultAsset = apkAssets[0]?.browser_download_url || fileUrl;
+            if (listRes.ok) {
+              const list = await listRes.json();
+              releasesList = Array.isArray(list) ? list : [];
+            } else {
+              // Try single latest
+              const singleRes = await fetch(
+                `https://api.github.com/repos/${owner}/${repo}/releases/latest`,
+                { headers, cache: 'no-store' }
+              );
+              releasesList = singleRes.ok ? [await singleRes.json()] : [];
+            }
+            ghReleasesCache.set(cacheKey, releasesList);
+          }
+
+          // Case 2A: Releases found with APK assets
+          const validReleases = (releasesList || []).filter((r: any) => {
+            if (!r || !r.tag_name) return false;
+            const apkAssets = (r.assets || []).filter((a: any) =>
+              a.name && a.name.toLowerCase().endsWith('.apk')
+            );
+            return apkAssets.length > 0;
+          });
+
+          if (validReleases.length > 0) {
+            const isBetaRel = (r: any) =>
+              Boolean(r.prerelease) ||
+              /beta|alpha|rc|nightly|preview/i.test(`${r.tag_name} ${r.name || ''}`);
+
+            const stableReleases = validReleases.filter((r: any) => !isBetaRel(r));
+            const betaReleases = validReleases.filter((r: any) => isBetaRel(r));
+
+            const latestStable = stableReleases[0] || null;
+            const latestBeta = betaReleases[0] || null;
+            const latestAny = validReleases[0];
+
+            const primaryRelease = latestStable || latestAny;
+            const primaryTag = primaryRelease.tag_name;
+            const primaryVer = cleanSemver(primaryTag);
+
+            // Detailed variant evaluation
+            let hasAnyVariantUpdate = false;
+            const variantsNeedingUpdate: any[] = [];
+
+            if (variants.length > 0) {
+              for (const v of variants) {
+                const vChan = (v.releaseChannel || (listing as any).release_channel || 'Stable').toLowerCase();
+                const isBetaChannel = vChan.includes('beta') || vChan.includes('alpha');
+                const targetRel = (isBetaChannel && latestBeta) ? latestBeta : (latestStable || latestAny);
+
+                if (!targetRel) continue;
+
+                const targetTag = targetRel.tag_name;
+                const targetVer = cleanSemver(targetTag);
+                const vCurVer = cleanSemver(v.version || currentVer);
+                const isNewer = isNewerVersion(vCurVer, targetVer);
+
+                const matchedAsset = matchAssetToVariant(targetRel.assets || [], v);
+                const suggestedUrl = matchedAsset?.browser_download_url || targetRel.assets?.[0]?.browser_download_url || fileUrl;
+
+                if (isNewer) {
+                  hasAnyVariantUpdate = true;
+                  variantsNeedingUpdate.push({
+                    platform: v.platform || 'TV',
+                    architecture: v.architecture || 'UNIVERSAL',
+                    releaseChannel: v.releaseChannel || (isBetaRel(targetRel) ? 'Beta' : 'Stable'),
+                    current_version: v.version || currentVer,
+                    new_version: targetVer,
+                    suggested_url: suggestedUrl,
+                    asset_name: matchedAsset?.name,
+                  });
+                }
+              }
+            }
+
+            const isTopNewer = isNewerVersion(currentVer, primaryVer);
+
+            if (isTopNewer || hasAnyVariantUpdate) {
+              const matchedPrimaryAsset = matchAssetToVariant(primaryRelease.assets || [], { architecture: 'UNIVERSAL' });
+              const defaultAsset = matchedPrimaryAsset?.browser_download_url || primaryRelease.assets?.[0]?.browser_download_url || fileUrl;
+
               updates_available.push({
                 listing_id: listing.id,
                 title: listing.title,
                 logoUrl: listing.logoUrl,
                 packageName: listing.packageName,
                 current_version: listing.version || '1.0',
-                latest_version: latestVer,
-                latest_tag: latestTag,
+                latest_version: primaryVer,
+                latest_tag: primaryTag,
                 source_type: 'GITHUB_RELEASE',
                 source_name: `GitHub: ${owner}/${repo}`,
                 download_url: defaultAsset,
-                release_url: releaseData.html_url,
-                release_notes: releaseData.body,
+                release_url: primaryRelease.html_url,
+                release_notes: primaryRelease.body,
                 has_guide: Boolean(savedGuide),
                 guide_name: savedGuide?.profile_name,
                 auto_apply: savedGuide?.auto_apply ?? false,
-                assets: apkAssets.map((a: any) => ({
+                channel_summary: {
+                  stable: latestStable ? cleanSemver(latestStable.tag_name) : undefined,
+                  beta: latestBeta ? cleanSemver(latestBeta.tag_name) : undefined,
+                },
+                assets: (primaryRelease.assets || []).map((a: any) => ({
                   name: a.name,
                   browser_download_url: a.browser_download_url,
                   size: a.size,
                 })),
-                variants_needing_update: variants.map((v) => ({
-                  platform: v.platform || 'UNIVERSAL',
-                  architecture: v.architecture || 'UNIVERSAL',
-                  current_version: v.version || currentVer,
-                  new_version: latestVer,
-                  suggested_url: defaultAsset,
-                })),
+                variants_needing_update:
+                  variantsNeedingUpdate.length > 0
+                    ? variantsNeedingUpdate
+                    : variants.map((v) => ({
+                        platform: v.platform || 'UNIVERSAL',
+                        architecture: v.architecture || 'UNIVERSAL',
+                        releaseChannel: v.releaseChannel || 'Stable',
+                        current_version: v.version || currentVer,
+                        new_version: primaryVer,
+                        suggested_url: defaultAsset,
+                      })),
               });
             } else {
               up_to_date.push({

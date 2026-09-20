@@ -14,11 +14,13 @@ export async function POST(req: Request) {
       release_notes,
       platform,
       architecture,
+      release_channel,
+      variants_update,
     } = body;
 
-    if (!listing_id || !new_version || !download_url) {
+    if (!listing_id || (!new_version && (!variants_update || variants_update.length === 0))) {
       return NextResponse.json(
-        { error: 'listing_id, new_version ve download_url parametreleri zorunludur.' },
+        { error: 'listing_id ve geçerli sürüm bilgisi zorunludur.' },
         { status: 400 }
       );
     }
@@ -40,22 +42,56 @@ export async function POST(req: Request) {
     const now = Date.now();
     const currentVariants = Array.isArray(listing.variants) ? listing.variants : [];
     
-    // 2. Update variants
-    const updatedVariants = currentVariants.map((v: any) => {
-      // If specific platform/arch requested, only update matching or all
-      const matchPlat = !platform || v.platform === platform || platform === 'UNIVERSAL';
-      const matchArch = !architecture || v.architecture === architecture || architecture === 'UNIVERSAL';
+    // 2. Update variants with channel and architecture awareness
+    let updatedVariants = currentVariants;
 
-      if (matchPlat && matchArch) {
-        return {
-          ...v,
-          version: new_version,
-          fileUrl: download_url,
-          githubReleaseAssetUrl: download_url.includes('github.com') ? download_url : v.githubReleaseAssetUrl,
-        };
-      }
-      return v;
-    });
+    if (Array.isArray(variants_update) && variants_update.length > 0) {
+      // Batch update matching variants individually
+      updatedVariants = currentVariants.map((v: any) => {
+        const vArch = (v.architecture || 'UNIVERSAL').toUpperCase();
+        const vChan = (v.releaseChannel || 'Stable').toLowerCase();
+        const vPlat = (v.platform || 'UNIVERSAL').toUpperCase();
+
+        const match = variants_update.find((u: any) => {
+          const uArch = (u.architecture || 'UNIVERSAL').toUpperCase();
+          const uChan = (u.releaseChannel || 'Stable').toLowerCase();
+          const uPlat = (u.platform || 'UNIVERSAL').toUpperCase();
+
+          const archMatches = uArch === vArch || uArch === 'UNIVERSAL';
+          const chanMatches = uChan === vChan;
+          const platMatches = !u.platform || uPlat === vPlat || uPlat === 'UNIVERSAL';
+
+          return archMatches && chanMatches && platMatches;
+        });
+
+        if (match) {
+          return {
+            ...v,
+            version: match.new_version,
+            fileUrl: match.suggested_url,
+            githubReleaseAssetUrl: match.suggested_url.includes('github.com') ? match.suggested_url : v.githubReleaseAssetUrl,
+          };
+        }
+        return v;
+      });
+    } else {
+      // Single variant update
+      updatedVariants = currentVariants.map((v: any) => {
+        const matchPlat = !platform || v.platform === platform || platform === 'UNIVERSAL';
+        const matchArch = !architecture || v.architecture === architecture || architecture === 'UNIVERSAL';
+        const matchChan = !release_channel || (v.releaseChannel || 'Stable').toLowerCase() === release_channel.toLowerCase();
+
+        if (matchPlat && matchArch && matchChan) {
+          return {
+            ...v,
+            version: new_version,
+            fileUrl: download_url,
+            githubReleaseAssetUrl: download_url.includes('github.com') ? download_url : v.githubReleaseAssetUrl,
+          };
+        }
+        return v;
+      });
+    }
 
     // If variants were empty, create default ones
     const finalVariants = updatedVariants.length > 0 ? updatedVariants : [

@@ -62,11 +62,41 @@ export async function POST(req: Request) {
         if (action === 'cancel') {
           await supabase
             .from('forge_jobs')
-            .update({ status: 'cancelled', decision: 'rejected' })
+            .update({ status: 'cancelled', decision: 'rejected', updated_at: new Date().toISOString() })
             .eq('id', jobId);
 
+          // Also cancel active GitHub Actions run if running
+          if (GITHUB_TOKEN) {
+            try {
+              const runsRes = await fetch(
+                `https://api.github.com/repos/${GITHUB_REPO}/actions/runs?status=in_progress&per_page=10`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${GITHUB_TOKEN}`,
+                    Accept: 'application/vnd.github.v3+json',
+                    'User-Agent': 'PrimeForge-Telegram-Cancel',
+                  },
+                }
+              );
+              if (runsRes.ok) {
+                const runsData = await runsRes.json();
+                for (const r of runsData.workflow_runs || []) {
+                  await fetch(`https://api.github.com/repos/${GITHUB_REPO}/actions/runs/${r.id}/cancel`, {
+                    method: 'POST',
+                    headers: {
+                      Authorization: `Bearer ${GITHUB_TOKEN}`,
+                      Accept: 'application/vnd.github.v3+json',
+                    },
+                  });
+                }
+              }
+            } catch (ghErr) {
+              console.warn('Failed to cancel GitHub Actions run from telegram:', ghErr);
+            }
+          }
+
           await answerCallbackQuery(cb.id, 'İptal edildi');
-          await sendTelegramMessage(chatId, `❌ İşlem iptal edildi: #${jobId.substring(0, 8)}`);
+          await sendTelegramMessage(chatId, `❌ İşlem ve bulut görevi iptal edildi: #${jobId.substring(0, 8)}`);
           return NextResponse.json({ ok: true });
         }
 

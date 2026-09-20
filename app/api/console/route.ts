@@ -166,11 +166,21 @@ export async function GET(req: Request) {
             parsedRun.status === 'completed' &&
             (selectedJob.status === 'pending' || selectedJob.status === 'in_progress' || selectedJob.status === 'running')
           ) {
-            const finalStatus = parsedRun.conclusion === 'success' ? 'completed' : 'failed';
+            const finalStatus =
+              parsedRun.conclusion === 'success'
+                ? 'completed'
+                : parsedRun.conclusion === 'cancelled'
+                ? 'cancelled'
+                : 'failed';
             const failedStep = parsedJob?.steps?.find((s: any) => s.conclusion === 'failure');
-            const failureReason = failedStep
-              ? `Adım ${failedStep.number} (${failedStep.name}) başarısız oldu.`
-              : (parsedRun.conclusion === 'failure' ? 'GitHub Actions işi başarısız oldu.' : null);
+            const failureReason =
+              parsedRun.conclusion === 'cancelled'
+                ? 'Görev iptal edildi.'
+                : failedStep
+                ? `Adım ${failedStep.number} (${failedStep.name}) başarısız oldu.`
+                : parsedRun.conclusion === 'failure'
+                ? 'GitHub Actions işi başarısız oldu.'
+                : null;
 
             try {
               await supabase

@@ -45,7 +45,7 @@ interface StepItem {
   number: number;
   title: string;
   desc: string;
-  status: 'completed' | 'in_progress' | 'failed' | 'pending' | 'skipped';
+  status: 'completed' | 'in_progress' | 'failed' | 'pending' | 'skipped' | 'cancelled';
   detail?: string;
 }
 
@@ -206,15 +206,18 @@ export default function PipelineActivityDrawer() {
         );
         if (!found) return 'pending';
         if (found.conclusion === 'skipped') return 'skipped';
-        if (found.conclusion === 'cancelled') return 'pending';
-        if (found.status === 'in_progress') return 'in_progress';
+        if (found.conclusion === 'cancelled') return 'cancelled';
+        if (found.status === 'in_progress') {
+          return (job.status === 'cancelled' || runInfoData?.conclusion === 'cancelled') ? 'cancelled' : 'in_progress';
+        }
         if (found.status === 'completed') {
-          return found.conclusion === 'success' ? 'completed' : 'failed';
+          return found.conclusion === 'success' ? 'completed' : found.conclusion === 'cancelled' ? 'cancelled' : 'failed';
         }
         return 'pending';
       };
 
-      // Check overall conclusion
+      const isCancelledOverall =
+        job.status === 'cancelled' || runInfoData.conclusion === 'cancelled';
       const isFailedOverall =
         job.status === 'failed' || runInfoData.conclusion === 'failure';
 
@@ -223,9 +226,14 @@ export default function PipelineActivityDrawer() {
       if (dlStatus !== 'pending') {
         defaultSteps[0].status = dlStatus;
       } else if (runInfoData.status === 'completed') {
-        defaultSteps[0].status = runInfoData.conclusion === 'success' ? 'completed' : 'failed';
+        defaultSteps[0].status =
+          runInfoData.conclusion === 'success'
+            ? 'completed'
+            : runInfoData.conclusion === 'cancelled'
+            ? 'cancelled'
+            : 'failed';
       } else {
-        defaultSteps[0].status = isFailedOverall ? 'failed' : 'in_progress';
+        defaultSteps[0].status = isCancelledOverall ? 'cancelled' : isFailedOverall ? 'failed' : 'in_progress';
       }
 
       // 2. Setup & Decompile / Engine
@@ -453,6 +461,8 @@ export default function PipelineActivityDrawer() {
                       ? '✅'
                       : job.status === 'failed'
                       ? '❌'
+                      : job.status === 'cancelled'
+                      ? '🛑'
                       : job.status === 'in_progress' || job.status === 'running'
                       ? '⏳'
                       : '⚪';
@@ -488,6 +498,8 @@ export default function PipelineActivityDrawer() {
                           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                           : selectedJob.status === 'failed'
                           ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                          : selectedJob.status === 'cancelled'
+                          ? 'bg-slate-700/40 text-slate-300 border border-slate-600/40'
                           : 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 animate-pulse'
                       }`}
                     >
@@ -495,6 +507,8 @@ export default function PipelineActivityDrawer() {
                         ? 'Tamamlandı'
                         : selectedJob.status === 'failed'
                         ? 'Başarısız Oldu'
+                        : selectedJob.status === 'cancelled'
+                        ? 'İptal Edildi'
                         : 'İşleniyor'}
                     </span>
                   </div>
@@ -560,6 +574,7 @@ export default function PipelineActivityDrawer() {
                       const isWorking = step.status === 'in_progress';
                       const isError = step.status === 'failed';
                       const isSkipped = step.status === 'skipped';
+                      const isCancelled = step.status === 'cancelled';
 
                       return (
                         <div
@@ -571,6 +586,8 @@ export default function PipelineActivityDrawer() {
                               ? 'bg-cyan-950/30 border-cyan-500/40 text-cyan-100 shadow-lg shadow-cyan-500/10'
                               : isError
                               ? 'bg-rose-950/30 border-rose-500/40 text-rose-200'
+                              : isCancelled
+                              ? 'bg-slate-950/30 border-slate-700/40 text-slate-400 opacity-70'
                               : isSkipped
                               ? 'bg-slate-950/20 border-white/5 text-slate-500 opacity-60'
                               : 'bg-slate-950/30 border-white/5 text-slate-400'
@@ -584,6 +601,10 @@ export default function PipelineActivityDrawer() {
                               <Loader2 className="w-4 h-4 text-cyan-400 animate-spin" />
                             ) : isError ? (
                               <XCircle className="w-4 h-4 text-rose-400" />
+                            ) : isCancelled ? (
+                              <div className="w-4 h-4 rounded-full border border-slate-600 flex items-center justify-center text-[9px] font-mono text-slate-400">
+                                🛑
+                              </div>
                             ) : isSkipped ? (
                               <div className="w-4 h-4 rounded-full border border-dashed border-slate-600 flex items-center justify-center text-[9px] font-mono text-slate-500">
                                 -
@@ -606,6 +627,8 @@ export default function PipelineActivityDrawer() {
                                     ? 'text-cyan-300 font-bold'
                                     : isError
                                     ? 'text-rose-300 font-bold'
+                                    : isCancelled
+                                    ? 'text-slate-400 line-through'
                                     : isSkipped
                                     ? 'text-slate-500 line-through'
                                     : 'text-slate-300'
@@ -620,6 +643,8 @@ export default function PipelineActivityDrawer() {
                                   ? 'İşleniyor...'
                                   : isError
                                   ? 'Hata'
+                                  : isCancelled
+                                  ? 'İptal Edildi'
                                   : isSkipped
                                   ? 'Atlandı'
                                   : 'Sırada'}

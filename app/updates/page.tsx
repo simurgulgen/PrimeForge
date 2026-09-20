@@ -49,12 +49,18 @@ interface UpdateItem {
   has_guide?: boolean;
   guide_name?: string;
   auto_apply?: boolean;
+  channel_summary?: {
+    stable?: string;
+    beta?: string;
+  };
   variants_needing_update?: Array<{
     platform: string;
     architecture: string;
+    releaseChannel?: string;
     current_version: string;
     new_version: string;
     suggested_url: string;
+    asset_name?: string;
   }>;
 }
 
@@ -450,6 +456,7 @@ export default function UpdatesPage() {
           download_url: item.download_url,
           source_name: item.source_name,
           release_notes: item.release_notes,
+          variants_update: item.variants_needing_update,
         }),
       });
       const data = await res.json();
@@ -491,6 +498,7 @@ export default function UpdatesPage() {
             download_url: item.download_url,
             source_name: item.source_name,
             release_notes: item.release_notes,
+            variants_update: item.variants_needing_update,
           }),
         });
         const data = await res.json();
@@ -850,6 +858,56 @@ export default function UpdatesPage() {
                         APK
                       </a>
                     </div>
+
+                    {/* Multi-Architecture & Channel Variant Details */}
+                    {app.variants_needing_update && app.variants_needing_update.length > 0 && (
+                      <div className="mt-3 p-3 rounded-xl bg-slate-950/70 border border-white/5 space-y-2">
+                        <div className="text-[10px] font-mono uppercase text-slate-400 flex items-center justify-between">
+                          <span className="font-semibold flex items-center gap-1.5">
+                            <Layers className="w-3.5 h-3.5 text-cyan-400" />
+                            Mimari & Kanal Ayrımı ({app.variants_needing_update.length} Varyant)
+                          </span>
+                          {app.channel_summary && (app.channel_summary.stable || app.channel_summary.beta) && (
+                            <div className="flex items-center gap-2">
+                              {app.channel_summary.stable && (
+                                <span className="text-emerald-400">Stable: v{app.channel_summary.stable}</span>
+                              )}
+                              {app.channel_summary.beta && (
+                                <span className="text-amber-400">Beta: v{app.channel_summary.beta}</span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {app.variants_needing_update.map((v, vIdx) => (
+                            <div
+                              key={vIdx}
+                              className="px-2.5 py-1.5 rounded-lg bg-slate-900/90 border border-white/5 flex items-center justify-between text-[11px]"
+                            >
+                              <div className="flex items-center gap-2">
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-mono font-bold uppercase ${
+                                    v.releaseChannel?.toLowerCase().includes('beta')
+                                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                      : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                  }`}
+                                >
+                                  {v.releaseChannel || 'Stable'}
+                                </span>
+                                <span className="text-slate-200 font-mono text-[11px] font-medium">
+                                  {v.architecture}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 font-mono text-[10px]">
+                                <span className="text-slate-400">v{v.current_version}</span>
+                                <span className="text-slate-600">➔</span>
+                                <span className="text-amber-300 font-bold">v{v.new_version}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     {app.release_notes && (
                       <div className="mt-3 text-xs text-slate-400 line-clamp-2 italic bg-white/5 p-2 rounded-lg">

@@ -41,6 +41,7 @@ interface PreAuditModalProps {
     current_version: string | null;
     latest_version: string | null;
     download_url: string;
+    variants_needing_update?: any[];
   };
   onClose: () => void;
   onSuccess: (result: { jobId?: string; message: string }) => void;
@@ -52,6 +53,10 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
   const [error, setError] = useState<string | null>(null);
 
   // User selections
+  const variants = app.variants_needing_update || [];
+  const [selectedVariantIdx, setSelectedVariantIdx] = useState<number>(0);
+  const activeVariant = variants[selectedVariantIdx] || null;
+
   const [selectedDangerousPerms, setSelectedDangerousPerms] = useState<string[]>([]);
   const [selectedAdPerms, setSelectedAdPerms] = useState<string[]>([]);
   const [actionType, setActionType] = useState<'autonomous_from_guide' | 'sanitize_only' | 'full_mod' | 'direct_sign'>('sanitize_only');
@@ -235,15 +240,20 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
         direct_sign: 'Doğrudan İmzala',
       };
 
+      const targetUrl = activeVariant?.suggested_url || app.download_url;
+      const targetVersion = activeVariant?.new_version || app.latest_version;
+      const targetVariantArch = activeVariant?.architecture || '';
+
       const res = await fetch('/api/trigger-job', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          apk_url: app.download_url,
+          apk_url: targetUrl,
           action: actionType,
           package_name: app.packageName,
           app_name: app.title,
-          version_name: app.latest_version,
+          version_name: targetVersion,
+          variant: targetVariantArch,
           profile: app.packageName,
           runner_type: runnerType,
           mod_options: {
@@ -257,7 +267,7 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
             enable_universal_ad_blocker: enableAdBlocker,
             enable_self_healing: enableSelfHealing,
           },
-          custom_notes: `İşlem: ${actionLabels[actionType] || actionType}. Runner: ${runnerType}. Rehber Kaydı: ${saveGuide ? 'Aktif' : 'Pasif'}.`,
+          custom_notes: `İşlem: ${actionLabels[actionType] || actionType}. Runner: ${runnerType}. Mimari: ${targetVariantArch || 'Universal'}. Rehber Kaydı: ${saveGuide ? 'Aktif' : 'Pasif'}.`,
           publish_mode: 'manual_review',
         }),
       });
@@ -324,6 +334,51 @@ export default function PreAuditModal({ app, onClose, onSuccess }: PreAuditModal
             </div>
           ) : (
             <>
+              {/* Variant / Architecture / Channel Selector Banner */}
+              {variants.length > 1 && (
+                <div className="p-3.5 rounded-xl bg-slate-950/80 border border-purple-500/20 space-y-2.5">
+                  <div className="text-[11px] font-semibold text-white flex items-center justify-between">
+                    <span className="flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-purple-400" />
+                      İşlenecek Varyantı & Mimariyi Seçin
+                    </span>
+                    <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                      {variants.length} Farklı Varyant
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {variants.map((v: any, idx: number) => {
+                      const isSelected = selectedVariantIdx === idx;
+                      const isBeta = v.releaseChannel?.toLowerCase().includes('beta');
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => setSelectedVariantIdx(idx)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all flex items-center gap-2 ${
+                            isSelected
+                              ? 'bg-purple-600/30 border-purple-500 text-white shadow-lg shadow-purple-600/20 ring-1 ring-purple-500/50'
+                              : 'bg-slate-900/60 border-white/10 text-slate-400 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          <span
+                            className={`px-1.5 py-0.2 rounded text-[9px] font-mono font-bold uppercase ${
+                              isBeta
+                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                            }`}
+                          >
+                            {v.releaseChannel || 'Stable'}
+                          </span>
+                          <span className="font-mono font-bold text-white">{v.architecture}</span>
+                          <span className="text-[10px] text-slate-400 font-mono">v{v.new_version}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               {/* Feature Detection Summary Banner */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div className="p-3 rounded-xl bg-slate-950/60 border border-white/5">
