@@ -279,28 +279,20 @@ export async function POST(req: Request) {
           }
         };
 
-        // Supabase virustotal_scans tablosuna anında kaydet
+        // Cloudflare Gateway Worker KV Store'a anında aktar (0 Supabase Egress & Küresel Uç Nokta)
         try {
-          await supabase.from('virustotal_scans').upsert({
-            file_hash: sha256,
-            package_name: package_name || null,
-            status: overallStatus,
-            security_score: overallScore,
-            security_report: instantReport,
-            positives: vtPositives,
-            total_engines: vtTotal,
-            scanned_at: new Date().toISOString()
-          }, { onConflict: 'file_hash' });
-
-          if (listing_id) {
-            await supabase.from('listings').update({
-              virus_total_status: overallStatus,
-              virus_total_score: isThreat ? `${vtPositives} Tehdit` : '7/7 Temiz'
-            }).eq('id', listing_id);
-          }
-        } catch (dbErr) {
-          console.error('Supabase write error in instant scan:', dbErr);
-        }
+          fetch('https://primestore-gateway.simurgulgen.workers.dev/security/record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sha256: sha256,
+              listing_id: listing_id || '',
+              status: overallStatus,
+              score: overallScore,
+              report: instantReport
+            })
+          }).catch(() => {});
+        } catch (_) {}
 
         // Arka planda derin GitHub Actions analizini başlat (kullanıcıyı bekletmeden)
         const ghToken = process.env.GITHUB_TOKEN;
