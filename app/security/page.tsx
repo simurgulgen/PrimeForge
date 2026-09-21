@@ -252,7 +252,7 @@ export default function SecurityConsolePage() {
           virusTotalStatus: item.virusTotalStatus || scan?.status || 'unscanned',
           virusTotalScore: item.virusTotalScore || (scan?.positives !== undefined ? `${scan.positives}/${scan.total_engines}` : ''),
           securityReport: scan?.security_report || null,
-          securityScore: scan?.security_score || (item.virusTotalStatus === 'clean' ? 98 : (item.virusTotalStatus === 'malicious' ? 25 : 85)),
+          securityScore: scan?.security_score || (item.virusTotalStatus === 'clean' ? 100 : (item.virusTotalStatus === 'malicious' ? 25 : 85)),
           lastScanned: scan?.scanned_at || item.updatedAt || null,
         };
       });
@@ -959,7 +959,7 @@ export default function SecurityConsolePage() {
                 </div>
                 <div className="text-center bg-emerald-500/10 border border-emerald-500/30 rounded-2xl px-4 py-2">
                   <span className="text-3xl font-extrabold text-emerald-400">
-                    %{selectedItem.securityScore || 98}
+                    %{selectedItem.securityScore || 100}
                   </span>
                   <span className="block text-[10px] text-emerald-500 uppercase font-semibold">Skor</span>
                 </div>

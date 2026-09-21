@@ -137,7 +137,7 @@ async function auditM3UFast(url: string) {
 
     const sslRatio = totalStreams > 0 ? Math.round((sslStreams / totalStreams) * 100) : 100;
     const isClean = injectionAttempts.length === 0 && suspiciousLines.length === 0;
-    const score = isClean ? (sslRatio > 70 ? 98 : 88) : 25;
+    const score = isClean ? (sslRatio > 70 ? 100 : 90) : 25;
 
     return {
       timestamp: new Date().toISOString(),
@@ -386,7 +386,7 @@ export async function POST(req: Request) {
         const overallStatus = isDangerous ? 'malicious' : (isThreat ? 'suspicious' : 'clean');
         const overallScore = isDangerous 
           ? Math.max(10, 30 - (vtPositives * 3)) // Kritik zararlı: %10-25
-          : (isThreat ? Math.max(60, 95 - (vtPositives * 5)) : 98); // Yanlış pozitif: %60-85
+          : (isThreat ? Math.max(60, 95 - (vtPositives * 5)) : 100); // Yanlış pozitif: %60-85
 
         const summaryBadge = isDangerous
           ? `🚨 KRİTİK TEHDİT: ${vtPositives + mdDetected} Zararlı İmzası`

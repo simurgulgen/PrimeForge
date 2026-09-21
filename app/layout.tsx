@@ -1,6 +1,6 @@
 import './globals.css';
 import Link from 'next/link';
-import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal, RefreshCw, ShieldCheck } from 'lucide-react';
+import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal, RefreshCw, ShieldCheck, Tv } from 'lucide-react';
 
 import AiCopilotSidebar from '@/app/components/AiCopilotSidebar';
 import PipelineActivityDrawer from '@/app/components/PipelineActivityDrawer';
@@ -63,6 +63,13 @@ export default function RootLayout({
                 >
                   <Terminal className="w-4 h-4 text-cyan-400" />
                   Canlı Konsol
+                </Link>
+                <Link
+                  href="/pool"
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-rose-300 hover:text-white hover:bg-rose-500/10 border border-rose-500/20 transition-all flex items-center gap-2 rounded-xl"
+                >
+                  <Tv className="w-4 h-4 text-rose-400" />
+                  IPTV Havuzu
                 </Link>
                 <Link
                   href="/catalog"
