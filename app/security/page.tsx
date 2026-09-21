@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ShieldCheck,
   ShieldAlert,
@@ -22,7 +22,13 @@ import {
   Moon,
   Zap,
   Clock,
-  ListOrdered
+  ListOrdered,
+  Terminal,
+  Square,
+  Trash2,
+  Pause,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -67,6 +73,35 @@ interface ListingItem {
   lastScanned?: string;
 }
 
+interface BatchScanLog {
+  id: string;
+  time: string;
+  message: string;
+  type: 'info' | 'success' | 'warn' | 'error';
+}
+
+interface BatchScanResult {
+  id: string;
+  title: string;
+  packageName?: string;
+  logoUrl?: string;
+  score: number;
+  status: string;
+  threats: number;
+  summary: string;
+}
+
+interface BatchScanState {
+  isRunning: boolean;
+  total: number;
+  currentStepIndex: number;
+  currentStage: string;
+  currentItem: { id: string; title: string; packageName?: string; logoUrl?: string } | null;
+  pendingIds: string[];
+  completedResults: BatchScanResult[];
+  logs: BatchScanLog[];
+}
+
 export default function SecurityConsolePage() {
   const [items, setItems] = useState<ListingItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -81,6 +116,63 @@ export default function SecurityConsolePage() {
   const [mainTab, setMainTab] = useState<'ALL' | 'QUEUE'>('ALL');
   const [triggeringDeepIds, setTriggeringDeepIds] = useState<Record<string, boolean>>({});
   const [batchTriggering, setBatchTriggering] = useState(false);
+  const [scanConsoleOpen, setScanConsoleOpen] = useState(false);
+
+  // Batch scan live console state
+  const initialBatchState: BatchScanState = {
+    isRunning: false,
+    total: 0,
+    currentStepIndex: 0,
+    currentStage: '',
+    currentItem: null,
+    pendingIds: [],
+    completedResults: [],
+    logs: [],
+  };
+  const [batchScan, setBatchScan] = useState<BatchScanState>(initialBatchState);
+  const batchAbortRef = React.useRef(false);
+  const logEndRef = React.useRef<HTMLDivElement>(null);
+
+  // Restore batch state from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('primeforge_batch_scan');
+      if (saved) {
+        const parsed = JSON.parse(saved) as BatchScanState;
+        if (parsed.isRunning) {
+          // Mark as interrupted, not running
+          parsed.isRunning = false;
+          parsed.currentStage = '⏸️ Sayfa yenilendiği için duraklatıldı. Devam edebilirsiniz.';
+        }
+        setBatchScan(parsed);
+        if (parsed.logs.length > 0 || parsed.completedResults.length > 0) {
+          setScanConsoleOpen(true);
+        }
+      }
+    } catch (_) {}
+  }, []);
+
+  // Persist batch state to localStorage on every change
+  useEffect(() => {
+    try {
+      localStorage.setItem('primeforge_batch_scan', JSON.stringify(batchScan));
+    } catch (_) {}
+  }, [batchScan]);
+
+  // Auto-scroll log panel
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [batchScan.logs]);
+
+  const addBatchLog = (message: string, type: BatchScanLog['type'] = 'info') => {
+    const entry: BatchScanLog = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      message,
+      type,
+    };
+    setBatchScan(prev => ({ ...prev, logs: [...prev.logs.slice(-200), entry] }));
+  };
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -246,13 +338,49 @@ export default function SecurityConsolePage() {
       return;
     }
 
+    batchAbortRef.current = false;
+    setScanConsoleOpen(true);
+
+    const startState: BatchScanState = {
+      isRunning: true,
+      total: targets.length,
+      currentStepIndex: 0,
+      currentStage: 'Toplu tarama başlatılıyor...',
+      currentItem: null,
+      pendingIds: targets.map(t => t.id),
+      completedResults: [],
+      logs: [{
+        id: `start-${Date.now()}`,
+        time: new Date().toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        message: `⚡ ${targets.length} uygulama için toplu derin analiz başlatılıyor...`,
+        type: 'info',
+      }],
+    };
+    setBatchScan(startState);
     setBatchTriggering(true);
-    showToast(`⚡ ${targets.length} uygulama için toplu derin analiz başlatılıyor...`);
 
     let startedCount = 0;
-    for (const it of targets) {
+    let failedCount = 0;
+
+    for (let i = 0; i < targets.length; i++) {
+      if (batchAbortRef.current) {
+        addBatchLog('🛑 Tarama kullanıcı tarafından durduruldu.', 'warn');
+        setBatchScan(prev => ({ ...prev, isRunning: false, currentStage: 'Kullanıcı tarafından durduruldu.' }));
+        break;
+      }
+
+      const it = targets[i];
+      setBatchScan(prev => ({
+        ...prev,
+        currentStepIndex: i,
+        currentStage: `GitHub Actions tetikleniyor...`,
+        currentItem: { id: it.id, title: it.title, packageName: it.packageName, logoUrl: it.logoUrl },
+        pendingIds: targets.slice(i + 1).map(t => t.id),
+      }));
+      addBatchLog(`🔄 [${i + 1}/${targets.length}] "${it.title}" (${it.packageName || 'N/A'}) analiz tetikleniyor...`, 'info');
+
       try {
-        await fetch('/api/security-scan', {
+        const res = await fetch('/api/security-scan', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -263,13 +391,64 @@ export default function SecurityConsolePage() {
             target_type: it.type.toLowerCase(),
           }),
         });
-        startedCount++;
-      } catch (_) {}
+        const data = await res.json();
+
+        if (data.success) {
+          startedCount++;
+          addBatchLog(`✅ [${i + 1}/${targets.length}] "${it.title}" → Runner tetiklendi${data.dispatched ? ' (GitHub Actions)' : ' (Sıraya alındı)'}`, 'success');
+          setBatchScan(prev => ({
+            ...prev,
+            completedResults: [...prev.completedResults, {
+              id: it.id,
+              title: it.title,
+              packageName: it.packageName,
+              logoUrl: it.logoUrl,
+              score: 0,
+              status: 'dispatched',
+              threats: 0,
+              summary: data.dispatched ? 'GitHub Actions tetiklendi' : 'Gece sırasına alındı',
+            }],
+          }));
+          setItems(prev => prev.map(x => x.id === it.id ? { ...x, virusTotalStatus: 'scanning' } : x));
+        } else {
+          failedCount++;
+          addBatchLog(`⚠️ [${i + 1}/${targets.length}] "${it.title}" → Hata: ${data.error || 'Bilinmeyen'}`, 'warn');
+        }
+      } catch (e: any) {
+        failedCount++;
+        addBatchLog(`❌ [${i + 1}/${targets.length}] "${it.title}" → Bağlantı hatası: ${e.message}`, 'error');
+      }
+
+      // Small delay between requests to avoid rate limits
+      if (i < targets.length - 1 && !batchAbortRef.current) {
+        await new Promise(r => setTimeout(r, 800));
+      }
+    }
+
+    if (!batchAbortRef.current) {
+      addBatchLog(`🏁 Toplu tarama tamamlandı: ${startedCount} başarılı, ${failedCount} başarısız (Toplam: ${targets.length})`, startedCount > 0 ? 'success' : 'error');
+      setBatchScan(prev => ({
+        ...prev,
+        isRunning: false,
+        currentStage: `Tamamlandı — ${startedCount} başarılı, ${failedCount} hata`,
+        currentItem: null,
+        pendingIds: [],
+      }));
     }
 
     setBatchTriggering(false);
-    showToast(`✅ ${startedCount} uygulamanın derin analizi başarıyla tetiklendi!`);
     loadData();
+  };
+
+  const abortBatchScan = () => {
+    batchAbortRef.current = true;
+    addBatchLog('⏹️ Durdurma isteği gönderildi...', 'warn');
+  };
+
+  const clearBatchConsole = () => {
+    setBatchScan(initialBatchState);
+    localStorage.removeItem('primeforge_batch_scan');
+    setScanConsoleOpen(false);
   };
 
   const queuedItems = items.filter(item => {
@@ -938,6 +1117,154 @@ export default function SecurityConsolePage() {
           </div>
         </div>
       )}
+
+      {/* ═══════════════════════════════════════════════════════════════════
+           BATCH SCAN LIVE CONSOLE — Fixed Bottom-Left Panel
+         ═══════════════════════════════════════════════════════════════════ */}
+
+      {/* Toggle Button — always visible when there's scan history */}
+      {(batchScan.logs.length > 0 || batchScan.isRunning) && !scanConsoleOpen && (
+        <button
+          onClick={() => setScanConsoleOpen(true)}
+          className="fixed bottom-6 left-6 z-40 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-3 rounded-2xl shadow-2xl border border-indigo-400/30 flex items-center gap-3 transition-all hover:scale-105"
+        >
+          <Terminal className="w-5 h-5" />
+          <span className="text-sm font-semibold">Tarama Konsolu</span>
+          {batchScan.isRunning && (
+            <span className="flex h-3 w-3 relative">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+          )}
+          {!batchScan.isRunning && batchScan.completedResults.length > 0 && (
+            <span className="bg-emerald-500/20 text-emerald-300 text-xs px-2 py-0.5 rounded-full font-mono">
+              {batchScan.completedResults.length}/{batchScan.total}
+            </span>
+          )}
+        </button>
+      )}
+
+      {/* Console Panel */}
+      {scanConsoleOpen && (
+        <div className="fixed bottom-0 left-0 z-50 w-full sm:w-[520px] max-h-[70vh] bg-slate-950/95 border border-white/10 sm:rounded-tr-3xl sm:rounded-tl-none backdrop-blur-2xl shadow-2xl flex flex-col overflow-hidden">
+          {/* Console Header */}
+          <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-white/[0.03] flex-shrink-0">
+            <div className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${batchScan.isRunning ? 'bg-emerald-500/20' : 'bg-slate-800'}`}>
+                <Terminal className={`w-4 h-4 ${batchScan.isRunning ? 'text-emerald-400' : 'text-slate-400'}`} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white">Toplu Tarama Konsolu</h3>
+                <p className="text-[10px] text-slate-500 font-mono">{batchScan.currentStage || 'Hazır'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {batchScan.isRunning && (
+                <button
+                  onClick={abortBatchScan}
+                  className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                  title="Durdur"
+                >
+                  <Square className="w-4 h-4" />
+                </button>
+              )}
+              {!batchScan.isRunning && batchScan.logs.length > 0 && (
+                <button
+                  onClick={clearBatchConsole}
+                  className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 transition-colors"
+                  title="Konsolu Temizle"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              )}
+              <button
+                onClick={() => setScanConsoleOpen(false)}
+                className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 transition-colors"
+                title="Gizle"
+              >
+                <ChevronDown className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Progress Bar */}
+          {batchScan.total > 0 && (
+            <div className="px-5 py-2 border-b border-white/5 bg-white/[0.02] flex-shrink-0">
+              <div className="flex items-center justify-between text-xs mb-1.5">
+                <span className="text-slate-400">
+                  {batchScan.isRunning ? (
+                    <span className="flex items-center gap-1.5">
+                      <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                      <span>İşleniyor: <b className="text-white">{batchScan.currentStepIndex + 1}</b> / {batchScan.total}</span>
+                    </span>
+                  ) : (
+                    <span>{batchScan.completedResults.length} / {batchScan.total} tamamlandı</span>
+                  )}
+                </span>
+                <span className="text-slate-500 font-mono">
+                  {batchScan.pendingIds.length} bekliyor
+                </span>
+              </div>
+              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${batchScan.isRunning ? 'bg-gradient-to-r from-emerald-500 to-teal-400 animate-pulse' : 'bg-emerald-500'}`}
+                  style={{ width: `${batchScan.total > 0 ? ((batchScan.completedResults.length / batchScan.total) * 100) : 0}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Current Item */}
+          {batchScan.currentItem && batchScan.isRunning && (
+            <div className="px-5 py-2.5 border-b border-white/5 bg-emerald-950/20 flex items-center gap-3 flex-shrink-0">
+              {batchScan.currentItem.logoUrl ? (
+                <img src={batchScan.currentItem.logoUrl} className="w-8 h-8 rounded-lg" alt="" />
+              ) : (
+                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center">
+                  <ShieldCheck className="w-4 h-4 text-indigo-400" />
+                </div>
+              )}
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-semibold text-white truncate">{batchScan.currentItem.title}</div>
+                <div className="text-[10px] text-slate-500 font-mono truncate">{batchScan.currentItem.packageName || '—'}</div>
+              </div>
+              <RefreshCw className="w-4 h-4 text-emerald-400 animate-spin flex-shrink-0" />
+            </div>
+          )}
+
+          {/* Log Lines */}
+          <div className="flex-1 overflow-y-auto px-4 py-2 min-h-[120px] max-h-[40vh] font-mono text-[11px] leading-relaxed space-y-0.5">
+            {batchScan.logs.length === 0 ? (
+              <div className="text-slate-600 text-center py-8">
+                <Terminal className="w-8 h-8 mx-auto mb-2 opacity-30" />
+                <p>Henüz log yok. "Tüm Sırayı Başlat" ile toplu tarama başlatın.</p>
+              </div>
+            ) : (
+              batchScan.logs.map(log => (
+                <div key={log.id} className="flex gap-2 py-0.5">
+                  <span className="text-slate-600 flex-shrink-0 select-none">{log.time}</span>
+                  <span className={
+                    log.type === 'success' ? 'text-emerald-400' :
+                    log.type === 'error' ? 'text-red-400' :
+                    log.type === 'warn' ? 'text-amber-400' :
+                    'text-slate-400'
+                  }>
+                    {log.message}
+                  </span>
+                </div>
+              ))
+            )}
+            <div ref={logEndRef} />
+          </div>
+
+          {/* Console Footer */}
+          <div className="px-5 py-2 border-t border-white/5 bg-white/[0.02] flex items-center justify-between text-[10px] text-slate-600 flex-shrink-0">
+            <span>PrimeForge Güvenlik Tarayıcısı v1.0</span>
+            <span>{batchScan.logs.length} satır</span>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }
