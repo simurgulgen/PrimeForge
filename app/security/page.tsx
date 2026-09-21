@@ -24,6 +24,8 @@ import { supabase } from '@/lib/supabase';
 
 interface SecurityReport {
   timestamp: string;
+  sha256?: string;
+  stream_url?: string;
   overall_status: string;
   overall_score: number;
   clean_engines_count: string;
@@ -37,6 +39,10 @@ interface SecurityReport {
     apkid?: any;
     quark?: any;
     clamav?: any;
+    command_injection?: any;
+    protocol_audit?: any;
+    ssl_security?: any;
+    payload_safety?: any;
   };
   stats?: any;
   findings?: any;
