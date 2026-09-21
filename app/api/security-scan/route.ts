@@ -283,7 +283,11 @@ export async function POST(req: Request) {
         try {
           fetch('https://primestore-gateway.simurgulgen.workers.dev/security/record', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'X-PrimeStore-Client': 'primeforge',
+              'X-PrimeStore-Secret': 'primestore_admin_2026'
+            },
             body: JSON.stringify({
               sha256: sha256,
               listing_id: listing_id || '',
