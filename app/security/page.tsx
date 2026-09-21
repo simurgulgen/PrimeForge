@@ -18,7 +18,11 @@ import {
   FileCode,
   Layers,
   Eye,
-  X
+  X,
+  Moon,
+  Zap,
+  Clock,
+  ListOrdered
 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 
@@ -74,6 +78,9 @@ export default function SecurityConsolePage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [mainTab, setMainTab] = useState<'ALL' | 'QUEUE'>('ALL');
+  const [triggeringDeepIds, setTriggeringDeepIds] = useState<Record<string, boolean>>({});
+  const [batchTriggering, setBatchTriggering] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -201,6 +208,78 @@ export default function SecurityConsolePage() {
     }
   };
 
+  const triggerManualDeepScan = async (item: ListingItem) => {
+    setTriggeringDeepIds(prev => ({ ...prev, [item.id]: true }));
+    showToast(`"${item.title}" için GitHub Actions derin analiz runnerı tetikleniyor...`);
+
+    try {
+      const res = await fetch('/api/security-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'trigger_deep',
+          apk_url: item.fileUrl,
+          listing_id: item.id,
+          package_name: item.packageName,
+          target_type: item.type.toLowerCase(),
+        }),
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        showToast(`✅ "${item.title}" derin analiz runnerına aktarıldı!`);
+        setItems(prev => prev.map(it => it.id === item.id ? { ...it, virusTotalStatus: 'scanning' } : it));
+      } else {
+        showToast('⚠️ Derin analiz başlatılamadı: ' + (data.error || 'Bilinmeyen hata'));
+      }
+    } catch (e: any) {
+      showToast('❌ Bağlantı hatası: ' + e.message);
+    } finally {
+      setTriggeringDeepIds(prev => ({ ...prev, [item.id]: false }));
+    }
+  };
+
+  const triggerBatchDeepScan = async () => {
+    const targets = queuedItems;
+    if (targets.length === 0) {
+      showToast('Kuyrukta bekleyen uygulama bulunamadı.');
+      return;
+    }
+
+    setBatchTriggering(true);
+    showToast(`⚡ ${targets.length} uygulama için toplu derin analiz başlatılıyor...`);
+
+    let startedCount = 0;
+    for (const it of targets) {
+      try {
+        await fetch('/api/security-scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'trigger_deep',
+            apk_url: it.fileUrl,
+            listing_id: it.id,
+            package_name: it.packageName,
+            target_type: it.type.toLowerCase(),
+          }),
+        });
+        startedCount++;
+      } catch (_) {}
+    }
+
+    setBatchTriggering(false);
+    showToast(`✅ ${startedCount} uygulamanın derin analizi başarıyla tetiklendi!`);
+    loadData();
+  };
+
+  const queuedItems = items.filter(item => {
+    if (item.type.toUpperCase() === 'M3U') return false;
+    const st = (item.virusTotalStatus || '').toLowerCase();
+    const hasFullDeep = item.securityReport?.engines?.clamav && item.securityReport?.engines?.clamav?.status !== 'pending_nightly';
+    const isQueued = st === 'unscanned' || st === 'queued' || st === 'scanning' || !st;
+    return isQueued || !hasFullDeep;
+  });
+
   const filteredItems = items.filter(item => {
     const matchesSearch =
       item.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -308,179 +387,355 @@ export default function SecurityConsolePage() {
 
       {/* Main Table Card */}
       <div className="max-w-7xl mx-auto bg-slate-900/60 border border-white/10 rounded-3xl backdrop-blur-xl overflow-hidden shadow-2xl">
-        {/* Controls */}
-        <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col md:flex-row gap-4 justify-between items-center">
-          <div className="relative w-full md:w-80">
-            <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
-            <input
-              type="text"
-              placeholder="Uygulama veya paket adı ara..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-            {/* Type Filter */}
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 text-xs">
-              {(['ALL', 'APK', 'M3U'] as const).map(t => (
-                <button
-                  key={t}
-                  onClick={() => setFilterType(t)}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                    filterType === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {t === 'ALL' ? 'Tümü' : t}
-                </button>
-              ))}
-            </div>
-
-            {/* Status Filter */}
-            <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 text-xs">
-              {(['ALL', 'CLEAN', 'WARNING', 'UNSCANNED'] as const).map(s => (
-                <button
-                  key={s}
-                  onClick={() => setFilterStatus(s)}
-                  className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
-                    filterStatus === s ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {s === 'ALL' ? 'Tüm Durumlar' : s === 'CLEAN' ? 'Temiz' : s === 'WARNING' ? 'Riskli' : 'Taranmamış'}
-                </button>
-              ))}
-            </div>
-          </div>
+        {/* Navigation Tabs: Tüm İçerik vs Gece Analizi Sırası */}
+        <div className="flex border-b border-white/10 px-6 pt-4 gap-4 bg-white/[0.02]">
+          <button
+            onClick={() => setMainTab('ALL')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${
+              mainTab === 'ALL'
+                ? 'border-emerald-500 text-white'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldCheck className="w-4 h-4 text-emerald-400" />
+            Tüm Uygulamalar & Raporlar ({items.length})
+          </button>
+          <button
+            onClick={() => setMainTab('QUEUE')}
+            className={`pb-3 text-sm font-semibold flex items-center gap-2 border-b-2 transition-all ${
+              mainTab === 'QUEUE'
+                ? 'border-amber-500 text-amber-300'
+                : 'border-transparent text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Moon className="w-4 h-4 text-amber-400" />
+            🌙 Gece Taraması Bekleyenler (İş Sırası)
+            <span className="px-2 py-0.5 rounded-full text-xs bg-amber-500/20 text-amber-300 border border-amber-500/30">
+              {queuedItems.length}
+            </span>
+          </button>
         </div>
 
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-300">
-            <thead className="bg-white/5 text-xs uppercase text-slate-400 font-semibold border-b border-white/5">
-              <tr>
-                <th className="px-6 py-4">İçerik</th>
-                <th className="px-4 py-4">Tür</th>
-                <th className="px-6 py-4">7 Motor Güvenlik Durumu</th>
-                <th className="px-4 py-4 text-center">Skor</th>
-                <th className="px-4 py-4">Son Tarama</th>
-                <th className="px-6 py-4 text-right">Eylemler</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/5">
-              {filteredItems.map(item => {
-                const isM3U = item.type.toUpperCase() === 'M3U';
-                const status = (item.virusTotalStatus || '').toLowerCase();
-                const isClean = status === 'clean' || status === 'temiz';
-                const isWarning = ['malicious', 'warning', 'suspicious'].includes(status);
-                const isScanning = scanningIds[item.id];
+        {mainTab === 'QUEUE' ? (
+          <div>
+            {/* Queue Banner & Actions */}
+            <div className="p-6 border-b border-white/10 bg-amber-950/10 flex flex-col md:flex-row gap-4 items-start md:items-center justify-between">
+              <div>
+                <div className="flex items-center gap-2 text-amber-400 font-bold text-base mb-1">
+                  <Moon className="w-5 h-5" />
+                  🌙 Gece Taraması & Derin Analiz İş Sırası ({queuedItems.length} Bekliyor)
+                </div>
+                <p className="text-xs text-slate-400 max-w-2xl">
+                  Bu listedeki uygulamaların hızlı bulut ön taramaları tamamlanmış veya taranmamış olup, 
+                  gece cronu ile GitHub Actions Runner motorları (<strong>MobSF SAST</strong>, <strong>APKiD</strong>, <strong>Quark-Engine</strong>, <strong>ClamAV</strong>) 
+                  tarafından taranmak üzere beklemektedir. Dilediğiniz uygulamanın derin analizini hemen şimdi manuel başlatabilirsiniz.
+                </p>
+              </div>
 
-                return (
-                  <tr
-                    key={item.id}
-                    className="hover:bg-white/[0.02] transition-colors cursor-pointer"
-                    onClick={() => setSelectedItem(item)}
-                  >
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        {item.logoUrl ? (
-                          <img
-                            src={item.logoUrl}
-                            alt=""
-                            className="w-10 h-10 rounded-xl object-cover border border-white/10 bg-slate-800"
-                          />
-                        ) : (
-                          <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10">
-                            {isM3U ? <Radio className="w-5 h-5 text-cyan-400" /> : <FileCode className="w-5 h-5 text-blue-400" />}
-                          </div>
-                        )}
-                        <div>
-                          <div className="font-semibold text-white hover:text-emerald-400 transition-colors flex items-center gap-2">
-                            {item.title}
-                          </div>
-                          <div className="text-xs text-slate-500 font-mono">
-                            {item.packageName || (item.fileUrl ? item.fileUrl.split('/').pop()?.slice(0, 30) : '—')}
-                          </div>
-                        </div>
-                      </div>
-                    </td>
+              <div className="flex items-center gap-3 w-full md:w-auto">
+                <button
+                  onClick={triggerBatchDeepScan}
+                  disabled={batchTriggering || queuedItems.length === 0}
+                  className="w-full md:w-auto px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 text-white text-xs font-bold shadow-lg shadow-amber-600/20 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Zap className={`w-4 h-4 ${batchTriggering ? 'animate-spin' : ''}`} />
+                  {batchTriggering ? 'Tetikleniyor...' : '⚡ Tüm Sırayı Şimdi Başlat'}
+                </button>
+              </div>
+            </div>
 
-                    <td className="px-4 py-4">
-                      <span
-                        className={`text-xs px-2.5 py-1 rounded-full font-medium ${
-                          isM3U
-                            ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
-                            : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
-                        }`}
-                      >
-                        {item.type}
-                      </span>
-                    </td>
-
-                    <td className="px-6 py-4">
-                      {isClean ? (
-                        <div className="flex items-center gap-2 text-emerald-400 font-medium">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>{isM3U ? 'Akış & Komut Onaylı' : '7/7 Motor Onaylı (Temiz)'}</span>
-                        </div>
-                      ) : isWarning ? (
-                        <div className="flex items-center gap-2 text-rose-400 font-medium">
-                          <AlertTriangle className="w-4 h-4" />
-                          <span>{item.virusTotalScore || 'Tehdit / Uyarı Tespit Edildi'}</span>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2 text-slate-500">
-                          <Shield className="w-4 h-4" />
-                          <span>Taranmamış</span>
-                        </div>
-                      )}
-                    </td>
-
-                    <td className="px-4 py-4 text-center">
-                      <div className="inline-flex items-center px-2.5 py-1 rounded-full font-bold text-xs bg-white/5 border border-white/10 text-emerald-400">
-                        %{item.securityScore || 95}
-                      </div>
-                    </td>
-
-                    <td className="px-4 py-4 text-xs text-slate-400">
-                      {item.lastScanned ? new Date(item.lastScanned).toLocaleDateString('tr-TR') : 'Bilinmiyor'}
-                    </td>
-
-                    <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => setSelectedItem(item)}
-                          className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-300 transition-colors flex items-center gap-1.5"
-                          title="Detaylı Analiz"
-                        >
-                          <Eye className="w-3.5 h-3.5 text-blue-400" />
-                          Detay
-                        </button>
-                        <button
-                          onClick={() => triggerScan(item)}
-                          disabled={isScanning}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-xs font-medium text-emerald-300 transition-colors flex items-center gap-1.5 disabled:opacity-50"
-                          title="7 Motorla Tara"
-                        >
-                          <Play className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
-                          {isScanning ? 'Taranıyor...' : 'Tara'}
-                        </button>
-                      </div>
-                    </td>
+            {/* Queue Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-white/5 text-xs uppercase text-slate-400 font-semibold border-b border-white/5">
+                  <tr>
+                    <th className="px-6 py-4">Uygulama Bilgisi</th>
+                    <th className="px-4 py-4">Bulut Ön Taraması</th>
+                    <th className="px-6 py-4">Gece Bekleyen Derin Motorlar</th>
+                    <th className="px-4 py-4">Kuyruk Durumu</th>
+                    <th className="px-6 py-4 text-right">Eylemler</th>
                   </tr>
-                );
-              })}
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {queuedItems.map(item => {
+                    const isTriggering = triggeringDeepIds[item.id];
+                    const isScanning = scanningIds[item.id];
+                    const status = (item.virusTotalStatus || '').toLowerCase();
 
-              {filteredItems.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="text-center py-12 text-slate-500 text-sm">
-                    Aramanızla eşleşen içerik bulunamadı.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+                    return (
+                      <tr key={item.id} className="hover:bg-white/[0.02] transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            {item.logoUrl ? (
+                              <img src={item.logoUrl} alt="" className="w-10 h-10 rounded-xl object-cover border border-white/10 bg-slate-800" />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10">
+                                <FileCode className="w-5 h-5 text-blue-400" />
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-semibold text-white flex items-center gap-2">
+                                {item.title}
+                              </div>
+                              <div className="text-xs text-slate-500 font-mono">
+                                {item.packageName || (item.fileUrl ? item.fileUrl.split('/').pop()?.slice(0, 30) : '—')}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {item.virusTotalScore ? (
+                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-white/5 border border-white/10 text-emerald-400">
+                              VT: {item.virusTotalScore}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-slate-500">Taranmadı</span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                              🌙 MobSF SAST
+                            </span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                              🌙 APKiD
+                            </span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                              🌙 Quark
+                            </span>
+                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-amber-500/10 text-amber-300 border border-amber-500/20">
+                              🌙 ClamAV
+                            </span>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          {status === 'scanning' ? (
+                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 flex items-center gap-1.5 w-fit">
+                              <RefreshCw className="w-3 h-3 animate-spin" />
+                              Taranıyor...
+                            </span>
+                          ) : (
+                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-amber-500/10 text-amber-300 border border-amber-500/20 flex items-center gap-1.5 w-fit">
+                              <Clock className="w-3 h-3" />
+                              🌙 Gece Sırasında
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setSelectedItem(item)}
+                              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-300 transition-colors flex items-center gap-1.5"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-blue-400" />
+                              Karne
+                            </button>
+                            <button
+                              onClick={() => triggerManualDeepScan(item)}
+                              disabled={isTriggering || isScanning}
+                              className="px-3.5 py-1.5 rounded-lg bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 text-xs font-semibold text-amber-300 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                            >
+                              <Play className={`w-3.5 h-3.5 ${isTriggering ? 'animate-spin' : ''}`} />
+                              {isTriggering ? 'Başlatılıyor...' : '▶️ Şimdi Manuel Başlat'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {queuedItems.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-12 text-slate-500 text-sm">
+                        🎉 Kuyrukta bekleyen taranmamış uygulama yok! Tüm katalog derin analizden geçmiş.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ) : (
+          <div>
+            {/* Controls */}
+            <div className="p-4 sm:p-6 border-b border-white/5 flex flex-col md:flex-row gap-4 justify-between items-center">
+              <div className="relative w-full md:w-80">
+                <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" />
+                <input
+                  type="text"
+                  placeholder="Uygulama veya paket adı ara..."
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                {/* Type Filter */}
+                <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 text-xs">
+                  {(['ALL', 'APK', 'M3U'] as const).map(t => (
+                    <button
+                      key={t}
+                      onClick={() => setFilterType(t)}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                        filterType === t ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {t === 'ALL' ? 'Tümü' : t}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Status Filter */}
+                <div className="flex bg-white/5 p-1 rounded-xl border border-white/10 text-xs">
+                  {(['ALL', 'CLEAN', 'WARNING', 'UNSCANNED'] as const).map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setFilterStatus(s)}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition-all ${
+                        filterStatus === s ? 'bg-emerald-600 text-white' : 'text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {s === 'ALL' ? 'Tüm Durumlar' : s === 'CLEAN' ? 'Temiz' : s === 'WARNING' ? 'Riskli' : 'Taranmamış'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-slate-300">
+                <thead className="bg-white/5 text-xs uppercase text-slate-400 font-semibold border-b border-white/5">
+                  <tr>
+                    <th className="px-6 py-4">İçerik</th>
+                    <th className="px-4 py-4">Tür</th>
+                    <th className="px-6 py-4">7 Motor Güvenlik Durumu</th>
+                    <th className="px-4 py-4 text-center">Skor</th>
+                    <th className="px-4 py-4">Son Tarama</th>
+                    <th className="px-6 py-4 text-right">Eylemler</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {filteredItems.map(item => {
+                    const isM3U = item.type.toUpperCase() === 'M3U';
+                    const status = (item.virusTotalStatus || '').toLowerCase();
+                    const isClean = status === 'clean' || status === 'temiz';
+                    const isWarning = ['malicious', 'warning', 'suspicious'].includes(status);
+                    const isScanning = scanningIds[item.id];
+
+                    return (
+                      <tr
+                        key={item.id}
+                        className="hover:bg-white/[0.02] transition-colors cursor-pointer"
+                        onClick={() => setSelectedItem(item)}
+                      >
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            {item.logoUrl ? (
+                              <img
+                                src={item.logoUrl}
+                                alt=""
+                                className="w-10 h-10 rounded-xl object-cover border border-white/10 bg-slate-800"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center border border-white/10">
+                                {isM3U ? <Radio className="w-5 h-5 text-cyan-400" /> : <FileCode className="w-5 h-5 text-blue-400" />}
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-semibold text-white hover:text-emerald-400 transition-colors flex items-center gap-2">
+                                {item.title}
+                              </div>
+                              <div className="text-xs text-slate-500 font-mono">
+                                {item.packageName || (item.fileUrl ? item.fileUrl.split('/').pop()?.slice(0, 30) : '—')}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-4">
+                          <span
+                            className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                              isM3U
+                                ? 'bg-cyan-500/10 text-cyan-400 border border-cyan-500/20'
+                                : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'
+                            }`}
+                          >
+                            {item.type}
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4">
+                          {isClean ? (
+                            <div className="flex items-center gap-2 text-emerald-400 font-medium">
+                              <CheckCircle2 className="w-4 h-4" />
+                              <span>{isM3U ? 'Akış & Komut Onaylı' : '7/7 Motor Onaylı (Temiz)'}</span>
+                            </div>
+                          ) : isWarning ? (
+                            <div className="flex items-center gap-2 text-rose-400 font-medium">
+                              <AlertTriangle className="w-4 h-4" />
+                              <span>{item.virusTotalScore || 'Tehdit / Uyarı Tespit Edildi'}</span>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-slate-500">
+                              <Shield className="w-4 h-4" />
+                              <span>Taranmamış</span>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="px-4 py-4 text-center">
+                          <div className="inline-flex items-center px-2.5 py-1 rounded-full font-bold text-xs bg-white/5 border border-white/10 text-emerald-400">
+                            %{item.securityScore || 95}
+                          </div>
+                        </td>
+
+                        <td className="px-4 py-4 text-xs text-slate-400">
+                          {item.lastScanned ? new Date(item.lastScanned).toLocaleDateString('tr-TR') : 'Bilinmiyor'}
+                        </td>
+
+                        <td className="px-6 py-4 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => setSelectedItem(item)}
+                              className="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-300 transition-colors flex items-center gap-1.5"
+                              title="Detaylı Analiz"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-blue-400" />
+                              Detay
+                            </button>
+                            <button
+                              onClick={() => triggerScan(item)}
+                              disabled={isScanning}
+                              className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-xs font-medium text-emerald-300 transition-colors flex items-center gap-1.5 disabled:opacity-50"
+                              title="7 Motorla Tara"
+                            >
+                              <Play className={`w-3.5 h-3.5 ${isScanning ? 'animate-spin' : ''}`} />
+                              {isScanning ? 'Taranıyor...' : 'Tara'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {filteredItems.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="text-center py-12 text-slate-500 text-sm">
+                        Aramanızla eşleşen içerik bulunamadı.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Detail Modal */}

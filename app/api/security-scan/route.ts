@@ -167,6 +167,53 @@ export async function POST(req: Request) {
     const body = await req.json();
     const { action, apk_url, sha256, package_name, listing_id, target_type } = body;
 
+    // 0. Manuel Derin Analiz Tetikleyicisi (GitHub Actions Runner Manuel Başlatma)
+    if (action === 'trigger_deep') {
+      const targetUrl = apk_url || '';
+      const type = target_type || (targetUrl.includes('.m3u') ? 'm3u' : 'apk');
+      const ghToken = process.env.GITHUB_TOKEN;
+      let dispatched = false;
+
+      if (ghToken && targetUrl) {
+        try {
+          const ghRes = await fetch('https://api.github.com/repos/simurgulgen/PrimeForge/dispatches', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${ghToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'PrimeForge-Security-Console',
+            },
+            body: JSON.stringify({
+              event_type: 'security_scan',
+              client_payload: {
+                target_url: targetUrl,
+                target_type: type,
+                listing_id: listing_id || '',
+                sha256: sha256 || '',
+              },
+            }),
+          });
+          dispatched = ghRes.status === 204;
+        } catch (e) {
+          console.error('Manual GitHub Actions dispatch failed:', e);
+        }
+      }
+
+      if (listing_id) {
+        await supabase.from('listings').update({
+          virus_total_status: 'scanning',
+        }).eq('id', listing_id);
+      }
+
+      return NextResponse.json({
+        success: true,
+        dispatched,
+        message: dispatched
+          ? 'GitHub Actions derin analiz runnerı tetiklendi (ClamAV, MobSF, APKiD, Quark).'
+          : 'Manuel derin analiz sıraya alındı (Gece cronu veya runner tarafından işlenecek).'
+      });
+    }
+
     // 1. Taramayı Başlatma Tetikleyicisi (YOL A: Anında Bulut Sorgusu + Arka Plan GitHub Actions)
     if (action === 'trigger') {
       const targetUrl = apk_url || '';
@@ -245,36 +292,34 @@ export async function POST(req: Request) {
             },
             mobsf_light: {
               engine: 'MobSF Light',
-              security_score: overallScore,
-              status: 'clean',
+              status: 'pending_nightly',
+              security_score: null,
               dangerous_permissions: [],
               manifest_issues: [],
               secret_leaks: [],
-              summary: `Güvenlik Skoru: ${overallScore}/100 (Tehlikeli açık bulunamadı)`
+              summary: '🌙 Gece GitHub Runner analizi bekleniyor'
             },
             apkid: {
               engine: 'APKiD',
-              compiler: 'D8/R8',
+              status: 'pending_nightly',
+              compiler: 'Bekliyor',
               obfuscator: [],
               protector: [],
-              status: 'clean',
-              summary: 'Standart Android Derlemesi'
+              summary: '🌙 Gece GitHub Runner analizi bekleniyor'
             },
             quark: {
               engine: 'Quark-Engine',
-              threat_level: 'Clean',
+              status: 'pending_nightly',
+              threat_level: 'Pending',
               total_score: 0,
-              matched_rules: 278,
-              high_risk_crimes: [],
-              status: 'clean'
+              summary: '🌙 Gece GitHub Runner analizi bekleniyor'
             },
             clamav: {
               engine: 'ClamAV',
-              status: 'clean',
+              status: 'pending_nightly',
               infected_files: 0,
               threats: [],
-              scanned_files: 1,
-              scanner_mode: 'heuristic_signature'
+              summary: '🌙 Gece GitHub Runner analizi bekleniyor'
             }
           }
         };
