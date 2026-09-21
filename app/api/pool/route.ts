@@ -6,10 +6,14 @@ import fs from 'fs';
 export const dynamic = 'force-dynamic';
 
 function getScratchPath(filename: string) {
-  // PrimeStore root / scratch dizini
-  const candidate1 = path.join(process.cwd(), '..', 'scratch', filename);
+  // PrimeStore root / scratch dizini veya Vercel data dizini
+  const candidate1 = path.join(process.cwd(), 'data', filename);
   const candidate2 = path.join(process.cwd(), 'scratch', filename);
-  return fs.existsSync(candidate1) ? candidate1 : (fs.existsSync(candidate2) ? candidate2 : candidate1);
+  const candidate3 = path.join(process.cwd(), '..', 'scratch', filename);
+  if (fs.existsSync(candidate1)) return candidate1;
+  if (fs.existsSync(candidate2)) return candidate2;
+  if (fs.existsSync(candidate3)) return candidate3;
+  return candidate1;
 }
 
 function getScriptsPath(filename: string) {
