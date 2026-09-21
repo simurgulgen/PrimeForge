@@ -6,13 +6,15 @@ import fs from 'fs';
 export const dynamic = 'force-dynamic';
 
 function getScratchPath(filename: string) {
-  // PrimeStore root / scratch dizini veya Vercel data dizini
+  // PrimeStore root / data veya scratch dizini ya da Vercel data dizini
   const candidate1 = path.join(process.cwd(), 'data', filename);
-  const candidate2 = path.join(process.cwd(), 'scratch', filename);
-  const candidate3 = path.join(process.cwd(), '..', 'scratch', filename);
+  const candidate2 = path.join(process.cwd(), '..', 'data', filename);
+  const candidate3 = path.join(process.cwd(), 'scratch', filename);
+  const candidate4 = path.join(process.cwd(), '..', 'scratch', filename);
   if (fs.existsSync(candidate1)) return candidate1;
   if (fs.existsSync(candidate2)) return candidate2;
   if (fs.existsSync(candidate3)) return candidate3;
+  if (fs.existsSync(candidate4)) return candidate4;
   return candidate1;
 }
 
