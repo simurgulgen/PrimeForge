@@ -72,10 +72,44 @@ export default function SecurityConsolePage() {
   const [selectedItem, setSelectedItem] = useState<ListingItem | null>(null);
   const [scanningIds, setScanningIds] = useState<Record<string, boolean>>({});
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 3500);
+  };
+
+  const runAiSecurityAudit = async (item: ListingItem) => {
+    if (!item.securityReport) {
+      showToast('Önce bir güvenlik raporu bulunmalı.');
+      return;
+    }
+    setAiLoading(true);
+    showToast('🧠 NVIDIA NIM (Nemotron 120B) güvenlik sonuçlarını inceliyor...');
+    try {
+      const res = await fetch('/api/ai/security-audit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: item.title,
+          packageName: item.packageName,
+          type: item.type,
+          securityReport: item.securityReport,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && data.analysis) {
+        setAiAnalysis(data.analysis);
+        showToast('✅ NVIDIA NIM analizi hazır!');
+      } else {
+        showToast('⚠️ Analiz alınamadı: ' + (data.error || 'Bilinmeyen hata'));
+      }
+    } catch (err: any) {
+      showToast('❌ Bağlantı hatası: ' + err.message);
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   const loadData = async () => {
@@ -575,6 +609,38 @@ export default function SecurityConsolePage() {
                     <p className="text-xs text-slate-400">Açık kaynaklı Linux antivirüs motoru statik imza kontrolü.</p>
                   </div>
                 </div>
+
+                {/* NVIDIA NIM AI Analyst Card */}
+                {aiAnalysis && (
+                  <div className="mt-4 p-4 rounded-xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border border-emerald-500/30">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">🧠</span>
+                        <span className="text-xs font-bold text-emerald-300">
+                          NVIDIA NIM 120B Güvenlik Analisti Değerlendirmesi
+                        </span>
+                      </div>
+                      <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                        aiAnalysis.is_false_positive ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                      }`}>
+                        {aiAnalysis.verdict_category || (aiAnalysis.is_false_positive ? '✅ Normal / False-Positive' : '⚠️ İnceleme Gereklidir')}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-200 mb-2 font-medium">
+                      {aiAnalysis.ai_summary}
+                    </p>
+
+                    <p className="text-xs text-slate-400 mb-3 leading-relaxed bg-black/30 p-2.5 rounded-lg border border-white/5">
+                      {aiAnalysis.detailed_breakdown}
+                    </p>
+
+                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-2 border-t border-white/5">
+                      <span>💡 Tavsiye: <strong className="text-slate-200">{aiAnalysis.recommended_action}</strong></span>
+                      <span className="text-emerald-400 font-bold">Düzeltilmiş Skor: %{aiAnalysis.adjusted_score || 95}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -585,7 +651,18 @@ export default function SecurityConsolePage() {
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => setSelectedItem(null)}
+                  onClick={() => runAiSecurityAudit(selectedItem)}
+                  disabled={aiLoading}
+                  className="px-4 py-2 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/30 text-xs font-semibold transition-colors flex items-center gap-2"
+                >
+                  <span>🧠</span>
+                  {aiLoading ? 'NVIDIA NIM İnceliyor...' : 'Yapay Zeka ile İncele'}
+                </button>
+                <button
+                  onClick={() => {
+                    setSelectedItem(null);
+                    setAiAnalysis(null);
+                  }}
                   className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-xs font-semibold text-slate-300 transition-colors"
                 >
                   Kapat
@@ -594,6 +671,7 @@ export default function SecurityConsolePage() {
                   onClick={() => {
                     triggerScan(selectedItem);
                     setSelectedItem(null);
+                    setAiAnalysis(null);
                   }}
                   className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition-colors flex items-center gap-2"
                 >
