@@ -33,6 +33,13 @@ interface Account {
   exp_date?: string;
   has_tr?: boolean;
   claimed?: boolean;
+  claimed_by?: {
+    user_id: string;
+    username?: string;
+    slot: number;
+    claimed_at?: number;
+    device_fp?: string;
+  };
   source?: string;
   last_checked?: number;
 }
@@ -439,9 +446,26 @@ export default function IptvPoolPage() {
                       </td>
                       <td className="py-3 px-4">
                         {acc.claimed ? (
-                          <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px]">
-                            TANIMLI
-                          </span>
+                          <div className="flex flex-col gap-1">
+                            <span className="px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-[10px] w-fit font-bold flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse"></span>
+                              TANIMLI
+                            </span>
+                            {acc.claimed_by && (
+                              <div
+                                className="text-[10.5px] text-blue-300 font-sans flex items-center gap-1 bg-blue-950/40 px-1.5 py-0.5 rounded border border-blue-800/40 w-fit"
+                                title={`Kullanıcı ID: ${acc.claimed_by.user_id}\nCihaz FP: ${acc.claimed_by.device_fp || '-'}\nTarih: ${acc.claimed_by.claimed_at ? new Date(acc.claimed_by.claimed_at).toLocaleString('tr-TR') : '-'}`}
+                              >
+                                <span>👤</span>
+                                <span className="font-semibold text-white">
+                                  {acc.claimed_by.username || acc.claimed_by.user_id.substring(0, 8)}
+                                </span>
+                                <span className="px-1 rounded bg-blue-700/50 text-[9px] text-blue-100 font-bold">
+                                  Slot {acc.claimed_by.slot}
+                                </span>
+                              </div>
+                            )}
+                          </div>
                         ) : isFull ? (
                           <span className="px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-[10px]">
                             1/1 DOLU
