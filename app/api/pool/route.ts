@@ -48,24 +48,30 @@ export async function GET() {
 
     let accounts = poolData.accounts || [];
 
-    // Vercel Serverless veya yerel dosyanın olmadığı durumlarda Cloudflare KV Gateway'den çek
-    if (accounts.length === 0) {
-      try {
-        const gwRes = await fetch('https://primestore-gateway.simurgulgen.workers.dev/iptv/pool-status', {
-          headers: {
-            'X-PrimeStore-Client': 'primeforge',
-            'X-PrimeStore-Secret': 'primestore_admin_2026'
-          },
-          cache: 'no-store'
-        });
-        if (gwRes.ok) {
-          const gwData = await gwRes.json();
-          if (Array.isArray(gwData.accounts)) {
-            accounts = gwData.accounts;
-            poolData.updated_at = gwData.last_synced ? new Date(gwData.last_synced).getTime() : Date.now();
-          }
+    // Canlı havuz verisi ve kullanıcı claim (tanımlı) durumunu Cloudflare KV Gateway'den çek
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const gwRes = await fetch('https://api.primestore.world/iptv/pool-status', {
+        headers: {
+          'X-PrimeStore-Client': 'primeforge',
+          'X-PrimeStore-Secret': 'primestore_admin_2026',
+          'User-Agent': 'PrimeForge/2.0'
+        },
+        cache: 'no-store',
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (gwRes.ok) {
+        const gwData = await gwRes.json();
+        if (Array.isArray(gwData.accounts) && gwData.accounts.length > 0) {
+          accounts = gwData.accounts;
+          poolData.updated_at = gwData.last_synced ? new Date(gwData.last_synced).getTime() : Date.now();
         }
-      } catch (_) {}
+      }
+    } catch (_) {
+      // Gateway geçici olarak yanıt vermezse diskteki havuzu kullan
     }
 
     const total = accounts.length;
@@ -75,7 +81,8 @@ export async function GET() {
     const dead = accounts.filter((a: any) => ['dead', 'expired', 'pasif'].includes((a.status || '').toLowerCase())).length;
     const tr = accounts.filter((a: any) => a.has_tr).length;
 
-    const resolvedCount = Object.keys(registryData.resolved_links || {}).length;
+    const resolvedMap = registryData.links || registryData.resolved_links || {};
+    const resolvedCount = Object.keys(resolvedMap).length;
 
     return NextResponse.json({
       success: true,
@@ -90,7 +97,7 @@ export async function GET() {
         last_updated: poolData.updated_at || 0
       },
       accounts,
-      registry: registryData.resolved_links || {}
+      registry: resolvedMap
     });
   } catch (err: any) {
     return NextResponse.json({ success: false, error: err.message }, { status: 500 });
@@ -105,24 +112,72 @@ export async function POST(req: Request): Promise<NextResponse> {
     const scraperScript = getScriptsPath('wars_iptv_scraper.py');
     const rootDir = path.resolve(scraperScript, '..', '..');
 
+    // Vercel Serverless Ortamı: Python scripti doğrudan çalıştırılamazsa GitHub Actions Workflow'unu tetikle
     if (!fs.existsSync(scraperScript)) {
+      if (action === 'scan' || action === 'scan_unscraped') {
+        const ghToken = process.env.GITHUB_TOKEN;
+        if (!ghToken) {
+          return NextResponse.json({
+            success: false,
+            action,
+            error: 'GitHub Actions tetiklemesi için Vercel ortamında GITHUB_TOKEN tanımlanmalıdır.',
+            output: '[i] Vercel Serverless: Havuz verileri Cloudflare KV üzerinden canlı senkronize edilmektedir.'
+          }, { status: 400 });
+        }
+        try {
+          const ghRes = await fetch('https://api.github.com/repos/simurgulgen/PrimeStore/actions/workflows/nightly_iptv_pool_scan.yml/dispatches', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${ghToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'PrimeForge-Pool-Dispatcher',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ref: 'main' })
+          });
+
+          if (ghRes.ok || ghRes.status === 204) {
+            return NextResponse.json({
+              success: true,
+              action,
+              output: '[✔] GitHub Actions Cloud Runner Başlatıldı!\nİş Akışı: nightly_iptv_pool_scan.yml (simurgulgen/PrimeStore)\nTaranmamış tüm içerikler GitHub bulut ortamında taranıp havuza ve Cloudflare KV\'ye eklenecektir.\nDurumu GitHub Actions panelinden veya birkaç dakika sonra sayfayı yenileyerek görebilirsiniz.'
+            });
+          } else {
+            const errText = await ghRes.text();
+            return NextResponse.json({
+              success: false,
+              action,
+              error: `GitHub Actions tetiklenemedi (${ghRes.status}): ${errText}`
+            }, { status: 500 });
+          }
+        } catch (ghErr: any) {
+          return NextResponse.json({
+            success: false,
+            action,
+            error: `GitHub API hatası: ${ghErr.message}`
+          }, { status: 500 });
+        }
+      }
+
       return NextResponse.json({
         success: false,
         action,
-        error: 'Scraper yerel sunucu veya CI/CD makinesinde çalıştırılmalıdır (Vercel Serverless ortamında Python ve betik yer almaz).',
+        error: 'Bu işlem için yerel terminal veya CI/CD runner gereklidir.',
         output: '[i] Vercel Serverless ortamı: Havuz verileri Cloudflare KV Gateway üzerinden canlı senkronize edilmektedir.'
       });
     }
 
-    let flag = '--test-pool';
-    if (action === 'scan') flag = '--scan-portal';
-    else if (action === 'clean') flag = '--clean-dead';
-    else if (action === 'sync') flag = '--sync-kv';
-    else if (action === 'test') flag = '--test-pool';
-
-    const args = [scraperScript, flag];
-    if (action === 'scan') {
-      args.push('--sync-kv'); // Tarama sonrası otomatik KV'ye de yaz
+    let args = [scraperScript];
+    if (action === 'scan' || action === 'scan_unscraped') {
+      args.push('--scan-portal', '--only-unscraped', '--sync-kv');
+    } else if (action === 'scan_all') {
+      args.push('--scan-portal', '--sync-kv');
+    } else if (action === 'clean') {
+      args.push('--clean-dead', '--sync-kv');
+    } else if (action === 'sync') {
+      args.push('--sync-kv');
+    } else {
+      args.push('--test-pool');
     }
 
     return new Promise<NextResponse>((resolve) => {

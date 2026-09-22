@@ -89,7 +89,7 @@ export default function IptvPoolPage() {
     fetchPoolData();
   }, []);
 
-  const handleAction = async (action: 'scan' | 'test' | 'clean' | 'sync') => {
+  const handleAction = async (action: 'scan' | 'scan_unscraped' | 'scan_all' | 'test' | 'clean' | 'sync') => {
     try {
       setActionRunning(action);
       setConsoleOutput(`[*] '${action}' işlemi başlatıldı, lütfen bekleyin...\n`);
@@ -160,16 +160,17 @@ export default function IptvPoolPage() {
 
         <div className="flex items-center gap-3">
           <button
-            onClick={() => handleAction('scan')}
+            onClick={() => handleAction('scan_unscraped')}
             disabled={!!actionRunning}
+            title="Henüz taranmamış yeni portal kartlarını tespit edip havuza ekler"
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-amber-600 hover:from-rose-500 hover:to-amber-500 text-white font-medium text-sm shadow-lg shadow-rose-500/20 transition-all flex items-center gap-2 disabled:opacity-50"
           >
-            {actionRunning === 'scan' ? (
+            {actionRunning === 'scan_unscraped' || actionRunning === 'scan' ? (
               <RefreshCw className="w-4 h-4 animate-spin" />
             ) : (
               <Zap className="w-4 h-4 text-amber-200" />
             )}
-            Wars TV Şimdi Tara
+            Content Taraması Başlat
           </button>
 
           <button

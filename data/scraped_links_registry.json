@@ -1,7 +1,15 @@
 {
-  "last_updated": 1790027644,
-  "scraped_count": 1,
+  "last_updated": 1790083336,
+  "scraped_count": 13,
   "links": {
+    "https://ay.live/dXYpy": {
+      "title": "510X PİKACHU IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "22/09/2026",
+      "resolved_url": "https://pastequest.com/?65e0f0a1384e51fb#2pWdqyM9ejnV7cgaDgvxfpZfpwPJwZpizirMP333vUjV",
+      "accounts_found": 486,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
     "http://tiny.cc/scta101": {
       "title": "KURT IPTV M3U ADRESLERİ EKLENDİ",
       "date_tag": "21/09/2026",
@@ -9,7 +17,95 @@
       "accounts_found": 38,
       "scraped_at": 1790027644,
       "status": "COMPLETED"
+    },
+    "http://tiny.cc/2sra101": {
+      "title": "143X OMEGA IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "20/09/2026",
+      "resolved_url": "https://pastequest.com/?0efcd7de621164a2#EAb6rH2xemXjVm1rTca6912syp1tU2GDJdAmouJLrQmd",
+      "accounts_found": 143,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "https://tinyurl.com/44r2jyab": {
+      "title": "659X ZAL IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "19/09/2026",
+      "resolved_url": "https://pastequest.com/?6da9411faa2a9fb5#5SH6PRvNpteqk9vhMjbzdMhzjYx6kbDHUYTDb5mbYXno",
+      "accounts_found": 566,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "https://tinyurl.com/22r248w4": {
+      "title": "SZX IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "18/09/2026",
+      "resolved_url": "https://pastequest.com/?7a72005e32e47748#CGdo6Ao4rJxweWMKQer2Vy5RFaouWYmS9ikFfBjnTQUr",
+      "accounts_found": 107,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "http://tiny.cc/b0ma101": {
+      "title": "HX IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "17/09/2026",
+      "resolved_url": "https://pastequest.com/?61e0b6e03df39ba0#ESpzbtEKatEuct339ZtLLY7NgDdmGvZK3pYrn3rYQKRe",
+      "accounts_found": 27,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "http://tiny.cc/gsja101": {
+      "title": "686X SANCAK IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "16/09/2026",
+      "resolved_url": "https://pastequest.com/?7954885a7cd8f4c1#8W2PGWqNibeE4dG3R6ev4xD72HFWUAQ3fCJUMsoqqkMA",
+      "accounts_found": 651,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "https://ay.live/yTx4": {
+      "title": "566X SANCAK IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "15/09/2026",
+      "resolved_url": "https://pastequest.com/?2b5ca2728e249384#Hhym1C8iDPZmzk1wX2JpHGYty9YFFP1PwdFAdWLnwhBd",
+      "accounts_found": 531,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "http://tiny.cc/dafa101": {
+      "title": "120X PARİS IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "14/09/2026",
+      "resolved_url": "https://pastequest.com/?7bce2b338dc9f608#AYk6aD5Bg7ZD4KSWQNgtXz6yHNvzRZ4kXfuqpMqz6jPi",
+      "accounts_found": 120,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "http://tiny.cc/o9da101": {
+      "title": "STB - M3U IPTV ADRESLERİ EKLENDİ",
+      "date_tag": "13/09/2026",
+      "resolved_url": "https://pastequest.com/?17438c0c9ceca74b#CjL9jWsTJkekk1AjmTMvvANCz8hoUsa6vkXQ7qKdu8Vf",
+      "accounts_found": 0,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "https://DeaTHLesS.short.gy/xtream-iptv": {
+      "title": "1353X XTREAM KİŞİYE ÖZEL IPTV M3U ADRESLERİ EKLENDİ",
+      "date_tag": "12/09/2026",
+      "resolved_url": "http://freextream.mywire.org/iptv.php",
+      "accounts_found": 0,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "https://ay.live/z4kQP": {
+      "title": "3800X XTREAM IPTV M3U ADRESİ EKLENDİ",
+      "date_tag": "11/09/2026",
+      "resolved_url": "https://pastequest.com/?7912f0755b13453a#4dXYwLS9TWU83TYAh2BkpetHGUGQz3unusQAWNmLdvrm",
+      "accounts_found": 3488,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
+    },
+    "http://tiny.cc/km4a101": {
+      "title": "1085X ANKA IPTV M3U ADRESİ EKLENDİ",
+      "date_tag": "09/09/2026",
+      "resolved_url": "https://www.mediafire.com/file/t4386uqscq0zsx1/1085X(ANKARALI&DEATHLESS).txt",
+      "accounts_found": 2503,
+      "scraped_at": 1790083336,
+      "status": "COMPLETED"
     }
   },
-  "updated_at": 1790032041
+  "updated_at": 1790084515
 }
