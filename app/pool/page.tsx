@@ -159,7 +159,7 @@ export default function IptvPoolPage() {
                 IPTV Hediye Havuzu & Scraper
               </h1>
               <p className="text-sm text-slate-400">
-                Wars TV Dinamik Portalı & KısaLinkAtla Bypass Motoru • Canlı 1/1 Doluluk Garantisi
+                Prime Stream Dinamik Portalı & KısaLinkAtla Bypass Motoru • Canlı 1/1 Doluluk Garantisi
               </p>
             </div>
           </div>
@@ -213,7 +213,7 @@ export default function IptvPoolPage() {
         <div className="glass-panel p-4 rounded-2xl border border-white/5 relative overflow-hidden">
           <div className="text-xs font-mono text-slate-400">Toplam Hesap</div>
           <div className="text-2xl font-bold text-white mt-1">{stats.total}</div>
-          <div className="text-xs text-slate-500 mt-1">Wars TV Havuzu</div>
+          <div className="text-xs text-slate-500 mt-1">Prime Stream Havuzu</div>
         </div>
 
         <div className="glass-panel p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden">
@@ -263,7 +263,7 @@ export default function IptvPoolPage() {
           <div className="space-y-1">
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <h3 className="font-semibold text-white">Wars TV Dinamik Portalı & KısaLinkAtla Entegrasyonu</h3>
+              <h3 className="font-semibold text-white">Prime Stream Dinamik Portalı & KısaLinkAtla Entegrasyonu</h3>
               <span className="px-2 py-0.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-mono">
                 Tek Kaynak (1)
               </span>
@@ -394,7 +394,7 @@ export default function IptvPoolPage() {
               ) : filteredAccounts.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-8 text-center text-slate-500">
-                    Hesap bulunamadı. "Wars TV Şimdi Tara" butonunu kullanarak havuzu doldurabilirsiniz.
+                    Hesap bulunamadı. "Content Taraması Başlat" butonunu kullanarak havuzu doldurabilirsiniz.
                   </td>
                 </tr>
               ) : (

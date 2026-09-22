@@ -429,7 +429,7 @@ Aşağıdaki hızlı butonları kullanabilir veya doğrudan incelemek istediğin
                 <label className="text-[11px] font-semibold text-slate-300">Hedef Sınıf Adı</label>
                 <input
                   type="text"
-                  placeholder="Örn: com.medya.warstv.MainActivity"
+                  placeholder="Örn: com.medya.player.MainActivity"
                   value={auditTargetClass}
                   onChange={(e) => setAuditTargetClass(e.target.value)}
                   className="w-full bg-slate-900 border border-white/10 rounded-xl px-3 py-2 text-xs text-white placeholder-slate-600 focus:outline-none focus:border-purple-500 font-mono"

@@ -882,7 +882,7 @@ def run_all_scans(apk_path: str, decompiled_dir: str = None, output_dir: str = "
 
 
 if __name__ == "__main__":
-    test_apk = sys.argv[1] if len(sys.argv) > 1 else r"c:\PrimeStore\scratch\warstv.apk"
+    test_apk = sys.argv[1] if len(sys.argv) > 1 else r"c:\PrimeStore\scratch\test_app.apk"
     if not os.path.exists(test_apk):
         print(f"Hata: {test_apk} bulunamadı.")
         sys.exit(1)
