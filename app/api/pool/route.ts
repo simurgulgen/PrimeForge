@@ -48,10 +48,11 @@ export async function GET() {
 
     let accounts = poolData.accounts || [];
 
+    let gwStats: any = null;
     // Canlı havuz verisi ve kullanıcı claim (tanımlı) durumunu Cloudflare KV Gateway'den çek
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 6000);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       const gwRes = await fetch('https://api.primestore.world/iptv/pool-status', {
         headers: {
           'X-PrimeStore-Client': 'primeforge',
@@ -65,6 +66,7 @@ export async function GET() {
 
       if (gwRes.ok) {
         const gwData = await gwRes.json();
+        gwStats = gwData;
         if (Array.isArray(gwData.accounts) && gwData.accounts.length > 0) {
           accounts = gwData.accounts;
           poolData.updated_at = gwData.last_synced ? new Date(gwData.last_synced).getTime() : Date.now();
@@ -74,12 +76,12 @@ export async function GET() {
       // Gateway geçici olarak yanıt vermezse diskteki havuzu kullan
     }
 
-    const total = accounts.length;
-    const active = accounts.filter((a: any) => (a.status || '').toLowerCase() === 'active' && !a.claimed).length;
-    const claimed = accounts.filter((a: any) => a.claimed).length;
+    const total = gwStats?.total_accounts || accounts.length;
+    const active = gwStats?.active_accounts ?? accounts.filter((a: any) => (a.status || '').toLowerCase() === 'active' && !a.claimed).length;
+    const claimed = gwStats?.claimed_accounts ?? accounts.filter((a: any) => a.claimed).length;
     const full = accounts.filter((a: any) => (a.status || '').toLowerCase() === 'full').length;
     const dead = accounts.filter((a: any) => ['dead', 'expired', 'pasif'].includes((a.status || '').toLowerCase())).length;
-    const tr = accounts.filter((a: any) => a.has_tr).length;
+    const tr = gwStats?.tr_accounts ?? accounts.filter((a: any) => a.has_tr).length;
 
     const resolvedMap = registryData.links || registryData.resolved_links || {};
     const resolvedCount = Object.keys(resolvedMap).length;
