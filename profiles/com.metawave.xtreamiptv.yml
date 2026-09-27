@@ -1,5 +1,6 @@
 name: "Xtiva IPTV Pro Mod"
 package: "com.metawave.xtreamiptv"
+current_version: "3.3.0"
 extends: "_base"
 auto_apply: true
 

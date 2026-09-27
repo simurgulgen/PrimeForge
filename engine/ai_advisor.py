@@ -761,4 +761,165 @@ Hatanın giderilmesi için düzeltilmiş yama tanımını aşağıdaki JSON form
     return default_heal
 
 
+# ===================================================================
+# NIM OTOMASYON PROMPT KÜTÜPHANESİ & AKILLI DOĞRULAMA FONKSİYONLARI
+# ===================================================================
 
+NIM_UPDATE_VERIFY_PROMPT = """Sen PrimeStore uygulama mağazası için Güncelleme Doğrulama Denetçisisin.
+
+Sana bir uygulamanın güncelleme bilgileri verilecek. Görevin:
+1. Yeni sürümün gerçekten mevcut sürümden yüksek olup olmadığını doğrula (semantik versiyonlama: major.minor.patch)
+2. APK indirme URL'sinin güvenilir bir kaynaktan gelip gelmediğini değerlendir (github.com, apkmirror vb. güvenilir; bilinmeyen domainler riskli)
+3. Paket adı ile release/asset adlarının uyumluluğunu kontrol et (ör: "smarttube" release'inde "mx_player.apk" varsa uyumsuz)
+4. Bilinen zararlı pattern'leri tespit et (typosquatting, sahte güncelleme, aşırı büyük sürüm atlama)
+
+MUTLAKA aşağıdaki JSON formatında yanıt ver, başka metin ekleme:
+{"approved": true, "confidence": 85, "reason": "Gerekçe", "risk_flags": [], "recommended_action": "auto_mod"}
+
+recommended_action değerleri: "auto_mod" (tam otomatik), "manual_review" (Telegram'da onay bekle), "skip" (atla)"""
+
+NIM_IPTV_EXTRACT_PROMPT = """Sen IPTV hesap ayrıştırma uzmanısın.
+
+Sana düzensiz, karışık metin içeriği verilecek. Bu metnin içinden Xtream Codes IPTV hesap bilgilerini çıkar.
+
+Her hesap için şu bilgileri bul:
+- host: Sunucu adresi (http:// veya https:// ile başlayan, port numarası dahil)
+- username: Kullanıcı adı
+- password: Şifre
+
+Hesaplar genellikle şu formatlarda olabilir:
+- http://host:port/get.php?username=X&password=Y&type=m3u_plus
+- host:port username password
+- Host: X Port: Y User: Z Pass: W
+- M3U URL içindeki /live/username/password/ yapısı
+
+MUTLAKA aşağıdaki JSON formatında yanıt ver, başka metin ekleme:
+{"accounts": [{"host": "http://...:port", "username": "...", "password": "..."}], "total_found": 0, "parse_notes": ""}"""
+
+NIM_STREAM_HEALTH_PROMPT = """Sen IPTV yayın sağlık analisti olarak görev yapıyorsun.
+
+Sana bir IPTV havuzunun sağlık kontrol sonuçları verilecek. Görevin:
+1. Ölü/ulaşılmaz sunucuları tespit et
+2. Süresi dolmuş hesapları belirle
+3. Kalite düşüşü gösteren sunucuları işaretle
+4. Havuz optimizasyonu için öneriler sun
+
+MUTLAKA aşağıdaki JSON formatında yanıt ver:
+{"dead_accounts": [], "expired_accounts": [], "degraded_accounts": [], "pool_health_score": 0, "recommendations": []}"""
+
+
+def nim_verify_update(app_name: str, package_name: str, current_ver: str,
+                      remote_ver: str, apk_url: str, source_repo: str = "") -> dict:
+    """NIM ile güncelleme doğrulaması yap.
+
+    Güncelleme bulunduğunda körü körüne pipeline başlatmak yerine, önce NIM'e
+    danışarak sürüm/güvenlik doğrulaması yapar. Structured JSON döner.
+
+    Returns:
+        dict: {"approved": bool, "confidence": int, "reason": str,
+               "risk_flags": list, "recommended_action": str}
+    """
+    prompt = f"""Uygulama Güncelleme Doğrulama Talebi:
+
+Uygulama Adı: {app_name}
+Paket Adı: {package_name}
+Mevcut Yüklü Sürüm: v{current_ver}
+Tespit Edilen Yeni Sürüm: v{remote_ver}
+APK İndirme URL: {apk_url}
+Kaynak GitHub Repo: {source_repo or 'Belirtilmemiş'}
+
+Bu güncellemeyi değerlendir ve JSON formatında onay/red ver."""
+
+    try:
+        response = ask_ai(prompt, system_instruction=NIM_UPDATE_VERIFY_PROMPT,
+                          max_tokens=500, temp=0.1)
+        result = _extract_yaml_or_json(response)
+        if result and "approved" in result:
+            print(f"  🧠 NIM Doğrulama Sonucu: approved={result.get('approved')}, "
+                  f"confidence={result.get('confidence')}%, "
+                  f"action={result.get('recommended_action')}")
+            return result
+    except Exception as e:
+        print(f"  ⚠️ NIM güncelleme doğrulama hatası: {e}")
+
+    # Fallback: NIM erişilemezse güvenli varsayılan — manuel onay iste
+    return {
+        "approved": True,
+        "confidence": 50,
+        "reason": "NIM doğrulama servisi erişilemedi, fallback onay verildi",
+        "risk_flags": ["nim_unavailable"],
+        "recommended_action": "manual_review"
+    }
+
+
+def nim_extract_iptv_accounts(raw_text: str) -> dict:
+    """NIM ile düzensiz metinden IPTV Xtream Codes hesaplarını çıkar.
+
+    Telegram'dan gelen .txt veya .m3u dosyalarındaki karışık içeriği NIM'e
+    göndererek host/username/password bilgilerini yapılandırılmış JSON olarak alır.
+
+    Args:
+        raw_text: Ham metin içeriği (max 8000 karakter kırpılır)
+
+    Returns:
+        dict: {"accounts": [{"host": str, "username": str, "password": str}],
+               "total_found": int, "parse_notes": str}
+    """
+    # Metin çok uzunsa NIM context window'a sığması için kırp
+    text_chunk = raw_text[:8000] if len(raw_text) > 8000 else raw_text
+    prompt = f"""Aşağıdaki metinden tüm IPTV Xtream Codes hesap bilgilerini çıkar:
+
+--- METİN BAŞLANGIÇ ---
+{text_chunk}
+--- METİN BİTİŞ ---"""
+
+    try:
+        response = ask_ai(prompt, system_instruction=NIM_IPTV_EXTRACT_PROMPT,
+                          max_tokens=2000, temp=0.1)
+        result = _extract_yaml_or_json(response)
+        if result and "accounts" in result and isinstance(result["accounts"], list):
+            print(f"  🧠 NIM IPTV Ayrıştırma: {len(result['accounts'])} hesap bulundu")
+            return result
+    except Exception as e:
+        print(f"  ⚠️ NIM IPTV ayrıştırma hatası: {e}")
+
+    return {"accounts": [], "total_found": 0, "parse_notes": "NIM ayrıştırma başarısız veya erişilemedi"}
+
+
+def nim_analyze_pool_health(health_data: list) -> dict:
+    """NIM ile IPTV havuz sağlık analizini yap.
+
+    Args:
+        health_data: Her hesap için {"key": str, "status": str, "fail_count": int, "latency_ms": int} listesi
+
+    Returns:
+        dict: {"dead_accounts": [], "expired_accounts": [], "pool_health_score": int, "recommendations": []}
+    """
+    # Çok büyük havuzlarda sadece sorunlu olanları NIM'e gönder
+    problematic = [h for h in health_data if h.get("status") != "active" or h.get("fail_count", 0) > 0]
+    if not problematic:
+        return {"dead_accounts": [], "expired_accounts": [], "degraded_accounts": [],
+                "pool_health_score": 100, "recommendations": ["Havuz sağlıklı, müdahale gerekmez"]}
+
+    summary = json.dumps(problematic[:50], ensure_ascii=False)
+    prompt = f"""IPTV Havuz Sağlık Kontrol Sonuçları:
+
+Toplam hesap: {len(health_data)}
+Sorunlu hesap: {len(problematic)}
+
+Sorunlu hesap detayları:
+{summary}
+
+Analiz et ve JSON formatında rapor ver."""
+
+    try:
+        response = ask_ai(prompt, system_instruction=NIM_STREAM_HEALTH_PROMPT,
+                          max_tokens=1500, temp=0.1)
+        result = _extract_yaml_or_json(response)
+        if result and "pool_health_score" in result:
+            return result
+    except Exception as e:
+        print(f"  ⚠️ NIM havuz sağlık analizi hatası: {e}")
+
+    return {"dead_accounts": [], "expired_accounts": [], "degraded_accounts": [],
+            "pool_health_score": -1, "recommendations": ["NIM analizi başarısız"]}

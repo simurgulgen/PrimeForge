@@ -136,6 +136,15 @@ function repoMatchesApp(repoName: string, pkg: string, title: string): boolean {
   return false;
 }
 
+const GENERIC_EXCLUSIONS = new Set([
+  'pro', 'mod', 'apk', 'oynatıcı', 'player', 'resmi', 'official', 'client', 'istemci',
+  'iptv', 'video', 'audio', 'music', 'media', 'editor', 'reader', 'manager', 'tools',
+  'plus', 'kitap', 'çizgi', 'roman', 'vpn', 'scanner', 'mobile', 'android', 'free',
+  'stream', 'tv', 'radio', 'news', 'notes', 'camera', 'photo', 'mail', 'drive', 'calc',
+  'weather', 'browser', 'game', 'play', 'live', 'app', 'online', 'store', 'universal',
+  'download', 'latest', 'release', 'update', 'patch', 'patched'
+]);
+
 function doesReleaseOrAssetBelongToApp(
   release: any,
   listing: any,
@@ -144,12 +153,12 @@ function doesReleaseOrAssetBelongToApp(
   const pkg = (listing.packageName || '').toLowerCase().trim();
   const title = (listing.title || '').toLowerCase().trim();
 
-  const pkgParts = pkg.split('.').filter((p: string) => p.length >= 3 && !['com', 'org', 'net', 'app', 'android', 'pro', 'plus', 'client'].includes(p));
+  const pkgParts = pkg.split('.').filter((p: string) => p.length >= 3 && !['com', 'org', 'net', 'app', 'android', 'pro', 'plus', 'client', ...Array.from(GENERIC_EXCLUSIONS)].includes(p));
   
   const knownAliases: Record<string, string[]> = {
     'com.foobnix.pdf.reader': ['librera', 'foobnix'],
     'com.foobnix.pro.pdf.reader': ['librera', 'foobnix'],
-    'com.frontrow.vlog': ['vn-editor', 'vn_editor', 'frontrow', 'vn'],
+    'com.frontrow.vlog': ['vn-editor', 'vn_editor', 'frontrow'],
     'com.axonplayer.app': ['axon', 'axonplayer'],
     'org.smarttube.stable': ['smarttube', 'smarttubanext'],
     'org.smarttube.beta': ['smarttube', 'smarttubanext'],
@@ -157,26 +166,41 @@ function doesReleaseOrAssetBelongToApp(
     'com.letterboxd.letterboxd': ['letterboxd'],
     'com.hevy': ['hevy'],
     'com.bytesong.missionalarm': ['alarmo', 'bytesong'],
-    'com.wixsite.ut_app.utalarm': ['utalarm', 'earphone'],
+    'com.wixsite.ut_app.utalarm': ['utalarm'],
     'org.languageapp.lingory': ['lingory'],
     'com.avocards': ['avocards'],
     'com.celestron.skybox': ['starsense', 'skybox', 'celestron'],
     'com.lumina.wallpapers': ['lumina'],
     'com.nomone.resolution_changer': ['nomone'],
-    'app.ttmikstories.android': ['ttmik', 'stories'],
+    'app.ttmikstories.android': ['ttmik'],
     'com.mirinae.mirinae': ['mirinae'],
     'cn.ommiao.iconpacker': ['iconpacker', 'ommiao'],
-    'com.amazon.avod.thirdpartyclient': ['primevideo', 'amazon', 'avod'],
+    'com.amazon.avod.thirdpartyclient': ['primevideo', 'amazon-video'],
     'com.snorelab.app': ['snorelab'],
     'net.teuida.teuida': ['teuida'],
-    'com.mxtech.videoplayer.ad': ['mxplayer', 'mxtech', 'mx_player', 'mx-player'],
+    'com.mxtech.videoplayer.ad': ['mxplayer', 'mxtech', 'mx_player', 'mx-player', 'mx-pro'],
     'org.videolan.vlc': ['vlc', 'videolan'],
-    'com.brouken.player': ['just.player', 'justplayer', 'just_player', 'brouken'],
+    'com.brouken.player': ['just.player', 'justplayer', 'just_player', 'just-player'],
     'org.fdroid.fdroid': ['f-droid', 'fdroid'],
     'com.beemdevelopment.aegis': ['aegis'],
     'org.quantumbadger.redreader': ['redreader'],
     'org.briarproject.briar.android': ['briar'],
     'com.lingodeer': ['lingodeer'],
+    'ch.protonvpn.android': ['proton-vpn', 'protonvpn'],
+    'ch.protonmail.android': ['proton-mail', 'protonmail'],
+    'com.cv.docscanner': ['docscanner', 'document-scanner'],
+    'com.intsig.camscanner': ['camscanner'],
+    'air.com.rosettastone.mobile.CoursePlayer': ['rosettastone', 'rosetta-stone'],
+    'com.adobe.lrmobile': ['lightroom', 'lrmobile', 'adobe.lrmobile'],
+    'com.windscribe.vpn': ['windscribe'],
+    'com.duolingo': ['duolingo'],
+    'com.spotify.music': ['spotify'],
+    'tv.trakt.trakt': ['trakt'],
+    'com.arlosoft.macrodroid': ['macrodroid'],
+    'com.groundspeak.geocaching.intro': ['geocaching'],
+    'in.cricketexchange.app.cricketexchange': ['crex'],
+    'com.teslacoilsw.launcher.prime': ['nova'],
+    'com.mobilefootie.fotmob': ['fotmob'],
   };
 
   const appTokens = new Set<string>();
@@ -186,7 +210,7 @@ function doesReleaseOrAssetBelongToApp(
     for (const a of knownAliases[pkg]) appTokens.add(a);
   }
 
-  const titleWords = title.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((w: string) => w.length >= 4 && !['pro', 'mod', 'apk', 'oynatıcı', 'player', 'resmi', 'official', 'client', 'istemci', 'iptv', 'video', 'audio', 'music', 'media', 'editor', 'reader', 'manager', 'tools', 'plus', 'kitap', 'çizgi', 'roman'].includes(w));
+  const titleWords = title.replace(/[^a-z0-9]/g, ' ').split(/\s+/).filter((w: string) => w.length >= 4 && !GENERIC_EXCLUSIONS.has(w));
   for (const tw of titleWords) appTokens.add(tw);
 
   const apkAssets = (release.assets || []).filter((a: any) =>
@@ -198,20 +222,37 @@ function doesReleaseOrAssetBelongToApp(
     return { belongs: true, matchingAssets: apkAssets };
   }
 
-  // SHARED REPO: Filter APK assets strictly by app tokens
+  // SHARED REPO: Filter APK assets strictly by app tokens with prefix/delimiter boundaries
   const matchingAssets: any[] = [];
   for (const asset of apkAssets) {
-    const assetName = asset.name.toLowerCase();
-    const matchesToken = Array.from(appTokens).some((token) => assetName.includes(token));
-    if (matchesToken) {
+    const assetName = asset.name.toLowerCase().replace(/_/g, '-');
+    let matched = false;
+
+    for (const token of Array.from(appTokens)) {
+      const t = token.toLowerCase().replace(/_/g, '-');
+      if (
+        assetName.startsWith(t + '-') ||
+        assetName.startsWith(t + '.') ||
+        assetName.includes('-' + t + '-') ||
+        assetName.includes('.' + t + '.') ||
+        (pkg && assetName.includes(pkg))
+      ) {
+        matched = true;
+        break;
+      }
+    }
+    if (matched) {
       matchingAssets.push(asset);
     }
   }
 
   // Check release tag or title for PrimeForge style "mod-com.axonplayer.app-v3.4.1"
-  const tag = (release.tag_name || '').toLowerCase();
-  const relName = (release.name || '').toLowerCase();
-  const releaseMatchesApp = Array.from(appTokens).some((token) => tag.includes(token) || relName.includes(token));
+  const tag = (release.tag_name || '').toLowerCase().replace(/_/g, '-');
+  const relName = (release.name || '').toLowerCase().replace(/_/g, '-');
+  const releaseMatchesApp = Array.from(appTokens).some((token) => {
+    const t = token.toLowerCase().replace(/_/g, '-');
+    return tag.includes(t) || relName.includes(t);
+  });
 
   // If release tag/name explicitly matches, but asset names are generic (e.g. app-release.apk), include them
   if (releaseMatchesApp && matchingAssets.length === 0 && apkAssets.length > 0) {
@@ -302,6 +343,15 @@ function sanitizeRegex(str: string | null | undefined): string {
 async function checkWithScraperRule(rule: any): Promise<{ new_version: string; download_url: string } | null> {
   const targetUrl = rule.target_url;
   if (!targetUrl) return null;
+
+  // Direct APK binary URL check (do not fetch HTML on binary files)
+  if (targetUrl.toLowerCase().endsWith('.apk')) {
+    const v = extractVersionFromUrlOrFilename(targetUrl);
+    if (v) {
+      return { new_version: v, download_url: targetUrl };
+    }
+    return null;
+  }
 
   try {
     const isLiteApks = targetUrl.includes('liteapks');
@@ -439,11 +489,35 @@ async function checkGitHubRepoContents(owner: string, repo: string, token?: stri
   return null;
 }
 
+let orionAppsMap: Map<string, any> | null = null;
+
+async function getOrionAppInfo(pkg: string): Promise<any | null> {
+  if (!pkg) return null;
+  if (!orionAppsMap) {
+    try {
+      const res = await fetch('https://raw.githubusercontent.com/RookieEnough/Orion-Data/main/apps.json', {
+        headers: { 'User-Agent': 'PrimeForge-Update-Checker' },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const list = await res.json();
+        orionAppsMap = new Map();
+        if (Array.isArray(list)) {
+          for (const item of list) {
+            const p = item.packageName || item.package_name || item.package;
+            if (p) orionAppsMap.set(p.toLowerCase().trim(), item);
+          }
+        }
+      }
+    } catch (_) {}
+  }
+  return orionAppsMap ? orionAppsMap.get(pkg.toLowerCase().trim()) || null : null;
+}
+
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const filterListingId = searchParams.get('listing_id');
-    const githubToken = process.env.GITHUB_DATA_PAT || process.env.GITHUB_PAT || '';
+    const githubToken = process.env.GITHUB_DATA_PAT || process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '';
 
     // 1. Fetch active scraper rules & saved profiles (guides)
     const { data: rules } = await supabase
@@ -485,7 +559,61 @@ export async function GET(req: Request) {
     const check_failed: any[] = [];
 
     // Helper map of checked github repos to avoid duplicate rate-limit burn
-    const ghReleasesCache = new Map<string, any>();
+    const ghReleasesCache = new Map<string, any[]>();
+
+    const fetchRepoReleases = async (owner: string, repo: string) => {
+      const cacheKey = `${owner}/${repo}`.toLowerCase();
+      if (ghReleasesCache.has(cacheKey)) return ghReleasesCache.get(cacheKey)!;
+      try {
+        const headers: Record<string, string> = {
+          'User-Agent': 'PrimeForge-Update-Checker',
+          Accept: 'application/vnd.github+json',
+        };
+        if (githubToken) headers['Authorization'] = `token ${githubToken}`;
+
+        const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases?per_page=15`, {
+          headers,
+          signal: AbortSignal.timeout(5000),
+        });
+        if (res.ok) {
+          const list = await res.json();
+          const arr = Array.isArray(list) ? list : [];
+          ghReleasesCache.set(cacheKey, arr);
+          return arr;
+        } else {
+          const singleRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/releases/latest`, {
+            headers,
+            signal: AbortSignal.timeout(5000),
+          });
+          const single = singleRes.ok ? [await singleRes.json()] : [];
+          ghReleasesCache.set(cacheKey, single);
+          return single;
+        }
+      } catch (_) {}
+      ghReleasesCache.set(cacheKey, []);
+      return [];
+    };
+
+    // Pre-collect unique repos to pre-fetch in parallel chunks of 10
+    const uniqueRepos = new Set<string>();
+    for (const l of listings || []) {
+      const cands = [l.fileUrl, l.githubSourceRepo, ...(Array.isArray(l.variants) ? l.variants.map((v: any) => v.fileUrl || v.githubSourceRepo) : [])];
+      for (const c of cands) {
+        const p = parseOwnerAndRepo(c);
+        if (p && !(p[0].toLowerCase() === 'simurgulgen' && p[1].toLowerCase() === 'primestore')) {
+          uniqueRepos.add(`${p[0]}/${p[1]}`);
+        }
+      }
+    }
+
+    const repoList = Array.from(uniqueRepos);
+    for (let i = 0; i < repoList.length; i += 10) {
+      const chunk = repoList.slice(i, i + 10);
+      await Promise.all(chunk.map((r) => {
+        const [o, rep] = r.split('/');
+        return fetchRepoReleases(o, rep);
+      }));
+    }
 
     for (const listing of listings || []) {
       const currentVer = cleanSemver(listing.version);
@@ -501,13 +629,11 @@ export async function GET(req: Request) {
       // STRATEGY 1: Check dynamic scraper rules (Web scraper)
       // -------------------------------------------------------------
       const matchedRule = scraperRules.find((r) => {
-        if (pkg && r.package_name && r.package_name.toLowerCase() === pkg.toLowerCase()) return true;
-        if (r.domain_pattern && (fileUrl.toLowerCase().includes(r.domain_pattern.toLowerCase()) || ghRepoRaw.toLowerCase().includes(r.domain_pattern.toLowerCase()))) return true;
-        if (r.target_url) {
-          try {
-            const host = new URL(r.target_url).hostname.replace(/^www\./, '').toLowerCase();
-            if (host && (fileUrl.toLowerCase().includes(host) || ghRepoRaw.toLowerCase().includes(host))) return true;
-          } catch (_) {}
+        // Strict match: package_name must match if set
+        if (pkg && r.package_name && r.package_name.toLowerCase().trim() === pkg.toLowerCase().trim()) return true;
+        // Or specific URL match if package_name is empty
+        if (!r.package_name && r.target_url && pkg) {
+          if (r.target_url.toLowerCase().includes(pkg.toLowerCase())) return true;
         }
         return false;
       });
@@ -555,13 +681,43 @@ export async function GET(req: Request) {
       // -------------------------------------------------------------
       // STRATEGY 2: Check GitHub (Releases or Direct Repo APK)
       // -------------------------------------------------------------
-      const ghCandidates = [ghRepoRaw, fileUrl, ...(variants.map((v) => v.githubSourceRepo || v.fileUrl || ''))];
+      let orionApp: any = null;
+      if (ghRepoRaw.toLowerCase().includes('orion-data') || fileUrl.toLowerCase().includes('orion-data')) {
+        orionApp = await getOrionAppInfo(pkg);
+        if (orionApp?.releaseKeyword) {
+          (listing as any)._orionKeyword = orionApp.releaseKeyword;
+        }
+      }
+
+      const allCands = [
+        fileUrl,
+        ghRepoRaw,
+        orionApp?.githubRepo,
+        orionApp?.repoUrl,
+        ...(variants.map((v) => v.fileUrl || v.githubSourceRepo || ''))
+      ].filter(Boolean);
+
       let ownerRepo: [string, string] | null = null;
-      for (const cand of ghCandidates) {
+      // 1. Dedicated upstream repo priority (not PrimeStore, Orion-Data, PrimeForge)
+      for (const cand of allCands) {
         const parsed = parseOwnerAndRepo(cand);
         if (parsed) {
-          ownerRepo = parsed;
-          break;
+          const slug = `${parsed[0]}/${parsed[1]}`.toLowerCase();
+          if (!slug.includes('primestore') && !slug.includes('orion-data') && !slug.includes('primeforge')) {
+            ownerRepo = parsed;
+            break;
+          }
+        }
+      }
+
+      // 2. Fallback to shared/aggregator repo
+      if (!ownerRepo) {
+        for (const cand of allCands) {
+          const parsed = parseOwnerAndRepo(cand);
+          if (parsed && !(parsed[0].toLowerCase() === 'simurgulgen' && parsed[1].toLowerCase() === 'primestore')) {
+            ownerRepo = parsed;
+            break;
+          }
         }
       }
 
@@ -571,31 +727,8 @@ export async function GET(req: Request) {
 
         try {
           let releasesList = ghReleasesCache.get(cacheKey);
-
           if (releasesList === undefined) {
-            const headers: Record<string, string> = {
-              'User-Agent': 'PrimeForge-Update-Checker',
-              Accept: 'application/vnd.github+json',
-            };
-            if (githubToken) headers['Authorization'] = `token ${githubToken}`;
-
-            const listRes = await fetch(
-              `https://api.github.com/repos/${owner}/${repo}/releases?per_page=15`,
-              { headers, cache: 'no-store' }
-            );
-
-            if (listRes.ok) {
-              const list = await listRes.json();
-              releasesList = Array.isArray(list) ? list : [];
-            } else {
-              // Try single latest
-              const singleRes = await fetch(
-                `https://api.github.com/repos/${owner}/${repo}/releases/latest`,
-                { headers, cache: 'no-store' }
-              );
-              releasesList = singleRes.ok ? [await singleRes.json()] : [];
-            }
-            ghReleasesCache.set(cacheKey, releasesList);
+            releasesList = await fetchRepoReleases(owner, repo);
           }
 
           // Determine if this repository contains multiple applications

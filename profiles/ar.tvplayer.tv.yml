@@ -1,5 +1,6 @@
 name: "TiviMate IPTV Player Premium Mod"
 package: "ar.tvplayer.tv"
+current_version: "5.3.3"
 extends: "_base"
 auto_apply: true
 

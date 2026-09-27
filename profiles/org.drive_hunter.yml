@@ -1,5 +1,6 @@
 name: "Netfly Cinema & TV VIP Mod (Clean & Ad-Free)"
 package: "org.drive_hunter"
+current_version: "3.0.4"
 extends: "_base"
 auto_apply: true
 

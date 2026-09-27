@@ -100,6 +100,75 @@ def _send_photo(photo_path, caption=""):
         return {}
 
 
+def download_telegram_file(file_id: str) -> str:
+    """Telegram'dan dosya indir ve içeriğini metin olarak döndür.
+
+    Telegram Bot API getFile → file_path → download URL zincirini kullanır.
+    Maksimum 20 MB dosya boyutunu destekler (Telegram Bot API limiti).
+
+    Args:
+        file_id: Telegram'ın döndürdüğü dosya ID'si
+
+    Returns:
+        str: Dosyanın metin içeriği (UTF-8 decode edilmiş)
+    """
+    if not BOT_TOKEN:
+        return ""
+
+    # 1. getFile API ile file_path al
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/getFile"
+    payload = json.dumps({"file_id": file_id}).encode("utf-8")
+    req = urllib.request.Request(url, data=payload,
+                                headers={"Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=15, context=_ctx) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            file_path = data.get("result", {}).get("file_path", "")
+    except Exception as e:
+        print(f"❌ Telegram getFile hatası: {e}")
+        return ""
+
+    if not file_path:
+        return ""
+
+    # 2. Dosyayı indir
+    download_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+    try:
+        req2 = urllib.request.Request(download_url)
+        with urllib.request.urlopen(req2, timeout=30, context=_ctx) as resp2:
+            content = resp2.read().decode("utf-8", errors="ignore")
+            print(f"📄 Telegram dosya indirildi: {len(content)} karakter")
+            return content
+    except Exception as e:
+        print(f"❌ Telegram dosya indirme hatası: {e}")
+        return ""
+
+
+def send_iptv_report(added: int, tested: int, failed: int, total_parsed: int, duplicates: int = 0):
+    """IPTV dosya işleme sonuç raporunu Telegram'a gönder.
+
+    Args:
+        added: Havuza başarıyla eklenen aktif hesap sayısı
+        tested: Canlı test edilen toplam hesap sayısı
+        failed: Test başarısız olan hesap sayısı
+        total_parsed: NIM/regex ile parse edilen toplam hesap sayısı
+        duplicates: Zaten havuzda olan (atlanan) hesap sayısı
+    """
+    text = (
+        f"📡 <b>IPTV Dosya İşleme Tamamlandı</b>\n\n"
+        f"📄 <b>Parse Edilen:</b> {total_parsed} hesap\n"
+        f"🧪 <b>Test Edilen:</b> {tested} hesap\n"
+        f"✅ <b>Havuza Eklenen:</b> {added} aktif hesap\n"
+        f"❌ <b>Başarısız:</b> {failed} (ölü/süresi dolmuş)\n"
+    )
+    if duplicates > 0:
+        text += f"🔄 <b>Zaten Mevcut:</b> {duplicates} (atlandı)\n"
+    text += (
+        f"\n{'🎉 Havuz güncellendi!' if added > 0 else '⚠️ Aktif hesap bulunamadı.'}"
+    )
+    _send_message(text)
+
+
 def send_analysis_report(report, job_id="", security_report=None):
     """Send detailed analysis report with decision buttons and security scan status."""
     pkg = report.get("package_name", "unknown")

@@ -109,7 +109,7 @@ def find_listing_by_package(package_name):
 
 def get_all_listings(limit=100):
     """Fetch active listings from PrimeStore catalog."""
-    result = _request(f'listings?status=eq.published&select=id,title,"packageName",version,"fileUrl",icon_url&order=created_at.desc&limit={limit}')
+    result = _request(f'listings?status=eq.published&select=id,title,"packageName",version,"fileUrl","logoUrl"&order="createdAt".desc&limit={limit}')
     return result if isinstance(result, list) else []
 
 

@@ -174,20 +174,7 @@ class UpdateChecker:
             return None
 
     def check_supabase_catalog(self, package_name: str) -> Optional[Dict[str, Any]]:
-        """Check PrimeStore Supabase catalog for updated listings."""
-        try:
-            from engine.supabase_client import find_listing_by_package
-            listing = find_listing_by_package(package_name)
-            if listing:
-                ver = listing.get("version") or listing.get("version_name")
-                apk = listing.get("fileUrl") or listing.get("file_url")
-                if ver:
-                    return {
-                        "remote_version": str(ver),
-                        "apk_url": apk
-                    }
-        except Exception:
-            pass
+        """Supabase catalog is the destination catalog, not an upstream update source. Returns None."""
         return None
 
     def trigger_github_pipeline(self, apk_url: str, package_name: str, profile_name: str):
@@ -220,9 +207,13 @@ class UpdateChecker:
             print(f"  ❌ Failed to trigger pipeline: {e}")
 
     def notify_telegram_new_version(self, app_name: str, pkg: str, cur_ver: str, new_ver: str, apk_url: str):
-        """Send rich Telegram alert with mod button."""
+        """Send rich Telegram alert with valid job_id and mod button."""
         try:
             from telegram.bot import _send_message
+            from engine.supabase_client import create_job
+            job = create_job(apk_url=apk_url, action="full_mod")
+            job_id = job.get("id") if isinstance(job, dict) and job.get("id") else pkg
+
             text = (
                 f"🔔 <b>Yeni Uygulama Güncellemesi Bulundu!</b>\n\n"
                 f"📦 <b>{app_name}</b>\n"
@@ -232,13 +223,88 @@ class UpdateChecker:
                 f"🔗 <a href=\"{apk_url}\">Yeni APK İndirme Bağlantısı</a>"
             )
             buttons = {"inline_keyboard": [[
-                {"text": "⚡ Otomatik Modla", "callback_data": f"forge:full_mod:{pkg}"},
-                {"text": "❌ Yoksay", "callback_data": f"forge:ignore:{pkg}"}
+                {"text": "⚡ Otomatik Modla", "callback_data": f"forge:full_mod:{job_id}"},
+                {"text": "❌ Yoksay", "callback_data": f"forge:ignore:{job_id}"}
             ]]}
             _send_message(text, reply_markup=buttons)
-            print(f"  📱 Telegram notification sent for {pkg}")
+            print(f"  📱 Telegram notification sent for {pkg} (Job: {job_id})")
         except Exception as e:
             print(f"  ⚠️ Telegram alert error: {e}")
+
+    def notify_telegram_update_with_nim(self, app_name: str, pkg: str, cur_ver: str,
+                                         new_ver: str, apk_url: str, nim_result: dict):
+        """NIM doğrulama sonuçlarını içeren zengin Telegram bildirimi gönder."""
+        try:
+            from telegram.bot import _send_message
+            from engine.supabase_client import create_job, update_job
+
+            job = create_job(apk_url=apk_url, action="full_mod")
+            job_id = job.get("id") if isinstance(job, dict) and job.get("id") else pkg
+
+            # NIM sonucunu forge_jobs'a kaydet
+            if isinstance(job, dict) and job.get("id"):
+                try:
+                    update_job(job["id"], {"nim_verification": nim_result})
+                except Exception:
+                    pass
+
+            confidence = nim_result.get("confidence", 0)
+            action = nim_result.get("recommended_action", "manual_review")
+            reason = nim_result.get("reason", "")
+            flags = nim_result.get("risk_flags", [])
+
+            # Güven skoru badge'i
+            if confidence >= 80:
+                nim_badge = f"🟢 Güven: {confidence}%"
+            elif confidence >= 50:
+                nim_badge = f"🟡 Güven: {confidence}%"
+            else:
+                nim_badge = f"🔴 Güven: {confidence}%"
+
+            # Aksiyon badge'i
+            action_badge = {
+                "auto_mod": "⚡ Otomatik Modlama Öneriliyor",
+                "manual_review": "👀 Manuel İnceleme Gerekli",
+                "skip": "🚫 Atlanması Öneriliyor"
+            }.get(action, "❓ Bilinmeyen")
+
+            risk_text = ""
+            if flags:
+                risk_text = f"\n⚠️ <b>Risk:</b> {', '.join(flags)}"
+
+            text = (
+                f"🔔 <b>Yeni Uygulama Güncellemesi Bulundu!</b>\n\n"
+                f"📦 <b>{app_name}</b>\n"
+                f"🏷️ <code>{pkg}</code>\n"
+                f"🔹 Mevcut: <code>v{cur_ver}</code>\n"
+                f"🚀 Yeni: <b>v{new_ver}</b>\n\n"
+                f"🧠 <b>NIM Doğrulama:</b>\n"
+                f"  {nim_badge}\n"
+                f"  📋 {action_badge}\n"
+                f"  💬 {reason}"
+                f"{risk_text}\n\n"
+                f"🔗 <a href=\"{apk_url}\">APK İndirme Bağlantısı</a>"
+            )
+
+            # auto_mod onaylıysa pipeline butonu öne çıksın
+            if action == "auto_mod" and confidence >= 75:
+                buttons = {"inline_keyboard": [[
+                    {"text": "⚡ Modla (NIM Onaylı)", "callback_data": f"forge:full_mod:{job_id}"},
+                    {"text": "❌ Yoksay", "callback_data": f"forge:ignore:{job_id}"}
+                ]]}
+            else:
+                buttons = {"inline_keyboard": [[
+                    {"text": "✅ Modla", "callback_data": f"forge:full_mod:{job_id}"},
+                    {"text": "🔍 İncele", "callback_data": f"forge:analyze_only:{job_id}"},
+                    {"text": "❌ Yoksay", "callback_data": f"forge:ignore:{job_id}"}
+                ]]}
+
+            _send_message(text, reply_markup=buttons)
+            print(f"  📱 NIM destekli Telegram bildirimi gönderildi: {pkg} (Job: {job_id})")
+        except Exception as e:
+            print(f"  ⚠️ Telegram NIM bildirim hatası: {e}")
+            # Fallback: Eski basit bildirimi dene
+            self.notify_telegram_new_version(app_name, pkg, cur_ver, new_ver, apk_url)
 
     def run_check(self) -> List[Dict[str, Any]]:
         """Run update checks for all loaded profiles."""
@@ -248,8 +314,21 @@ class UpdateChecker:
         for prof in profiles:
             pkg = prof.get("package")
             name = prof.get("name", pkg)
-            current_ver = str(prof.get("current_version", "1.0.0"))
             update_cfg = prof.get("update_check", {})
+
+            # Fetch catalog listing to resolve real installed/published version and potential upstream repo
+            from engine.supabase_client import find_listing_by_package
+            listing = find_listing_by_package(pkg) if pkg else {}
+
+            # Resolve current version: Profile explicit version -> Catalog listing version -> fallback 1.0.0
+            current_ver = prof.get("current_version")
+            if not current_ver or str(current_ver).strip() in ["1.0.0", "1.0"]:
+                if listing and listing.get("version"):
+                    vm = re.search(r"([0-9]+(?:\.[0-9]+)+)", str(listing.get("version")))
+                    current_ver = vm.group(1) if vm else str(listing.get("version"))
+                else:
+                    current_ver = "1.0.0"
+            current_ver = str(current_ver)
 
             print(f"\n📦 Checking: {name} ({pkg}) [Current: v{current_ver}]")
             update_info = None
@@ -264,9 +343,18 @@ class UpdateChecker:
                     update_cfg.get("version_key", "version"),
                     update_cfg.get("apk_key", "apk_url")
                 )
-            else:
-                # Fallback to Supabase catalog check
-                update_info = self.check_supabase_catalog(pkg)
+            elif listing:
+                # Strategy 2: Upstream GitHub repo attached to listing
+                gh_cand = listing.get("githubSourceRepo") or ""
+                if not gh_cand or "simurgulgen" in gh_cand or "Orion-Data" in gh_cand:
+                    file_cand = listing.get("fileUrl") or ""
+                    m = re.search(r"github\.com/([^/]+/[^/]+)", file_cand)
+                    if m and "simurgulgen" not in m.group(1) and "Orion-Data" not in m.group(1):
+                        gh_cand = m.group(1)
+                    else:
+                        gh_cand = None
+                if gh_cand:
+                    update_info = self.check_github_releases(f"https://github.com/{gh_cand}")
 
             if update_info and update_info.get("remote_version"):
                 remote_ver = update_info["remote_version"]
@@ -285,15 +373,64 @@ class UpdateChecker:
                 self.results.append(item)
 
                 if is_newer and apk_url:
-                    print(f"  🎉 NEW VERSION AVAILABLE: v{remote_ver} > v{current_ver}")
-                    self.notify_telegram_new_version(name, pkg, current_ver, remote_ver, apk_url)
-                    if prof.get("auto_apply"):
-                        print("  ⚙️ Profile has auto_apply enabled. Triggering build...")
-                        self.trigger_github_pipeline(apk_url, pkg, os.path.basename(prof["_file_path"]))
+                    # Check if already notified or job created for this apk_url to prevent 6-hour cron spam
+                    already_notified = False
+                    try:
+                        from engine.supabase_client import _request
+                        existing = _request(f'forge_jobs?apk_url=eq.{urllib.parse.quote(apk_url)}&select=id,status')
+                        if existing and isinstance(existing, list) and len(existing) > 0:
+                            already_notified = True
+                    except Exception:
+                        pass
+
+                    if not already_notified:
+                        print(f"  🎉 NEW VERSION AVAILABLE: v{remote_ver} > v{current_ver}")
+
+                        # === NIM AKILLI DOĞRULAMA ADIMI ===
+                        nim_result = {"approved": True, "confidence": 50, "recommended_action": "manual_review"}
+                        try:
+                            from engine.ai_advisor import nim_verify_update
+                            nim_result = nim_verify_update(
+                                name, pkg, current_ver, remote_ver, apk_url,
+                                source_repo=(listing.get("githubSourceRepo") or "") if listing else ""
+                            )
+                        except Exception as nim_err:
+                            print(f"  ⚠️ NIM doğrulama atlandı: {nim_err}")
+
+                        nim_approved = nim_result.get("approved", True)
+                        nim_confidence = nim_result.get("confidence", 50)
+                        nim_action = nim_result.get("recommended_action", "manual_review")
+                        nim_reason = nim_result.get("reason", "")
+                        nim_flags = nim_result.get("risk_flags", [])
+
+                        # NIM doğrulama sonucunu item'a ekle
+                        item["nim_verification"] = nim_result
+
+                        if not nim_approved and nim_action == "skip":
+                            # NIM bu güncellemeyi reddetti — atla, bildirme
+                            print(f"  🧠 NIM REDDİ: ❌ Güncelleme atlanıyor — {nim_reason}")
+                            print(f"     Risk bayrakları: {nim_flags}")
+                        elif nim_approved and nim_action == "auto_mod" and nim_confidence >= 75:
+                            # NIM yüksek güvenle onayladı — otomatik modla
+                            print(f"  🧠 NIM ONAYI: ✅ Güven: {nim_confidence}% — Otomatik modlama")
+                            self.notify_telegram_update_with_nim(
+                                name, pkg, current_ver, remote_ver, apk_url, nim_result)
+                            if prof.get("auto_apply"):
+                                print("  ⚙️ auto_apply aktif — GitHub pipeline tetikleniyor...")
+                                self.trigger_github_pipeline(
+                                    apk_url, pkg, os.path.basename(prof.get("_file_path", "")))
+                        else:
+                            # NIM onayladı ama güven düşük veya manuel onay istiyor
+                            print(f"  🧠 NIM: ⚠️ Güven: {nim_confidence}% — Manuel onay gerekli")
+                            self.notify_telegram_update_with_nim(
+                                name, pkg, current_ver, remote_ver, apk_url, nim_result)
+                            # Pipeline tetiklenmez, Telegram butonundan onay beklenir
+                    else:
+                        print(f"  ℹ️ Update available (v{remote_ver}), but already notified/queued.")
                 else:
                     print(f"  ✅ App is up to date (Latest: v{remote_ver})")
             else:
-                print("  ℹ️ No remote version information could be fetched.")
+                print("  ℹ️ No remote upstream version source configured or reachable.")
 
         # Save Report
         os.makedirs(OUTPUT_DIR, exist_ok=True)

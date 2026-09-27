@@ -1,5 +1,6 @@
 name: "VivoX Mod"
 package: "com.example.vivox"
+current_version: "1.24"
 extends: "_base"
 auto_apply: true
 
