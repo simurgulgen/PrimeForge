@@ -517,6 +517,7 @@ async function getOrionAppInfo(pkg: string): Promise<any | null> {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
+    const filterListingId = searchParams.get('listing_id');
     const githubToken = process.env.GITHUB_DATA_PAT || process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '';
 
     // 1. Fetch active scraper rules & saved profiles (guides)

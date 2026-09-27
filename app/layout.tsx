@@ -1,6 +1,6 @@
 import './globals.css';
 import Link from 'next/link';
-import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal, RefreshCw, ShieldCheck, Tv } from 'lucide-react';
+import { Wrench, Layers, FileCode2, Send, Activity, Store, Sparkles, Puzzle, Terminal, RefreshCw, ShieldCheck, Tv, Bot } from 'lucide-react';
 
 import AiCopilotSidebar from '@/app/components/AiCopilotSidebar';
 import PipelineActivityDrawer from '@/app/components/PipelineActivityDrawer';
@@ -42,6 +42,13 @@ export default function RootLayout({
                 >
                   <Activity className="w-4 h-4 text-blue-400" />
                   Dashboard
+                </Link>
+                <Link
+                  href="/automation"
+                  className="px-3 py-2 rounded-lg text-sm font-medium text-violet-300 hover:text-white hover:bg-violet-500/10 border border-violet-500/20 transition-all flex items-center gap-2 rounded-xl"
+                >
+                  <Bot className="w-4 h-4 text-violet-400" />
+                  Otomasyon Paneli
                 </Link>
                 <Link
                   href="/security"
