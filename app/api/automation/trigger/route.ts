@@ -1,24 +1,25 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
+import { getAppCredentials } from '@/lib/credentials';
 import fs from 'fs';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
 
-const GITHUB_REPO = process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
-const GITHUB_TOKEN = process.env.GITHUB_TOKEN || '';
+async function triggerGitHubWorkflow(eventType: string, clientPayload: any = {}, token?: string, repo?: string) {
+  const activeToken = token || process.env.GITHUB_TOKEN || process.env.GITHUB_PAT || process.env.GITHUB_DATA_PAT || '';
+  const activeRepo = repo || process.env.GITHUB_REPO || 'simurgulgen/PrimeForge';
 
-async function triggerGitHubWorkflow(eventType: string, clientPayload: any = {}) {
-  if (!GITHUB_TOKEN) {
-    return { success: false, error: 'GITHUB_TOKEN sunucuda tanımlı değil' };
+  if (!activeToken) {
+    return { success: false, error: 'GitHub Token tanımlı değil (Supabase forge_settings veya GITHUB_TOKEN)' };
   }
 
-  const url = `https://api.github.com/repos/${GITHUB_REPO}/dispatches`;
+  const url = `https://api.github.com/repos/${activeRepo}/dispatches`;
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${GITHUB_TOKEN}`,
+        Authorization: `Bearer ${activeToken}`,
         Accept: 'application/vnd.github.v3+json',
         'Content-Type': 'application/json',
       },
@@ -47,31 +48,38 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Eylem (action) belirtilmedi' }, { status: 400 });
     }
 
+    const creds = await getAppCredentials();
     let result: any = { action, triggered_at: new Date().toISOString() };
 
     if (action === 'check_updates') {
-      const ghRes = await triggerGitHubWorkflow('scheduled-update-check', {
-        triggered_by: 'primeforge_web_ui',
-        timestamp: Date.now(),
-      });
+      const ghRes = await triggerGitHubWorkflow(
+        'scheduled-update-check',
+        { triggered_by: 'primeforge_web_ui', timestamp: Date.now() },
+        creds.githubToken,
+        creds.githubRepo
+      );
       result.github = ghRes;
       result.message = ghRes.success
         ? '⚡ GitHub Actions Güncelleme Denetçisi tetiklendi.'
         : `⚠️ Tetikleme uyarısı: ${ghRes.error}`;
     } else if (action === 'health_check') {
-      const ghRes = await triggerGitHubWorkflow('stream-health-check', {
-        triggered_by: 'primeforge_web_ui',
-        timestamp: Date.now(),
-      });
+      const ghRes = await triggerGitHubWorkflow(
+        'stream-health-check',
+        { triggered_by: 'primeforge_web_ui', timestamp: Date.now() },
+        creds.githubToken,
+        creds.githubRepo
+      );
       result.github = ghRes;
       result.message = ghRes.success
         ? '📺 4 Saatlik Stream Health Check iş akışı başlatıldı.'
         : `⚠️ Tetikleme uyarısı: ${ghRes.error}`;
     } else if (action === 'nightly_scan') {
-      const ghRes = await triggerGitHubWorkflow('nightly_iptv_pool_scan', {
-        triggered_by: 'primeforge_web_ui',
-        timestamp: Date.now(),
-      });
+      const ghRes = await triggerGitHubWorkflow(
+        'nightly_iptv_pool_scan',
+        { triggered_by: 'primeforge_web_ui', timestamp: Date.now() },
+        creds.githubToken,
+        creds.githubRepo
+      );
       result.github = ghRes;
       result.message = ghRes.success
         ? '🌙 Gece IPTV Taraması iş akışı başlatıldı.'
@@ -119,10 +127,10 @@ export async function POST(req: Request) {
       }
     } else if (action === 'test_nim') {
       // NIM API bağlantı testi
-      const nimKey = process.env.NVIDIA_NIM_API_KEY || process.env.NIM_API_KEY || '';
+      const nimKey = creds.nimApiKey;
       if (!nimKey) {
-        result.nim = { success: false, error: 'NVIDIA_NIM_API_KEY ortam değişkeni eksik' };
-        result.message = '⚠️ NVIDIA NIM API anahtarı tanımlanmamış.';
+        result.nim = { success: false, error: 'NVIDIA NIM anahtarı bulunamadı (forge_settings veya env)' };
+        result.message = '⚠️ NVIDIA NIM API anahtarı tanımlanmamış. Lütfen Supabase ayarlarına ekleyin.';
       } else {
         const startT = Date.now();
         try {
@@ -133,7 +141,7 @@ export async function POST(req: Request) {
               Authorization: `Bearer ${nimKey}`,
             },
             body: JSON.stringify({
-              model: 'nvidia/nemotron-3-super-120b-a12b',
+              model: creds.nimModel || 'nvidia/nemotron-3-super-120b-a12b',
               messages: [{ role: 'user', content: 'Say "NIM_ACTIVE_OK" and nothing else.' }],
               max_tokens: 10,
               temperature: 0.1,
@@ -144,7 +152,7 @@ export async function POST(req: Request) {
             const data = await nimRes.json();
             const reply = data?.choices?.[0]?.message?.content || '';
             result.nim = { success: true, latencyMs: latency, reply };
-            result.message = `🧠 NVIDIA NIM aktif! Yanıt süresi: ${latency}ms`;
+            result.message = `🧠 NVIDIA NIM aktif ve çalışıyor! Yanıt süresi: ${latency}ms (Model: ${creds.nimModel})`;
           } else {
             result.nim = { success: false, status: nimRes.status, latencyMs: latency };
             result.message = `⚠️ NIM API hatası: HTTP ${nimRes.status}`;
@@ -154,6 +162,49 @@ export async function POST(req: Request) {
           result.message = `❌ NIM bağlantı hatası: ${e?.message}`;
         }
       }
+    } else if (action === 'save_credentials') {
+      const { github_token, github_repo, nvidia_nim_key } = body;
+      const updates: any = {};
+
+      if (github_token || github_repo) {
+        await supabase.from('forge_settings').upsert({
+          key: 'github_settings',
+          value: {
+            token: github_token || creds.githubToken,
+            repo: github_repo || creds.githubRepo,
+          },
+          updated_at: new Date().toISOString(),
+        });
+        updates.github = true;
+      }
+
+      if (nvidia_nim_key) {
+        const { data: existingAi } = await supabase
+          .from('forge_settings')
+          .select('value')
+          .eq('key', 'ai_studio_settings')
+          .maybeSingle();
+
+        const curVal = existingAi?.value || {};
+        const curKeys = curVal.keys || {};
+        curKeys.nvidia_nim = nvidia_nim_key;
+
+        await supabase.from('forge_settings').upsert({
+          key: 'ai_studio_settings',
+          value: {
+            ...curVal,
+            apiKey: nvidia_nim_key,
+            provider: 'nvidia_nim',
+            model: curVal.model || 'nvidia/nemotron-3-super-120b-a12b',
+            keys: curKeys,
+          },
+          updated_at: new Date().toISOString(),
+        });
+        updates.nim = true;
+      }
+
+      result.updates = updates;
+      result.message = '✅ API Anahtarları ve GitHub ayarları Supabase veritabanına başarıyla kaydedildi!';
     } else {
       return NextResponse.json({ error: 'Geçersiz eylem' }, { status: 400 });
     }

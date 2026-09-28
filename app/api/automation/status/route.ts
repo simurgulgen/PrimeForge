@@ -3,6 +3,8 @@ import { supabase } from '@/lib/supabase';
 import path from 'path';
 import fs from 'fs';
 
+import { getAppCredentials } from '@/lib/credentials';
+
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -101,17 +103,31 @@ export async function GET() {
       }
     } catch (_) {}
 
-    // 5. NIM AI Motor Yapılandırması
+    // 5. Credentials & NIM AI Motor Yapılandırması
+    const creds = await getAppCredentials();
     const nimConfig = {
       provider: 'NVIDIA NIM',
-      model: 'nvidia/nemotron-3-super-120b-a12b',
+      model: creds.nimModel,
       endpoint: 'https://integrate.api.nvidia.com/v1/chat/completions',
-      isActive: Boolean(process.env.NVIDIA_NIM_API_KEY || process.env.NIM_API_KEY),
+      isActive: Boolean(creds.nimApiKey),
       features: [
         'Akıllı Güncelleme Doğrulama (Sürüm & Güvenlik)',
         'IPTV Düzensiz Metin & Dosya Ayrıştırma',
         'IPTV Havuz Sağlık Analizi & Skorlama',
       ],
+    };
+
+    const credentials = {
+      github: {
+        configured: Boolean(creds.githubToken),
+        repo: creds.githubRepo,
+        maskedToken: creds.githubToken ? `${creds.githubToken.slice(0, 4)}...${creds.githubToken.slice(-4)}` : null,
+      },
+      nim: {
+        configured: Boolean(creds.nimApiKey),
+        maskedKey: creds.nimApiKey ? `${creds.nimApiKey.slice(0, 7)}...${creds.nimApiKey.slice(-4)}` : null,
+        model: creds.nimModel,
+      },
     };
 
     // 6. Zamanlanmış Otomasyon Görevleri (Crons)
@@ -163,6 +179,7 @@ export async function GET() {
         status: 'ok',
         timestamp: new Date().toISOString(),
         nim: nimConfig,
+        credentials,
         iptv: {
           total: pool.total,
           active: pool.active,

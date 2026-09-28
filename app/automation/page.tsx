@@ -24,6 +24,9 @@ import {
   Flame,
   Radio,
   ExternalLink,
+  Key,
+  Lock,
+  Settings,
 } from 'lucide-react';
 
 interface CronItem {
@@ -44,6 +47,18 @@ interface AutomationData {
     endpoint: string;
     isActive: boolean;
     features: string[];
+  };
+  credentials?: {
+    github: {
+      configured: boolean;
+      repo: string;
+      maskedToken: string | null;
+    };
+    nim: {
+      configured: boolean;
+      maskedKey: string | null;
+      model: string;
+    };
   };
   iptv: {
     total: number;
@@ -72,12 +87,22 @@ export default function AutomationDashboardPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [actionResult, setActionResult] = useState<{ message: string; isError?: boolean } | null>(null);
 
+  // Credentials Modal State
+  const [showCredsModal, setShowCredsModal] = useState(false);
+  const [editGithubToken, setEditGithubToken] = useState('');
+  const [editGithubRepo, setEditGithubRepo] = useState('simurgulgen/PrimeForge');
+  const [editNimKey, setEditNimKey] = useState('');
+  const [savingCreds, setSavingCreds] = useState(false);
+
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/automation/status');
       if (res.ok) {
         const json = await res.json();
         setData(json);
+        if (json.credentials?.github?.repo) {
+          setEditGithubRepo(json.credentials.github.repo);
+        }
       }
     } catch (e) {
       console.error('Automation status fetch error:', e);
@@ -115,6 +140,38 @@ export default function AutomationDashboardPage() {
     }
   };
 
+  const handleSaveCredentials = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingCreds(true);
+    setActionResult(null);
+    try {
+      const res = await fetch('/api/automation/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'save_credentials',
+          github_token: editGithubToken.trim() || undefined,
+          github_repo: editGithubRepo.trim() || undefined,
+          nvidia_nim_key: editNimKey.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+      if (res.ok) {
+        setActionResult({ message: json.message || 'Anahtarlar başarıyla kaydedildi!' });
+        setShowCredsModal(false);
+        setEditGithubToken('');
+        setEditNimKey('');
+        fetchStatus();
+      } else {
+        setActionResult({ message: json.error || 'Kaydetme hatası', isError: true });
+      }
+    } catch (e: any) {
+      setActionResult({ message: e?.message || 'Hata oluştu', isError: true });
+    } finally {
+      setSavingCreds(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto space-y-8">
@@ -136,11 +193,20 @@ export default function AutomationDashboardPage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              onClick={() => setShowCredsModal(true)}
+              className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-violet-500/10 hover:bg-violet-500/20 border border-violet-500/30 text-violet-300 text-xs font-semibold transition-colors"
+            >
+              <Key className="w-3.5 h-3.5 text-violet-400" />
+              API & Token Ayarları
+            </button>
+
             <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-semibold">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
               OTONOM SİSTEM AKTİF (7/24)
             </div>
+
             <button
               onClick={() => {
                 setLoading(true);
@@ -153,6 +219,49 @@ export default function AutomationDashboardPage() {
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
           </div>
+        </div>
+
+        {/* Credentials Status Bar */}
+        <div className="p-4 rounded-2xl bg-slate-900/40 border border-white/5 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">GitHub Token:</span>
+              {data?.credentials?.github?.configured ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  {data.credentials.github.maskedToken} ({data.credentials.github.repo})
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 font-mono">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  Tanımlı Değil
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">NVIDIA NIM:</span>
+              {data?.credentials?.nim?.configured ? (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-300 font-mono">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  {data.credentials.nim.maskedKey} (Nemotron 120B)
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 font-mono">
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                  Tanımlı Değil
+                </span>
+              )}
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowCredsModal(true)}
+            className="text-violet-400 hover:text-violet-300 font-medium underline underline-offset-2 flex items-center gap-1"
+          >
+            <Settings className="w-3.5 h-3.5" />
+            Anahtarları Güncelle
+          </button>
         </div>
 
         {/* Action Result Toast */}
@@ -687,7 +796,113 @@ export default function AutomationDashboardPage() {
             </div>
           </div>
         )}
+
+        {/* Credentials Settings Modal */}
+        {showCredsModal && (
+          <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+            <div className="bg-slate-900 border border-violet-500/30 rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+              <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-violet-500/10 border border-violet-500/30 flex items-center justify-center text-violet-400">
+                    <Key className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-bold text-white">API & Token Yönetimi</h3>
+                    <p className="text-xs text-slate-400">Supabase forge_settings üzerinden canlı güncellenir</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowCredsModal(false)}
+                  className="text-slate-400 hover:text-white p-1 rounded-lg"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs leading-relaxed">
+                💡 <b>Bilgi:</b> Buraya kaydedilen anahtarlar doğrudan Supabase veritabanına işlenir. Vercel üzerinde yeniden deploy gerekmeksizin tüm otonom tetiklemeler bu anahtarları kullanır.
+              </div>
+
+              <form onSubmit={handleSaveCredentials} className="space-y-4">
+                {/* GitHub Token Field */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-semibold text-slate-300">GitHub Personal Access Token (PAT):</label>
+                    <span className="font-mono text-emerald-400">
+                      {data?.credentials?.github?.configured ? `Mevcut: ${data.credentials.github.maskedToken}` : 'Tanımlı Değil'}
+                    </span>
+                  </div>
+                  <input
+                    type="password"
+                    value={editGithubToken}
+                    onChange={(e) => setEditGithubToken(e.target.value)}
+                    placeholder="ghp_... veya gho_... (Değiştirmek için girin)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-violet-500 transition-colors font-mono"
+                  />
+                </div>
+
+                {/* GitHub Repo Field */}
+                <div className="space-y-1.5">
+                  <label className="text-xs font-semibold text-slate-300">Hedef GitHub Repo Slug:</label>
+                  <input
+                    type="text"
+                    value={editGithubRepo}
+                    onChange={(e) => setEditGithubRepo(e.target.value)}
+                    placeholder="simurgulgen/PrimeForge"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-violet-500 transition-colors font-mono"
+                  />
+                </div>
+
+                {/* NVIDIA NIM Key Field */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <label className="font-semibold text-slate-300">NVIDIA NIM API Key:</label>
+                    <span className="font-mono text-emerald-400">
+                      {data?.credentials?.nim?.configured ? `Mevcut: ${data.credentials.nim.maskedKey}` : 'Tanımlı Değil'}
+                    </span>
+                  </div>
+                  <input
+                    type="password"
+                    value={editNimKey}
+                    onChange={(e) => setEditNimKey(e.target.value)}
+                    placeholder="nvapi-... (Değiştirmek için girin)"
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-white/10 text-white placeholder-slate-500 text-xs focus:outline-none focus:border-violet-500 transition-colors font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                  <button
+                    type="button"
+                    onClick={() => triggerAction('test_nim', 'NIM Testi')}
+                    disabled={actionLoading !== null}
+                    className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-300 text-xs font-medium transition-colors"
+                  >
+                    🧠 NIM Test Et
+                  </button>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowCredsModal(false)}
+                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-xs font-medium transition-colors"
+                    >
+                      İptal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={savingCreds}
+                      className="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-violet-500/20 transition-all disabled:opacity-50"
+                    >
+                      {savingCreds ? 'Kaydediliyor...' : '💾 Kaydet ve Uygula'}
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+
