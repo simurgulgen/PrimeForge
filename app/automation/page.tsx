@@ -594,12 +594,12 @@ export default function AutomationDashboardPage() {
         {/* ─── Tab Navigation ──────────────────────────────────────────── */}
         <div className="flex border-b border-white/5 space-x-1 overflow-x-auto">
           {([
-            { key: 'live' as const, label: 'Canlı İşlem Sonuçları', icon: <Zap className="w-4 h-4" />, color: 'amber', count: liveResults.length },
-            { key: 'history' as const, label: 'İşlem Geçmişi', icon: <History className="w-4 h-4" />, color: 'cyan', count: historyTotal },
-            { key: 'nim' as const, label: 'NIM & Doğrulamalar', icon: <Cpu className="w-4 h-4" />, color: 'violet', count: undefined as number | undefined },
-            { key: 'iptv' as const, label: 'IPTV Monitörü', icon: <Tv className="w-4 h-4" />, color: 'rose', count: undefined as number | undefined },
-            { key: 'crons' as const, label: 'Zamanlanmış Görevler', icon: <Clock className="w-4 h-4" />, color: 'amber', count: undefined as number | undefined },
-            { key: 'telegram' as const, label: 'Telegram Bot', icon: <Send className="w-4 h-4" />, color: 'cyan', count: undefined as number | undefined },
+            { key: 'live' as const, label: 'Canlı İşlem Sonuçları', icon: <Zap className="w-4 h-4" />, count: liveResults.length, activeClass: 'border-amber-500 text-amber-300 bg-amber-500/10', countClass: 'bg-amber-500/20' },
+            { key: 'history' as const, label: 'İşlem Geçmişi', icon: <History className="w-4 h-4" />, count: historyTotal, activeClass: 'border-cyan-500 text-cyan-300 bg-cyan-500/10', countClass: 'bg-cyan-500/20' },
+            { key: 'nim' as const, label: 'NIM & Doğrulamalar', icon: <Cpu className="w-4 h-4" />, count: undefined as number | undefined, activeClass: 'border-violet-500 text-violet-300 bg-violet-500/10', countClass: 'bg-violet-500/20' },
+            { key: 'iptv' as const, label: 'IPTV Monitörü', icon: <Tv className="w-4 h-4" />, count: undefined as number | undefined, activeClass: 'border-rose-500 text-rose-300 bg-rose-500/10', countClass: 'bg-rose-500/20' },
+            { key: 'crons' as const, label: 'Zamanlanmış Görevler', icon: <Clock className="w-4 h-4" />, count: undefined as number | undefined, activeClass: 'border-amber-500 text-amber-300 bg-amber-500/10', countClass: 'bg-amber-500/20' },
+            { key: 'telegram' as const, label: 'Telegram Bot', icon: <Send className="w-4 h-4" />, count: undefined as number | undefined, activeClass: 'border-cyan-500 text-cyan-300 bg-cyan-500/10', countClass: 'bg-cyan-500/20' },
           ]).map(tab => (
             <button
               key={tab.key}
@@ -610,14 +610,14 @@ export default function AutomationDashboardPage() {
               }}
               className={`px-3 py-2.5 rounded-t-xl text-xs font-semibold flex items-center gap-1.5 transition-all border-b-2 whitespace-nowrap ${
                 activeTab === tab.key
-                  ? `border-${tab.color}-500 text-${tab.color}-300 bg-${tab.color}-500/10`
+                  ? tab.activeClass
                   : 'border-transparent text-slate-400 hover:text-white hover:bg-white/5'
               }`}
             >
               {tab.icon}
               {tab.label}
               {tab.count !== undefined && tab.count > 0 && (
-                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-${tab.color}-500/20`}>
+                <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${tab.countClass}`}>
                   {tab.count}
                 </span>
               )}
