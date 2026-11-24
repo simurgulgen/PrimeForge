@@ -1,8 +1,8 @@
-name: "⏰ PrimeForge – Scheduled Update Check"
+name: "⏰ PrimeForge – Gece Otomatik Güncelleme & Kontrol"
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 1 * * *" # Her gece UTC 01:00 (Türkiye saati ile 04:00)
   workflow_dispatch:
 
 jobs:
@@ -23,6 +23,7 @@ jobs:
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

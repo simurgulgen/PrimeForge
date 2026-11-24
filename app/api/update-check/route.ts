@@ -201,6 +201,11 @@ function doesReleaseOrAssetBelongToApp(
     'in.cricketexchange.app.cricketexchange': ['crex'],
     'com.teslacoilsw.launcher.prime': ['nova'],
     'com.mobilefootie.fotmob': ['fotmob'],
+    'bitpit.launcher': ['niagara'],
+    'videoeditor.videorecorder.screenrecorder': ['xrecorder'],
+    'com.lyfta': ['lyfta'],
+    'ginlemon.iconpackstudio': ['icon-pack-studio', 'iconpackstudio'],
+    'all.in.one.calculator': ['aiocal', 'all-in-one-calculator'],
   };
 
   const appTokens = new Set<string>();
@@ -357,16 +362,24 @@ async function checkWithScraperRule(rule: any): Promise<{ new_version: string; d
     const isLiteApks = targetUrl.includes('liteapks');
 
     const fetchResult = await fetchResilientHtml(targetUrl, 10000);
-    if (!fetchResult.ok || !fetchResult.html) {
+    if (!fetchResult.ok || (!fetchResult.html && !fetchResult.isBinaryApk)) {
       console.warn(`[UpdateCheck] Scraper rule fetch failed for ${targetUrl}: ${fetchResult.error}`);
       return null;
     }
-    const html = fetchResult.html;
+
+    if (fetchResult.isBinaryApk && fetchResult.finalUrl) {
+      const v = extractVersionFromUrlOrFilename(fetchResult.finalUrl);
+      if (v) {
+        return { new_version: v, download_url: fetchResult.finalUrl };
+      }
+    }
+
+    const html = fetchResult.html || '';
 
     let newVersion: string | null = null;
     let downloadUrl: string | null = null;
 
-    if (isLiteApks) {
+    if (isLiteApks && html) {
       const parsedLite = parseLiteApksPage(html);
       if (parsedLite.version) {
         newVersion = parsedLite.version;
@@ -699,12 +712,18 @@ export async function GET(req: Request) {
       ].filter(Boolean);
 
       let ownerRepo: [string, string] | null = null;
-      // 1. Dedicated upstream repo priority (not PrimeStore, Orion-Data, PrimeForge)
+      // 1. Dedicated upstream repo priority (not PrimeStore, Orion-Data, PrimeForge, Morphe-AutoBuilds)
       for (const cand of allCands) {
         const parsed = parseOwnerAndRepo(cand);
         if (parsed) {
           const slug = `${parsed[0]}/${parsed[1]}`.toLowerCase();
-          if (!slug.includes('primestore') && !slug.includes('orion-data') && !slug.includes('primeforge')) {
+          if (
+            !slug.includes('primestore') &&
+            !slug.includes('orion-data') &&
+            !slug.includes('primeforge') &&
+            !slug.includes('morphe') &&
+            !slug.includes('autobuild')
+          ) {
             ownerRepo = parsed;
             break;
           }
@@ -788,7 +807,7 @@ export async function GET(req: Request) {
                 const isNewer = isNewerVersion(vCurVer, targetVer);
 
                 const matchedAsset = matchAssetToVariant(targetRel.assets || [], v);
-                const suggestedUrl = matchedAsset?.browser_download_url || targetRel.assets?.[0]?.browser_download_url || fileUrl;
+                const suggestedUrl = matchedAsset?.browser_download_url || (!isSharedRepo ? targetRel.assets?.[0]?.browser_download_url : null) || fileUrl;
 
                 if (isNewer) {
                   hasAnyVariantUpdate = true;
@@ -809,7 +828,7 @@ export async function GET(req: Request) {
 
             if (isTopNewer || hasAnyVariantUpdate) {
               const matchedPrimaryAsset = matchAssetToVariant(primaryRelease.assets || [], { architecture: 'UNIVERSAL' });
-              const defaultAsset = matchedPrimaryAsset?.browser_download_url || primaryRelease.assets?.[0]?.browser_download_url || fileUrl;
+              const defaultAsset = matchedPrimaryAsset?.browser_download_url || (!isSharedRepo ? primaryRelease.assets?.[0]?.browser_download_url : null) || fileUrl;
 
               updates_available.push({
                 listing_id: listing.id,

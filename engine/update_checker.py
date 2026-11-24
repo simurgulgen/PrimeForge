@@ -104,7 +104,7 @@ class UpdateChecker:
 
         return profiles
 
-    def check_github_releases(self, url: str) -> Optional[Dict[str, Any]]:
+    def check_github_releases(self, url: str, package_name: str = None, app_name: str = None) -> Optional[Dict[str, Any]]:
         """Check for updates via GitHub Releases API."""
         m = re.search(r"github\.com/([^/]+/[^/]+)", url)
         if not m:
@@ -122,22 +122,91 @@ class UpdateChecker:
                 tag = data.get("tag_name", "").lstrip("v")
                 rel_name = data.get("name", "")
                 
-                # Prioritize release title (e.g. '2.0.19') over generic tags (e.g. 'update', 'latest')
-                import re
+                # Check if this repository is a shared multi-app repository (e.g. Morphe-AutoBuilds)
+                repo_lower = repo.lower()
+                is_shared_repo = (
+                    "morphe" in repo_lower or
+                    "autobuild" in repo_lower or
+                    "orion" in repo_lower or
+                    "primeforge" in repo_lower
+                )
+                
+                apk_assets = [a for a in data.get("assets", []) if a.get("name", "").endswith(".apk")]
+                
+                # Candidate tokens for matching the app
+                app_tokens = set()
+                if package_name:
+                    app_tokens.add(package_name.lower())
+                    parts = [p.lower() for p in package_name.split(".") if len(p) >= 3 and p not in ["com", "org", "net", "app", "android", "pro", "plus"]]
+                    app_tokens.update(parts)
+                if app_name:
+                    words = [w.lower() for w in re.findall(r"[a-zA-Z0-9]+", app_name) if len(w) >= 4 and w.lower() not in ["official", "premium", "morphe", "modded", "patched", "editor"]]
+                    app_tokens.update(words)
+
+                # Known aliases mapping for shared repos
+                known_aliases = {
+                    "ch.protonvpn.android": ["protonvpn", "proton-vpn"],
+                    "bitpit.launcher": ["niagara"],
+                    "videoeditor.videorecorder.screenrecorder": ["xrecorder"],
+                    "com.lyfta": ["lyfta"],
+                    "ginlemon.iconpackstudio": ["icon-pack-studio", "iconpackstudio"],
+                    "all.in.one.calculator": ["aiocal", "all-in-one-calculator"],
+                    "com.amazon.avod.thirdpartyclient": ["primevideo", "prime-video"],
+                    "com.spotify.music": ["spotify"],
+                    "com.frontrow.vlog": ["vn-editor", "vn_editor"],
+                    "com.foobnix.pdf.reader": ["librera"],
+                    "io.ente.photos.independent": ["ente-photos", "photos"],
+                }
+                if package_name and package_name in known_aliases:
+                    app_tokens.update(known_aliases[package_name])
+
+                matched_asset = None
+                matched_ver = None
+
+                if is_shared_repo or (len(apk_assets) > 3 and app_tokens):
+                    for asset in apk_assets:
+                        aname = asset.get("name", "").lower().replace("_", "-")
+                        for tok in app_tokens:
+                            tok_clean = tok.replace("_", "-")
+                            if (
+                                aname.startswith(tok_clean + "-") or
+                                aname.startswith(tok_clean + ".") or
+                                ("-" + tok_clean + "-") in aname or
+                                ("." + tok_clean + ".") in aname or
+                                (package_name and package_name.lower() in aname)
+                            ):
+                                matched_asset = asset
+                                # Extract version from asset name (e.g. name-v2.1.0.apk)
+                                vm = re.search(r"v?([0-9]+(?:\.[0-9]+)+)", asset.get("name", ""))
+                                if vm:
+                                    matched_ver = vm.group(1)
+                                break
+                        if matched_asset:
+                            break
+                    if not matched_asset:
+                        # For shared repos, do NOT fallback to a random asset!
+                        return None
+                else:
+                    if apk_assets:
+                        matched_asset = apk_assets[0]
+
+                if not matched_asset:
+                    return None
+
+                apk_url = matched_asset.get("browser_download_url")
+
+                # Determine version
                 m_name = re.search(r"([0-9]+(?:\.[0-9]+)+)", rel_name)
                 m_tag = re.search(r"([0-9]+(?:\.[0-9]+)+)", tag)
-                if m_name:
+                if matched_ver:
+                    remote_ver = matched_ver
+                elif m_name:
                     remote_ver = m_name.group(1)
                 elif m_tag:
                     remote_ver = m_tag.group(1)
                 else:
                     remote_ver = tag or rel_name
 
-                apk_url = None
-                for asset in data.get("assets", []):
-                    if asset.get("name", "").endswith(".apk"):
-                        apk_url = asset.get("browser_download_url")
-                        break
                 return {"remote_version": remote_ver, "apk_url": apk_url}
         except Exception as e:
             print(f"  ⚠️ GitHub check failed for {repo}: {e}")
@@ -310,6 +379,8 @@ class UpdateChecker:
         """Run update checks for all loaded profiles."""
         profiles = self.load_active_profiles()
         print(f"🔎 PrimeForge Update Checker: Checking {len(profiles)} profiles...")
+        auto_updated_count = 0
+        mod_candidates_count = 0
 
         for prof in profiles:
             pkg = prof.get("package")
@@ -336,7 +407,7 @@ class UpdateChecker:
             # Strategy 1: Defined in Profile
             cfg_type = update_cfg.get("type")
             if cfg_type == "github_releases" and update_cfg.get("url"):
-                update_info = self.check_github_releases(update_cfg["url"])
+                update_info = self.check_github_releases(update_cfg["url"], package_name=pkg, app_name=name)
             elif cfg_type in ["http_json", "http_json_get"] and update_cfg.get("endpoint"):
                 update_info = self.check_http_json(
                     update_cfg["endpoint"],
@@ -354,7 +425,7 @@ class UpdateChecker:
                     else:
                         gh_cand = None
                 if gh_cand:
-                    update_info = self.check_github_releases(f"https://github.com/{gh_cand}")
+                    update_info = self.check_github_releases(f"https://github.com/{gh_cand}", package_name=pkg, app_name=name)
 
             if update_info and update_info.get("remote_version"):
                 remote_ver = update_info["remote_version"]
@@ -386,51 +457,109 @@ class UpdateChecker:
                     if not already_notified:
                         print(f"  🎉 NEW VERSION AVAILABLE: v{remote_ver} > v{current_ver}")
 
-                        # === NIM AKILLI DOĞRULAMA ADIMI ===
-                        nim_result = {"approved": True, "confidence": 50, "recommended_action": "manual_review"}
-                        try:
-                            from engine.ai_advisor import nim_verify_update
-                            nim_result = nim_verify_update(
-                                name, pkg, current_ver, remote_ver, apk_url,
-                                source_repo=(listing.get("githubSourceRepo") or "") if listing else ""
-                            )
-                        except Exception as nim_err:
-                            print(f"  ⚠️ NIM doğrulama atlandı: {nim_err}")
+                        # 1. Standart FOSS / Katalog Uygulaması (Özel mod profili yoksa doğrudan katalog güncelle)
+                        if prof.get("_file_path") is None and listing and listing.get("id"):
+                            try:
+                                from engine.supabase_client import update_listing_rpc
+                                lid = listing["id"]
+                                vars_existing = listing.get("variants") or []
+                                updated_vars = []
+                                for v in vars_existing:
+                                    vc = dict(v)
+                                    vc["version"] = str(remote_ver)
+                                    vc["fileUrl"] = apk_url
+                                    updated_vars.append(vc)
+                                if not updated_vars:
+                                    updated_vars = [{
+                                        "name": "Güncel Sürüm",
+                                        "version": str(remote_ver),
+                                        "fileUrl": apk_url,
+                                        "fileHost": "GITHUB" if "github.com" in apk_url else "CUSTOM_URL",
+                                        "platform": "UNIVERSAL",
+                                        "architecture": "UNIVERSAL"
+                                    }]
+                                update_listing_rpc(lid, str(remote_ver), apk_url, variants=updated_vars)
+                                auto_updated_count += 1
+                                print(f"  ✨ Katalog Otomatik Güncellendi: {name} ({pkg}) -> v{remote_ver}")
 
-                        nim_approved = nim_result.get("approved", True)
-                        nim_confidence = nim_result.get("confidence", 50)
-                        nim_action = nim_result.get("recommended_action", "manual_review")
-                        nim_reason = nim_result.get("reason", "")
-                        nim_flags = nim_result.get("risk_flags", [])
+                                try:
+                                    from telegram.bot import _send_message
+                                    msg = (
+                                        f"🎉 <b>{name} Otomatik Güncellendi!</b>\n\n"
+                                        f"📦 <code>{pkg}</code>\n"
+                                        f"🔹 Eski: <code>v{current_ver}</code>\n"
+                                        f"🚀 Yeni: <b>v{remote_ver}</b>\n\n"
+                                        f"🔗 <a href=\"{apk_url}\">Yeni APK Bağlantısı</a>"
+                                    )
+                                    _send_message(msg)
+                                except Exception:
+                                    pass
+                            except Exception as upd_err:
+                                print(f"  ⚠️ Katalog otomatik güncelleme hatası: {upd_err}")
 
-                        # NIM doğrulama sonucunu item'a ekle
-                        item["nim_verification"] = nim_result
-
-                        if not nim_approved and nim_action == "skip":
-                            # NIM bu güncellemeyi reddetti — atla, bildirme
-                            print(f"  🧠 NIM REDDİ: ❌ Güncelleme atlanıyor — {nim_reason}")
-                            print(f"     Risk bayrakları: {nim_flags}")
-                        elif nim_approved and nim_action == "auto_mod" and nim_confidence >= 75:
-                            # NIM yüksek güvenle onayladı — otomatik modla
-                            print(f"  🧠 NIM ONAYI: ✅ Güven: {nim_confidence}% — Otomatik modlama")
-                            self.notify_telegram_update_with_nim(
-                                name, pkg, current_ver, remote_ver, apk_url, nim_result)
-                            if prof.get("auto_apply"):
-                                print("  ⚙️ auto_apply aktif — GitHub pipeline tetikleniyor...")
-                                self.trigger_github_pipeline(
-                                    apk_url, pkg, os.path.basename(prof.get("_file_path", "")))
+                        # 2. Özel Mod Profili Olan Uygulamalar (Smali patch vb.)
                         else:
-                            # NIM onayladı ama güven düşük veya manuel onay istiyor
-                            print(f"  🧠 NIM: ⚠️ Güven: {nim_confidence}% — Manuel onay gerekli")
-                            self.notify_telegram_update_with_nim(
-                                name, pkg, current_ver, remote_ver, apk_url, nim_result)
-                            # Pipeline tetiklenmez, Telegram butonundan onay beklenir
+                            mod_candidates_count += 1
+                            # === NIM AKILLI DOĞRULAMA ADIMI ===
+                            nim_result = {"approved": True, "confidence": 50, "recommended_action": "manual_review"}
+                            try:
+                                from engine.ai_advisor import nim_verify_update
+                                nim_result = nim_verify_update(
+                                    name, pkg, current_ver, remote_ver, apk_url,
+                                    source_repo=(listing.get("githubSourceRepo") or "") if listing else ""
+                                )
+                            except Exception as nim_err:
+                                print(f"  ⚠️ NIM doğrulama atlandı: {nim_err}")
+
+                            nim_approved = nim_result.get("approved", True)
+                            nim_confidence = nim_result.get("confidence", 50)
+                            nim_action = nim_result.get("recommended_action", "manual_review")
+                            nim_reason = nim_result.get("reason", "")
+                            nim_flags = nim_result.get("risk_flags", [])
+
+                            # NIM doğrulama sonucunu item'a ekle
+                            item["nim_verification"] = nim_result
+
+                            if not nim_approved and nim_action == "skip":
+                                # NIM bu güncellemeyi reddetti — atla, bildirme
+                                print(f"  🧠 NIM REDDİ: ❌ Güncelleme atlanıyor — {nim_reason}")
+                                print(f"     Risk bayrakları: {nim_flags}")
+                            elif nim_approved and nim_action == "auto_mod" and nim_confidence >= 75:
+                                # NIM yüksek güvenle onayladı — otomatik modla
+                                print(f"  🧠 NIM ONAYI: ✅ Güven: {nim_confidence}% — Otomatik modlama")
+                                self.notify_telegram_update_with_nim(
+                                    name, pkg, current_ver, remote_ver, apk_url, nim_result)
+                                if prof.get("auto_apply"):
+                                    print("  ⚙️ auto_apply aktif — GitHub pipeline tetikleniyor...")
+                                    self.trigger_github_pipeline(
+                                        apk_url, pkg, os.path.basename(prof.get("_file_path", "")))
+                            else:
+                                # NIM onayladı ama güven düşük veya manuel onay istiyor
+                                print(f"  🧠 NIM: ⚠️ Güven: {nim_confidence}% — Manuel onay gerekli")
+                                self.notify_telegram_update_with_nim(
+                                    name, pkg, current_ver, remote_ver, apk_url, nim_result)
+                                # Pipeline tetiklenmez, Telegram butonundan onay beklenir
                     else:
                         print(f"  ℹ️ Update available (v{remote_ver}), but already notified/queued.")
                 else:
                     print(f"  ✅ App is up to date (Latest: v{remote_ver})")
             else:
                 print("  ℹ️ No remote upstream version source configured or reachable.")
+
+        # Send Nightly Digest to Telegram if any updates occurred
+        try:
+            if auto_updated_count > 0 or mod_candidates_count > 0:
+                from telegram.bot import _send_message
+                summary = (
+                    f"🌙 <b>PrimeStore Gece Güncelleme Raporu</b>\n\n"
+                    f"🔍 <b>Taranan Profil:</b> {len(profiles)} uygulama\n"
+                    f"✅ <b>Katalog Güncellenen:</b> {auto_updated_count} uygulama\n"
+                    f"⚙️ <b>Modlama / İşlem:</b> {mod_candidates_count} uygulama\n"
+                    f"✨ <i>Katalog son sürümlerle senkronize edildi.</i>"
+                )
+                _send_message(summary)
+        except Exception:
+            pass
 
         # Save Report
         os.makedirs(OUTPUT_DIR, exist_ok=True)

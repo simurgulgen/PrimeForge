@@ -11,6 +11,80 @@ function parseOwnerAndRepo(url: string | null | undefined): boolean {
   return parts.length === 2 && !url.includes('://');
 }
 
+const GENERIC_HOSTS = new Set([
+  'github.com',
+  'raw.githubusercontent.com',
+  'gitlab.com',
+  'sourceforge.net',
+  'catbox.moe',
+  'files.catbox.moe',
+  'pixeldrain.com',
+  'drive.google.com',
+  'dropbox.com',
+  'mediafire.com',
+  'mega.nz',
+  'liteapks.com',
+  'liteapks.dev',
+  'download.liteapks.dev',
+  'download-old.liteapks.dev',
+]);
+
+function extractGithubSlug(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const match = url.match(/github\.com\/([^/]+)\/([^/#?]+)/i);
+  if (match) return `${match[1]}/${match[2]}`.toLowerCase();
+  const parts = url.trim().split('/');
+  if (parts.length === 2 && !url.includes('://')) {
+    return `${parts[0]}/${parts[1]}`.toLowerCase();
+  }
+  return null;
+}
+
+function isScraperRuleMatch(r: any, pkg: string, fileUrl: string, ghRepo: string): boolean {
+  // 1. Strict package match
+  if (pkg && r.package_name && r.package_name.trim().toLowerCase() === pkg.trim().toLowerCase()) {
+    return true;
+  }
+
+  // 2. Domain pattern match
+  if (r.domain_pattern) {
+    const pat = r.domain_pattern.trim().toLowerCase();
+    if (pat) {
+      if (pat.includes('github.com/') || (pat.split('/').length === 2 && !pat.includes('.'))) {
+        const patSlug = pat.replace(/^.*github\.com\//, '').replace(/^www\./, '');
+        const fileSlug = extractGithubSlug(fileUrl);
+        const ghSlug = extractGithubSlug(ghRepo);
+        if (fileSlug === patSlug || ghSlug === patSlug) return true;
+      } else if (!GENERIC_HOSTS.has(pat) && pat !== 'github.com') {
+        if (fileUrl.toLowerCase().includes(pat) || ghRepo.toLowerCase().includes(pat)) {
+          return true;
+        }
+      }
+    }
+  }
+
+  // 3. Target URL match (generic hosts like github.com must never match by hostname alone)
+  if (r.target_url) {
+    try {
+      const u = new URL(r.target_url);
+      const host = u.hostname.replace(/^www\./, '').toLowerCase();
+      if (host && !GENERIC_HOSTS.has(host)) {
+        if (fileUrl.toLowerCase().includes(host) || ghRepo.toLowerCase().includes(host)) {
+          return true;
+        }
+      } else if (host === 'github.com') {
+        const targetSlug = extractGithubSlug(r.target_url);
+        const fileSlug = extractGithubSlug(fileUrl);
+        const ghSlug = extractGithubSlug(ghRepo);
+        if (targetSlug && (fileSlug === targetSlug || ghSlug === targetSlug)) {
+          return true;
+        }
+      }
+    } catch (_) {}
+  }
+  return false;
+}
+
 export async function GET() {
   try {
     // 1. Fetch active and inactive scraper rules
@@ -44,27 +118,8 @@ export async function GET() {
 
       const hasGitHub = parseOwnerAndRepo(ghRepo) || parseOwnerAndRepo(fileUrl);
 
-      // Match scraper rule
-      const matchedRule = scraperRules.find((r) => {
-        if (pkg && r.package_name && r.package_name.toLowerCase() === pkg.toLowerCase()) {
-          return true;
-        }
-        if (r.domain_pattern) {
-          const pat = r.domain_pattern.toLowerCase();
-          if (fileUrl.toLowerCase().includes(pat) || ghRepo.toLowerCase().includes(pat)) {
-            return true;
-          }
-        }
-        if (r.target_url) {
-          try {
-            const host = new URL(r.target_url).hostname.replace(/^www\./, '').toLowerCase();
-            if (host && (fileUrl.toLowerCase().includes(host) || ghRepo.toLowerCase().includes(host))) {
-              return true;
-            }
-          } catch (_) {}
-        }
-        return false;
-      });
+      // Match scraper rule (only active rules)
+      const matchedRule = scraperRules.find((r) => r.is_active !== false && isScraperRuleMatch(r, pkg, fileUrl, ghRepo));
 
       return {
         listing_id: app.id,

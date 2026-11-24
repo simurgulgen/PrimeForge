@@ -33,17 +33,68 @@ export async function POST(req: Request) {
       const fileUrl = targetListing.fileUrl || '';
       const ghRepo = targetListing.githubSourceRepo || '';
 
+      const GENERIC_HOSTS = new Set([
+        'github.com',
+        'raw.githubusercontent.com',
+        'gitlab.com',
+        'sourceforge.net',
+        'catbox.moe',
+        'files.catbox.moe',
+        'pixeldrain.com',
+        'drive.google.com',
+        'dropbox.com',
+        'mediafire.com',
+        'mega.nz',
+        'liteapks.com',
+        'liteapks.dev',
+        'download.liteapks.dev',
+        'download-old.liteapks.dev',
+      ]);
+
+      const extractGithubSlug = (url: string | null | undefined): string | null => {
+        if (!url) return null;
+        const match = url.match(/github\.com\/([^/]+)\/([^/#?]+)/i);
+        if (match) return `${match[1]}/${match[2]}`.toLowerCase();
+        const parts = url.trim().split('/');
+        if (parts.length === 2 && !url.includes('://')) {
+          return `${parts[0]}/${parts[1]}`.toLowerCase();
+        }
+        return null;
+      };
+
       const { data: rules } = await supabase.from('scraper_rules').select('*').eq('is_active', true);
       targetRule = (rules || []).find((r: any) => {
-        if (pkg && r.package_name && r.package_name.toLowerCase() === pkg.toLowerCase()) return true;
+        // 1. Strict package match
+        if (pkg && r.package_name && r.package_name.trim().toLowerCase() === pkg.trim().toLowerCase()) return true;
+
+        // 2. Domain pattern match
         if (r.domain_pattern) {
-          const pat = r.domain_pattern.toLowerCase();
-          if (fileUrl.toLowerCase().includes(pat) || ghRepo.toLowerCase().includes(pat)) return true;
+          const pat = r.domain_pattern.trim().toLowerCase();
+          if (pat) {
+            if (pat.includes('github.com/') || (pat.split('/').length === 2 && !pat.includes('.'))) {
+              const patSlug = pat.replace(/^.*github\.com\//, '').replace(/^www\./, '');
+              const fileSlug = extractGithubSlug(fileUrl);
+              const ghSlug = extractGithubSlug(ghRepo);
+              if (fileSlug === patSlug || ghSlug === patSlug) return true;
+            } else {
+              if (fileUrl.toLowerCase().includes(pat) || ghRepo.toLowerCase().includes(pat)) return true;
+            }
+          }
         }
+
+        // 3. Target URL match (generic hosts like github.com must never match by hostname alone)
         if (r.target_url) {
           try {
-            const host = new URL(r.target_url).hostname.replace(/^www\./, '').toLowerCase();
-            if (host && (fileUrl.toLowerCase().includes(host) || ghRepo.toLowerCase().includes(host))) return true;
+            const u = new URL(r.target_url);
+            const host = u.hostname.replace(/^www\./, '').toLowerCase();
+            if (host && !GENERIC_HOSTS.has(host)) {
+              if (fileUrl.toLowerCase().includes(host) || ghRepo.toLowerCase().includes(host)) return true;
+            } else if (host === 'github.com') {
+              const targetSlug = extractGithubSlug(r.target_url);
+              const fileSlug = extractGithubSlug(fileUrl);
+              const ghSlug = extractGithubSlug(ghRepo);
+              if (targetSlug && (fileSlug === targetSlug || ghSlug === targetSlug)) return true;
+            }
           } catch (_) {}
         }
         return false;
@@ -71,18 +122,24 @@ export async function POST(req: Request) {
     // Scrape target site with browser headers & automatic 403 proxy fallback
     const fetchResult = await fetchResilientHtml(targetUrl, 10000);
 
-    if (!fetchResult.ok || !fetchResult.html) {
+    if (!fetchResult.ok || (!fetchResult.html && !fetchResult.isBinaryApk)) {
       return NextResponse.json({
         success: false,
         error: fetchResult.error || `Hedef web sitesi HTTP ${fetchResult.status} hatası döndürdü.`,
       });
     }
 
-    const html = fetchResult.html;
     let newVersion: string | null = null;
     let downloadUrl: string | null = null;
 
-    if (isLiteApks) {
+    if (fetchResult.isBinaryApk && fetchResult.finalUrl) {
+      newVersion = extractVersionFromUrlOrFilename(fetchResult.finalUrl);
+      downloadUrl = fetchResult.finalUrl;
+    }
+
+    const html = fetchResult.html || '';
+
+    if (!newVersion && isLiteApks && html) {
       const parsedLite = parseLiteApksPage(html);
       if (parsedLite.version) {
         newVersion = parsedLite.version;

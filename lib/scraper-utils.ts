@@ -130,7 +130,15 @@ export function validateDownloadUrlSafety(downloadUrl: string): { safe: boolean;
 export async function fetchResilientHtml(
   targetUrl: string,
   timeoutMs: number = 10000
-): Promise<{ ok: boolean; status: number; html: string; proxied: boolean; error?: string }> {
+): Promise<{
+  ok: boolean;
+  status: number;
+  html: string;
+  proxied: boolean;
+  finalUrl?: string;
+  isBinaryApk?: boolean;
+  error?: string;
+}> {
   const reqHeaders: Record<string, string> = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36',
@@ -150,8 +158,27 @@ export async function fetchResilientHtml(
     });
 
     if (res.ok) {
+      const contentType = (res.headers.get('content-type') || '').toLowerCase();
+      const finalUrl = res.url || targetUrl;
+
+      // Check if redirect points directly to an APK binary (e.g. AceStream /download/apk)
+      if (
+        finalUrl.toLowerCase().split('?')[0].endsWith('.apk') ||
+        contentType.includes('application/vnd.android.package-archive') ||
+        contentType.includes('application/octet-stream')
+      ) {
+        return {
+          ok: true,
+          status: res.status,
+          html: '',
+          finalUrl,
+          isBinaryApk: true,
+          proxied: false,
+        };
+      }
+
       const html = await res.text();
-      return { ok: true, status: res.status, html, proxied: false };
+      return { ok: true, status: res.status, html, finalUrl, isBinaryApk: false, proxied: false };
     }
 
     // If Cloudflare blocks with 403, 401 or 503, fallback to resilient HTML proxy

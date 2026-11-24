@@ -102,14 +102,36 @@ def update_listing(listing_id, updates):
     return _request(f"listings?id=eq.{listing_id}", method="PATCH", data=updates)
 
 
+def update_listing_rpc(listing_id, new_version, download_url, variants=None, version_history=None):
+    """Update listing via primeforge_update_listing RPC to bypass RLS safely."""
+    now = int(datetime.now(timezone.utc).timestamp() * 1000)
+    data = {
+        "p_listing_id": listing_id,
+        "p_new_version": str(new_version),
+        "p_download_url": download_url,
+        "p_variants": variants or [],
+        "p_version_history": version_history or [],
+        "p_updated_at": now
+    }
+    res = _request("rpc/primeforge_update_listing", method="POST", data=data)
+    if not res:
+        return update_listing(listing_id, {
+            "version": str(new_version),
+            "fileUrl": download_url,
+            "variants": variants or [],
+            "updatedAt": now
+        })
+    return res
+
+
 def find_listing_by_package(package_name):
-    result = _request(f'listings?"packageName"=eq.{package_name}&select=id,title,"packageName",version,"fileUrl",status')
+    result = _request(f'listings?"packageName"=eq.{package_name}&select=id,title,"packageName",version,"fileUrl","githubSourceRepo",variants,status')
     return result[0] if isinstance(result, list) and result else {}
 
 
-def get_all_listings(limit=100):
+def get_all_listings(limit=150):
     """Fetch active listings from PrimeStore catalog."""
-    result = _request(f'listings?status=eq.published&select=id,title,"packageName",version,"fileUrl","logoUrl"&order="createdAt".desc&limit={limit}')
+    result = _request(f'listings?status=in.(PUBLISHED,published)&select=id,title,"packageName",version,"fileUrl","githubSourceRepo","logoUrl",variants&order="updatedAt".desc&limit={limit}')
     return result if isinstance(result, list) else []
 
 
